@@ -1,0 +1,17 @@
+Reference Repo 1:  https://github.com/sjasthi/ragworks
+Reference Repo 2: https://github.com/sjasthi/student-compass
+Reference md files: See the three files I uploaded. You can review, delete, consolidate, edit, fix, enhance these md files
+
+ICS499 Summer 2026 Repo: https://github.com/sjasthi/llm-rag-evals
+
+Technology Stack:   Front End (HTML, CSS, JS, JQuery, Bootstrap)
+                    Server (PHP)
+                    Backend (MySQL)
+
+
+What is the goal of this project?
+-- Meant for business users / managers for informed decision making - which approach to take?
+-- Meant for the developers to jump start the development - You will port Repo 1 or Repo 2 so that it works in our "Technology Stack"
+
+You must use: Metrostate documents as the RAG example to prove different Eval Frameworks
+

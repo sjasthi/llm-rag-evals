@@ -35,6 +35,7 @@ The application must use the following technology stack:
 ### Backend / Database
 
 * MySQL
+* ChromaDB for vector storage and retrieval
 
 ### AI / LLM Integration
 
@@ -391,6 +392,9 @@ Bootstrap should be used for layout, forms, buttons, tables, cards, and responsi
 ## 7. Database Requirements
 
 The MySQL database should store the main application data.
+
+ChromaDB should store RAG vector data, including document chunks, embeddings,
+source metadata, and retrieval collections.
 
 Possible tables include:
 

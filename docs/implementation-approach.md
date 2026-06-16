@@ -45,9 +45,19 @@ PHP + Bootstrap application
   |
   +--> MySQL
   |     |-- document metadata
-  |     |-- chunks and embeddings
   |     |-- questions and expected answers
   |     `-- responses, settings, and evaluation scores
+  |
+  +--> Python RAG helper/service
+  |     |-- document parsing
+  |     |-- chunking
+  |     |-- embeddings
+  |     `-- ChromaDB retrieval
+  |
+  +--> ChromaDB
+  |     |-- chunk text
+  |     |-- embeddings
+  |     `-- source metadata
   |
   +--> LLM provider API
   |     |-- embeddings
@@ -58,20 +68,33 @@ PHP + Bootstrap application
         `-- RAGAS or other Python-only evaluation libraries
 ```
 
-PHP remains the application server. Python should be optional and limited to
-offline evaluation tooling unless the professor approves a Python sidecar
-service.
+PHP remains the main application server. Python handles the RAG layer because
+the reference projects use ChromaDB and ChromaDB is easiest to operate from
+Python. MySQL stores structured application data and evaluation results.
 
 ## Storage Recommendation
 
-For the first working version, store embeddings as JSON in MySQL and calculate
-cosine similarity in PHP. The expected dataset is small enough for this
-straightforward approach: approximately 20 documents and 50 test questions.
+Use MySQL and ChromaDB together.
 
-If performance becomes a problem or the professor specifically requires
-ChromaDB, introduce a small Python retrieval service later. Do not add ChromaDB
-before confirming that requirement because it creates a second database and
-runtime to maintain.
+MySQL should store structured project data:
+
+- document records,
+- evaluation questions,
+- expected answers,
+- generated answers,
+- evaluation runs,
+- scores,
+- model/settings metadata.
+
+ChromaDB should store RAG/vector data:
+
+- chunk text,
+- embeddings,
+- source document metadata,
+- chunk IDs used during retrieval.
+
+This matches the reference repositories more closely than storing embeddings in
+MySQL.
 
 ## API Keys and Secrets
 
@@ -120,7 +143,7 @@ Clarify whether:
 
 1. Select 3-5 public Metro State text documents.
 2. Parse and chunk the documents.
-3. Generate and store embeddings.
+3. Generate and store embeddings in ChromaDB.
 4. Hard-code a question and retrieve the top matching chunks.
 5. Generate an answer using only those chunks.
 6. Print the answer and source filenames.
@@ -189,6 +212,6 @@ configurations against all 50 questions.
 Ask the professor:
 
 > Since the required web stack is PHP and MySQL, may we use an offline Python
-> script only for Python-specific RAG evaluation libraries such as RAGAS, while
-> keeping PHP as the application server? Also, is ChromaDB required, or may we
-> store the small project dataset's embeddings in MySQL?
+> helper/service for ChromaDB ingestion and retrieval while keeping PHP as the
+> main application server? MySQL would store structured app data and results,
+> while ChromaDB would store chunks and embeddings.

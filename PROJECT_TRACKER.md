@@ -23,12 +23,12 @@ Use the assigned stack unless the professor approves a different direction:
 
 - Frontend: HTML, CSS, JavaScript, jQuery, Bootstrap
 - Server: PHP
-- Database: MySQL
+- Structured database: MySQL
+- Vector database: ChromaDB
 - LLM provider: configurable provider such as OpenAI/ChatGPT, Gemini, Claude, or another approved model
-- Embeddings/vector search: start with MySQL-stored embeddings and cosine similarity for the small project dataset
-- Optional later: Python script for RAGAS or other Python-only evaluation tools
+- RAG helper layer: Python service or scripts for ChromaDB, embeddings, retrieval, and optional RAGAS
 
-Do not add React, Flask, ChromaDB, cloud storage, streaming responses, or full
+Do not add React, cloud storage, streaming responses, or full
 authentication unless those choices clearly support the project goal or the
 professor confirms they are required.
 
@@ -103,8 +103,8 @@ Ask these first:
 3. Is a 50-question gold dataset required?
 4. May any LLM provider be used, such as OpenAI/ChatGPT, Gemini, or Claude?
 5. Are API costs covered by the school/course, or paid individually?
-6. Is ChromaDB required, or may this small project store embeddings in MySQL?
-7. May PHP remain the main app while an optional Python script handles Python-only evaluation tools like RAGAS?
+6. Should PHP call a small Python helper/service for ChromaDB ingestion and retrieval while MySQL stores structured app data?
+7. May PHP remain the main app while Python handles ChromaDB and optional RAGAS evaluation?
 8. For FP3, is a responsive `index.php` with planning and UX docs enough, or should forms already work?
 
 ## FP Roadmap
@@ -141,6 +141,7 @@ Goal: Build the storage foundation and document-management skeleton.
 Implement:
 
 - MySQL database creation script.
+- ChromaDB setup plan for vector storage.
 - Database connection helper in PHP.
 - `.env` loading or safe config strategy.
 - Tables for:
@@ -151,6 +152,7 @@ Implement:
   - evaluation_runs
   - evaluation_scores
   - model_settings
+- Local ChromaDB storage directory for embeddings/vector retrieval.
 - Basic admin page shell.
 - Document list page using sample seeded records.
 - Local storage directory for uploaded files.
@@ -161,6 +163,7 @@ Recommended files:
 - `config/env.php`
 - `database/schema.sql`
 - `database/seeds/sample_questions.sql`
+- `rag/` or `services/rag/` for Python ChromaDB helper code
 - `includes/header.php`
 - `includes/footer.php`
 - `pages/documents.php`
@@ -171,6 +174,7 @@ Verification:
 - Database schema imports successfully.
 - PHP can connect to MySQL.
 - A page can read and display document rows from MySQL.
+- ChromaDB can be initialized locally from the helper script.
 
 ### FP5: Document Parsing, Chunking, and Embeddings
 
@@ -183,7 +187,8 @@ Implement:
 - Extract document text.
 - Chunk text using configurable chunk size and overlap.
 - Generate embeddings through the selected LLM provider.
-- Store chunk text and embedding JSON in MySQL.
+- Store chunk text, embeddings, and source metadata in ChromaDB.
+- Store document metadata and processing status in MySQL.
 - Show chunk count per document.
 - Add replace-document behavior that removes old chunks and inserts new chunks.
 
@@ -197,7 +202,7 @@ Verification:
 
 - Upload/import a document.
 - Confirm chunks are written to MySQL.
-- Confirm embeddings are stored.
+- Confirm chunks and embeddings are stored in ChromaDB.
 - Replacing a document deletes old chunks and inserts new chunks.
 
 ### FP6: Retrieval and Ask Page
@@ -208,7 +213,7 @@ Implement:
 
 - Ask page with question form.
 - Embed the user question.
-- Calculate cosine similarity against stored chunk embeddings.
+- Query ChromaDB for similar chunks.
 - Retrieve top-k chunks.
 - Build a prompt using only retrieved context.
 - Call the selected LLM provider server-side.
@@ -353,7 +358,6 @@ Everything beyond that is optional.
 
 - React frontend.
 - Flask as the main app.
-- ChromaDB before professor approval.
 - Google Cloud Storage.
 - Multi-user authentication.
 - Streaming chat responses.

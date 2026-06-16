@@ -188,8 +188,12 @@ The preferred final scope is intentionally focused on the evaluation goal:
   demonstration.
 - Optional simple admin passcode only if the professor expects an admin area to
   be separated from user-facing pages.
-- MySQL storage for metadata, chunks, embeddings, questions, and results.
-- PHP-based cosine similarity for the small dataset.
+- MySQL storage for metadata, questions, expected answers, responses,
+  evaluation runs, scores, and settings.
+- ChromaDB storage for chunks, embeddings, source metadata, and vector
+  retrieval.
+- Python helper/service for ChromaDB ingestion and retrieval, while PHP remains
+  the main application interface.
 - Optional offline Python evaluation only if needed for RAGAS.
 
 ## Out of Scope Unless It Supports the Evaluation Goal
@@ -202,7 +206,7 @@ directly improve the RAG evaluation outcome:
 - Full user account system.
 - Multi-user chat history.
 - Google Cloud Storage.
-- Large-scale vector infrastructure.
+- Large-scale vector infrastructure beyond local ChromaDB.
 - Multi-agent RAG.
 - Real-time streaming responses.
 - Production-grade deployment.

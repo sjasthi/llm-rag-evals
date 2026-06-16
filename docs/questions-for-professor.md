@@ -48,11 +48,11 @@ Use this list to clarify the project before building the FP4/FP5 backend work.
 14. If some separation is needed, is a simple admin passcode acceptable instead
     of a full user account system?
 
-15. Is ChromaDB required, or may this project store embeddings in MySQL and use
-    cosine similarity for the small document set?
+15. I am planning to use MySQL for structured application data and ChromaDB for
+    chunks, embeddings, and vector retrieval. Is that the expected direction?
 
-16. May the main application stay in PHP/MySQL while optional Python scripts are
-    used only for advanced evaluation tools such as RAGAS?
+16. May the main application stay in PHP/MySQL while a small Python
+    helper/service handles ChromaDB ingestion and retrieval?
 
 17. For FP3 specifically, is a responsive `index.php` with planning, UX, scope,
     and code-structure documentation enough, or should any forms already be
@@ -77,7 +77,7 @@ FP4/FP5, could you clarify a few things?
 6. Should LLM-as-judge or RAGAS be required, or are simpler metrics such as
    semantic similarity and source accuracy acceptable?
 7. Is authentication required, or can the project skip login for a local demo?
-8. Is ChromaDB required, or can embeddings be stored in MySQL for this small
-   dataset?
+8. Is the planned split acceptable: MySQL for structured app data and ChromaDB
+   for chunks, embeddings, and retrieval?
 
 Thank you.

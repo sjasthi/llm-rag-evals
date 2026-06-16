@@ -63,6 +63,8 @@ The primary focus is RAG behavior:
 - Was the answer grounded in the retrieved context?
 - Did changing chunk size, top-k, or temperature improve or weaken results?
 - Which configuration is most useful for this document set?
+- How do MySQL-based retrieval and ChromaDB-based retrieval compare for this
+  project dataset?
 
 This is the core of the project.
 
@@ -192,6 +194,8 @@ The preferred final scope is intentionally focused on the evaluation goal:
   evaluation runs, scores, and settings.
 - ChromaDB storage for chunks, embeddings, source metadata, and vector
   retrieval.
+- MySQL and ChromaDB should be treated as comparison options where practical,
+  based on the instructor's note.
 - Python helper/service for ChromaDB ingestion and retrieval, while PHP remains
   the main application interface.
 - Optional offline Python evaluation only if needed for RAGAS.

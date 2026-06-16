@@ -137,6 +137,7 @@ Planned content:
 - Temperature values.
 - Provider/model values, if compared.
 - Prompt variations, if compared.
+- Retrieval/storage option, such as MySQL baseline versus ChromaDB vector search.
 
 Example:
 

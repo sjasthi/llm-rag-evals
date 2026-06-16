@@ -51,10 +51,14 @@ Use this list to clarify the project before building the FP4/FP5 backend work.
 15. I am planning to use MySQL for structured application data and ChromaDB for
     chunks, embeddings, and vector retrieval. Is that the expected direction?
 
-16. May the main application stay in PHP/MySQL while a small Python
+16. You noted to use both MySQL and ChromaDB as two options for comparison.
+    Should MySQL be used as a keyword/SQL retrieval baseline and ChromaDB as the
+    vector retrieval option?
+
+17. May the main application stay in PHP/MySQL while a small Python
     helper/service handles ChromaDB ingestion and retrieval?
 
-17. For FP3 specifically, is a responsive `index.php` with planning, UX, scope,
+18. For FP3 specifically, is a responsive `index.php` with planning, UX, scope,
     and code-structure documentation enough, or should any forms already be
     functional?
 

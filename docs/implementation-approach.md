@@ -75,7 +75,7 @@ Python. MySQL stores structured application data and evaluation results.
 
 ## Storage Recommendation
 
-Use MySQL and ChromaDB together.
+Use MySQL and ChromaDB together, and compare them where practical.
 
 MySQL should store structured project data:
 
@@ -96,6 +96,15 @@ ChromaDB should store RAG/vector data:
 
 This matches the reference repositories more closely than storing embeddings in
 MySQL.
+
+The instructor also noted to use both MySQL and ChromaDB as two options for
+comparison. The practical interpretation is:
+
+- MySQL remains the source of structured records and can support simple keyword
+  or SQL-based retrieval baselines.
+- ChromaDB is the vector database for embedding-based semantic retrieval.
+- Evaluation results should compare the retrieval/answer quality of those
+  approaches when the implementation reaches FP7/FP8.
 
 ## API Keys and Secrets
 

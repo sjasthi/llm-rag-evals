@@ -9,13 +9,13 @@ future FP should deliver.
 ## Current State
 
 - Current iteration: FP3
-- Active branch workflow: push directly to `main` after FP3 branch is merged
+- Active branch workflow: push directly to `main`
 - Official repo: `https://github.com/sjasthi/llm-rag-evals`
 - Local project path: `C:\Users\andre\Desktop\ICS499 Capstone\LLM RAG Evaluation Project`
 - PHP dev server URL: `http://127.0.0.1:8000/`
 - PHP installed through winget: PHP 8.4
-- FP3 work has been committed and pushed to `fp3-starter`.
-- Next workflow should use `main` because the professor does not want to merge branches for each checkpoint.
+- FP3 work has been merged and pushed to `main`.
+- Future checkpoint work should use `main` because the professor does not want to merge branches for each checkpoint.
 
 ## Current Architecture Decision
 
@@ -27,6 +27,9 @@ Use the assigned stack unless the professor approves a different direction:
 - Vector database: ChromaDB
 - LLM provider: configurable provider such as OpenAI/ChatGPT, Gemini, Claude, or another approved model
 - RAG helper layer: Python service or scripts for ChromaDB, embeddings, retrieval, and optional RAGAS
+- Instructor note: use both MySQL and ChromaDB as two options for comparison.
+- Instructor note: use the Student Compass `documents/` folder as a starting point for Metro State documents.
+- Instructor note: try/document launching PHP through VS Code without XAMPP.
 
 Do not add React, cloud storage, streaming responses, or full
 authentication unless those choices clearly support the project goal or the
@@ -84,9 +87,9 @@ path. Full authentication should be avoided unless required.
 2. Replace any placeholder responsibility wording with language preferred by the
    professor if needed.
 3. Ask the professor the high-priority questions in `docs/questions-for-professor.md`.
-4. Merge FP3 work into `main`.
-5. Push `main` to the official repo.
-6. Continue future checkpoint work directly on `main` unless the professor asks for branches.
+4. Continue future checkpoint work directly on `main` unless the professor asks for branches.
+5. Use Student Compass documents as the starting document set.
+6. Plan a comparison between MySQL-based retrieval and ChromaDB-based retrieval if feasible.
 
 Suggested future commit flow:
 
@@ -105,8 +108,9 @@ Ask these first:
 3. Is a 50-question gold dataset required?
 4. May any LLM provider be used, such as OpenAI/ChatGPT, Gemini, or Claude?
 5. Are API costs covered by the school/course, or paid individually?
-6. Should PHP call a small Python helper/service for ChromaDB ingestion and retrieval while MySQL stores structured app data?
-7. May PHP remain the main app while Python handles ChromaDB and optional RAGAS evaluation?
+6. For the MySQL vs ChromaDB comparison, should both be fully implemented retrieval options, or is a documented/prototype comparison acceptable?
+7. Should PHP call a small Python helper/service for ChromaDB ingestion and retrieval while MySQL stores structured app data?
+8. May PHP remain the main app while Python handles ChromaDB and optional RAGAS evaluation?
 8. For FP3, is a responsive `index.php` with planning and UX docs enough, or should forms already work?
 
 ## FP Roadmap

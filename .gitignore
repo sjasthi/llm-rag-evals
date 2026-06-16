@@ -1,0 +1,21 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+config/local.php
+
+# Dependencies
+/vendor/
+/node_modules/
+
+# Runtime files
+/storage/logs/*
+/storage/uploads/*
+!/storage/logs/.gitkeep
+!/storage/uploads/.gitkeep
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

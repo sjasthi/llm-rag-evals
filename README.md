@@ -36,6 +36,13 @@ Then open `http://localhost:8000`.
 - [Code structure and conventions](docs/code-structure.md)
 - [Recommended implementation approach](docs/implementation-approach.md)
 
+## Source Documents
+
+The initial Metro State document dataset is stored in
+`data/metrostate_documents/`. These files were copied from the Student Compass
+reference repository's `documents/` folder and will be used for ingestion,
+retrieval, and evaluation work.
+
 ## Security
 
 Do not commit API keys, database passwords, private Metro State documents, or

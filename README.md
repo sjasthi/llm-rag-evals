@@ -29,15 +29,12 @@ Then open `http://localhost:8000`.
 
 ## FP3 Documents
 
-- [Project tracker](PROJECT_TRACKER.md)
 - [Requirements](requirements.md)
 - [Final project scope](docs/final-project-scope.md)
 - [FP3-FP10 project plan](docs/fp3-project-plan.md)
 - [UX design](docs/ux-design.md)
 - [Code structure and conventions](docs/code-structure.md)
 - [Recommended implementation approach](docs/implementation-approach.md)
-- [Questions for the professor](docs/questions-for-professor.md)
-- [Final report outline](docs/final-report-outline.md)
 
 ## Security
 

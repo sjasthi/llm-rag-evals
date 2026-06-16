@@ -1,5 +1,7 @@
 Reference Repo 1:  https://github.com/sjasthi/ragworks
 Reference Repo 2: https://github.com/sjasthi/student-compass
+https://github.com/sjasthi/student-compass/tree/main/documents  (use these documents as starting point)
+
 Reference md files: See the three files I uploaded. You can review, delete, consolidate, edit, fix, enhance these md files
 
 ICS499 Summer 2026 Repo: https://github.com/sjasthi/llm-rag-evals

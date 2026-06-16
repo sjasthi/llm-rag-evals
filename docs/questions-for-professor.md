@@ -22,10 +22,10 @@ Use this list to clarify the project before building the FP4/FP5 backend work.
    or is there any school/course-provided credit?
 
 6. Is the final project expected to use cloud storage, or can uploaded files
-   remain in local storage for localhost/class demonstration purposes?
+   remain in local/server storage for class demonstration purposes?
 
-7. Is public deployment required, or is a localhost demo during class/Zoom
-   acceptable?
+7. Should the final project be demonstrated through a hosted environment,
+   localhost, Zoom screen share, or some combination of those?
 
 8. For evaluation, is a fixed set of around 50 questions with expected answers
    required?
@@ -70,8 +70,9 @@ FP4/FP5, could you clarify a few things?
 2. How many documents are required?
 3. Are API credits for providers such as ChatGPT/OpenAI, Claude, or Gemini paid
    by students, or is there any school/course-provided credit?
-4. Is cloud storage or public deployment required, or is local file storage and a
-   localhost class demo acceptable?
+4. Should the project run on a hosted environment for grading/demo, or is
+   localhost/screen share acceptable? If hosting is expected, can uploaded files
+   remain in normal PHP server storage?
 5. Is a fixed set of around 50 evaluation questions with expected answers
    required?
 6. Should LLM-as-judge or RAGAS be required, or are simpler metrics such as

@@ -9,13 +9,13 @@ future FP should deliver.
 ## Current State
 
 - Current iteration: FP3
-- Local branch: `fp3-starter`
+- Active branch workflow: push directly to `main` after FP3 branch is merged
 - Official repo: `https://github.com/sjasthi/llm-rag-evals`
 - Local project path: `C:\Users\andre\Desktop\ICS499 Capstone\LLM RAG Evaluation Project`
 - PHP dev server URL: `http://127.0.0.1:8000/`
 - PHP installed through winget: PHP 8.4
-- Work is local only. Nothing has been committed or pushed yet.
-- Current access to professor repo appears read-only until collaborator access is granted.
+- FP3 work has been committed and pushed to `fp3-starter`.
+- Next workflow should use `main` because the professor does not want to merge branches for each checkpoint.
 
 ## Current Architecture Decision
 
@@ -32,10 +32,10 @@ Do not add React, cloud storage, streaming responses, or full
 authentication unless those choices clearly support the project goal or the
 professor confirms they are required.
 
-Assume the final project will run mostly on localhost for class demonstration
-unless the professor explicitly requires public deployment. That means local
-file storage is preferred over cloud storage, and full authentication should be
-avoided unless required.
+Assume development will happen locally, with standard PHP/MySQL hosting as the
+fallback if the professor asks to view it through a hosted environment. Local
+file storage is preferred unless the professor requires a different storage
+path. Full authentication should be avoided unless required.
 
 ## Completed So Far
 
@@ -44,6 +44,7 @@ avoided unless required.
 - Initialized the local project folder as a Git repository.
 - Added the professor's repo as `origin`.
 - Created local branch `fp3-starter` from `origin/main`.
+- Pushed FP3 branch after collaborator access was granted.
 - Preserved the existing requirements file and renamed it to lowercase `requirements.md`.
 
 ### FP3 Deliverables
@@ -83,15 +84,16 @@ avoided unless required.
 2. Replace any placeholder responsibility wording with language preferred by the
    professor if needed.
 3. Ask the professor the high-priority questions in `docs/questions-for-professor.md`.
-4. Commit FP3 work locally.
-5. Push to the official repo if collaborator access is granted.
-6. If access is not granted, create a personal GitHub repo and push this branch there as a temporary working copy.
+4. Merge FP3 work into `main`.
+5. Push `main` to the official repo.
+6. Continue future checkpoint work directly on `main` unless the professor asks for branches.
 
-Suggested FP3 commit:
+Suggested future commit flow:
 
 ```powershell
 git add .
-git commit -m "Add FP3 starter materials"
+git commit -m "Describe the checkpoint work"
+git push origin main
 ```
 
 ## Professor Questions To Resolve Before FP4
@@ -126,7 +128,7 @@ Already done:
 Remaining:
 
 - Confirm professor expectations.
-- Commit and push/share the FP3 work.
+- Ensure FP3 work is available on `main`.
 - Fill in any required due dates or rubric-specific details.
 
 FP3 acceptance target:
@@ -363,7 +365,7 @@ Everything beyond that is optional.
 - Streaming chat responses.
 - Multi-agent RAG.
 - Large document sets.
-- Full production deployment.
+- Production-grade deployment beyond the course hosting/demo requirement.
 - Running every possible parameter combination.
 
 ## Useful Commands

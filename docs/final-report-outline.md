@@ -42,7 +42,7 @@ Planned content:
 
 Also mention what was intentionally out of scope:
 
-- Full production deployment.
+- Production-grade deployment beyond the course hosting/demo requirement.
 - Full authentication system, unless required.
 - Large-scale vector infrastructure, unless required.
 - Training a custom LLM.
@@ -260,7 +260,7 @@ Possible limitations:
 - API cost limited experiment size.
 - Metrics do not perfectly match human judgment.
 - Some expected answers may require manual review.
-- Localhost demo rather than production deployment.
+- Localhost or course-hosted demo rather than production deployment.
 
 ## 14. Future Work
 

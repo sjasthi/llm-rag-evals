@@ -209,7 +209,7 @@ directly improve the RAG evaluation outcome:
 - Large-scale vector infrastructure beyond local ChromaDB.
 - Multi-agent RAG.
 - Real-time streaming responses.
-- Production-grade deployment.
+- Production-grade deployment beyond the course hosting/demo requirement.
 - Exhaustive model leaderboard.
 - Training or fine-tuning a custom LLM.
 

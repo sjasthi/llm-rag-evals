@@ -39,7 +39,7 @@ work.
 ## Working Agreement
 
 - Review the iteration scope at the start of each iteration.
-- Work on feature branches and merge only runnable changes.
+- Push completed, runnable checkpoint work to `main`, following the professor's preferred workflow.
 - Never commit API keys, passwords, uploaded private documents, or `.env` files.
 - Record unresolved scope questions and ask the professor early.
 - Demonstrate the current working increment at each iteration review.
@@ -51,4 +51,4 @@ work.
 - Stakeholders and their primary workflows are documented.
 - The proposed code structure and conventions are documented.
 - `index.php` loads successfully and is responsive on mobile and desktop.
-- The FP3 files are committed and ready to push when repository access is available.
+- The FP3 files are committed and available in the GitHub repository.

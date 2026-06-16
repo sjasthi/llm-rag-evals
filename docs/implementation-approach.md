@@ -27,9 +27,10 @@ Do not initially copy:
 
 These features add complexity without proving the central project goal.
 
-For class demonstration, assume the application runs locally unless the
-professor says otherwise. Localhost deployment keeps the project focused on RAG
-evaluation rather than hosting, accounts, and production infrastructure.
+For class demonstration, assume local development first and standard PHP/MySQL
+hosting if the professor wants to view the application through a hosted
+environment. This keeps the project focused on RAG evaluation rather than custom
+production infrastructure.
 
 ## Recommended Architecture
 

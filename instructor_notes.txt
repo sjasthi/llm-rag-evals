@@ -1,0 +1,11 @@
+(1) use both MySQL and ChromadB as two options for comparison
+(2) Launching PHP through VS Code (without XAMPP) - Try out the deployment instructions
+
+
+==========
+
+(FP5): ChromaDB and MySQL must be setup;
+Update the README to include db setup instructions. What databases? tables? data need to be created?
+How do users setup the seed databases?
+
+

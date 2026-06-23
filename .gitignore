@@ -8,12 +8,16 @@ config/local.php
 # Dependencies
 /vendor/
 /node_modules/
+__pycache__/
+*.py[cod]
 
 # Runtime files
 /storage/logs/*
 /storage/uploads/*
+/rag/chroma/*
 !/storage/logs/.gitkeep
 !/storage/uploads/.gitkeep
+!/rag/chroma/.gitkeep
 
 # Editor and operating system files
 .idea/

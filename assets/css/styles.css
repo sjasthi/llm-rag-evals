@@ -275,6 +275,13 @@ body {
     border-radius: 999px;
 }
 
+.status-ready {
+    color: #0f5f51;
+    background: #dff7ef;
+    border: 1px solid #9fd9cc;
+    border-radius: 999px;
+}
+
 .chat-card,
 .upload-dropzone {
     padding: 1rem;

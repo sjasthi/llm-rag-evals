@@ -29,8 +29,8 @@ work.
 | --- | --- | --- |
 | FP3 | Finalize requirements, project plan, UX direction, code structure, and starter page | `requirements.md`, FP3 documents, responsive `index.php` |
 | FP4 | Establish application shell and database foundation | Shared layout, environment configuration, MySQL schema, database connection test |
-| FP5 | Implement Metro State document management | Upload/list/delete workflow, metadata persistence, sample public documents |
-| FP6 | Build the baseline RAG pipeline | Text extraction, chunking, embeddings, retrieval, question-answer page with sources |
+| FP5 | Implement the core non-GUI RAG round trip | MySQL/ChromaDB ingestion, semantic retrieval, grounded CLI answer with stored sources |
+| FP6 | Connect grounded answers to the web application | PHP question form, answer/source display, validation and response history |
 | FP7 | Create the evaluation test set and baseline metrics | Managed questions/expected answers, exact match and semantic similarity results |
 | FP8 | Add advanced evaluation and comparison features | LLM-as-judge or RAGAS-style metrics, configuration comparison, stored runs |
 | FP9 | Complete dashboard, reports, and system testing | Charts/tables, recommendations, accessibility/security checks, resolved defects |

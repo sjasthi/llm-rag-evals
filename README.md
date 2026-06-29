@@ -6,32 +6,41 @@ documents.
 
 ## Current Status
 
-FP4 establishes the backend-ready project foundation. The frontend workspace
-loads through PHP and now reflects the local Metro State document set. Shared
-layout files, environment configuration, an initial MySQL schema, storage
-folders, and Python RAG helper scripts have been added.
+FP5 implements the core document ingestion and retrieval pipeline. The 27 local
+Metro State documents are split into 77 chunks, tracked in MySQL, embedded with
+the free local `all-MiniLM-L6-v2` model, and persisted in ChromaDB. The query
+helper supports Chroma semantic retrieval with lexical reranking as well as the
+earlier keyword baseline. `rag/answer.py` completes the non-GUI RAG round trip
+by sending retrieved context to Gemini, returning a grounded answer with
+sources, and saving the response and retrieved contexts in MySQL.
 
-Full LLM calls, ChromaDB embedding persistence, evaluation runs, and dashboard
-results are planned for later iterations.
+The PHP Ask interface now uses that verified workflow through a server-side
+JSON endpoint. Users can submit a question in the browser, view the grounded
+answer and ranked source excerpts, and see the model, latency, and saved
+response ID.
+
+Document administration, evaluation runs, and dashboard results are planned for
+later iterations.
 
 ## Technology Stack
 
 - HTML, CSS, JavaScript, jQuery, and Bootstrap
 - PHP
 - MySQL
-- Python helper scripts for RAG ingestion and retrieval preparation
-- ChromaDB planned for vector storage
-- Any approved LLM provider, such as OpenAI/ChatGPT, Gemini, or Claude
+- Python helper scripts for RAG ingestion and retrieval
+- ChromaDB for local vector storage using `all-MiniLM-L6-v2`
+- Gemini 2.5 Flash for the initial grounded answer implementation
 
 ## Prerequisites
 
 - PHP installed and available from the terminal
 - Python 3 installed and available from the terminal
-- MySQL installed for later database testing
+- MySQL 8 installed and running
+- PHP PDO MySQL extension enabled
+- PHP `proc_open` enabled so the Ask endpoint can run the Python helper
 
-The current frontend page does not require a database connection or API key to
-open. Those are needed in later iterations when ingestion, retrieval, and LLM
-calls are connected.
+Ingestion and retrieval do not require an API key. The grounded answer command
+requires a Gemini API key stored in the ignored `.env` file.
 
 ## Open the Frontend
 
@@ -54,12 +63,80 @@ Expected result:
 - The dashboard shows the current Metro State source document count.
 - The dashboard shows the number of document categories.
 - The page identifies the stack as PHP + MySQL + ChromaDB.
+- The Ask section accepts questions and displays a Gemini answer with sources.
 
 To stop the PHP server, return to the terminal and press `Ctrl+C`.
 
-## FP4 Verification Commands
+The browser Ask form posts to `api/ask.php`. The endpoint validates the
+question, runs the project virtual environment's `rag/answer.py --json`, and
+returns structured answer/source data without exposing the Gemini key to the
+browser.
 
-Run these from the project root.
+## FP5 Setup
+
+Run these commands from the project root:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r rag\requirements.txt
+Copy-Item .env.example .env
+```
+
+Edit `.env` with the local MySQL connection values and set `GEMINI_API_KEY` or
+`LLM_API_KEY` for answer generation. Start MySQL, then create the schema and
+ingest both storage layers:
+
+```powershell
+python rag\ingest.py --init-schema
+```
+
+The first run downloads the local embedding model. Expected final output:
+
+```text
+Prepared 77 chunks from 27 text documents (chunk size 800, overlap 100).
+MySQL now contains 27 documents and 77 chunks.
+ChromaDB collection now contains 77 embedded chunks.
+```
+
+Rerunning the same command replaces the existing chunk records instead of
+creating duplicates.
+
+## FP5 Verification Commands
+
+Check the semantic retrieval path:
+
+```powershell
+python rag\query.py "When does Fall 2026 registration begin?" --top-k 3
+```
+
+The first result should be chunk 0 from
+`data/metrostate_documents/academic_calendar/fall_2026.txt` and should state
+that registration begins Monday, March 23, 2026. Chroma distance is shown with
+each result; lower distance indicates a closer vector match. The lexical score
+is used to rerank Chroma candidates when exact terms and phrases matter.
+
+Check the retained keyword baseline:
+
+```powershell
+python rag\query.py "When does Fall 2026 registration begin?" --retrieval keyword --top-k 3
+```
+
+Run the complete retrieval-to-answer flow:
+
+```powershell
+python rag\answer.py "When does Fall 2026 registration begin?"
+```
+
+The command retrieves Chroma context, asks Gemini to answer only from that
+context, displays the sources, and saves the answer, settings, latency, and
+retrieved chunk links in MySQL. Use `--dry-run` to inspect the prompt without an
+API call, `--no-save` to skip persistence, or `--json` for machine-readable
+output.
+
+The live FP5 verification confirmed both behaviors: an answerable registration
+question returned March 23, 2026 with the correct calendar source, and an
+unsupported question returned the configured “not enough information” refusal.
 
 Check PHP syntax:
 
@@ -69,31 +146,14 @@ php -l config\env.php
 php -l config\database.php
 ```
 
-Check the Python document chunking helper:
+Run the Python unit tests:
 
 ```powershell
-python rag\ingest.py
+python -m unittest discover -s tests -v
 ```
 
-Expected output:
-
-```text
-Prepared 77 chunks from 27 text documents.
-Embedding generation and ChromaDB persistence will be added in FP5.
-```
-
-Check the temporary keyword retrieval helper:
-
-```powershell
-python rag\query.py "When does Fall 2026 registration begin?" --top-k 3
-```
-
-Expected result:
-
-- The first result should come from
-  `data/metrostate_documents/academic_calendar/fall_2026.txt`.
-- The result should mention that Fall 2026 registration begins in eServices on
-  Monday, March 23, 2026.
+The current suite contains ten tests covering chunking, stable IDs, retrieval
+reranking, grounded prompts, refusal instructions, and answer orchestration.
 
 ## Database Schema
 
@@ -114,13 +174,12 @@ It defines tables for:
 - retrieved contexts
 - evaluation scores
 
-This schema is included for FP4 review. The current frontend can open without
-importing the schema.
+`rag/ingest.py --init-schema` imports this schema and safely applies the FP5
+ingestion columns to an earlier FP4 database.
 
 ## Configuration
 
-Copy `.env.example` to `.env` for local secrets when database or LLM work is
-enabled in later iterations.
+Copy `.env.example` to `.env` for local database values and the Gemini key.
 
 Do not commit `.env`.
 

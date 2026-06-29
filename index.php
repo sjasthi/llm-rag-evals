@@ -93,9 +93,9 @@ require __DIR__ . '/includes/header.php';
                     <div>
                         <h2>Project Snapshot</h2>
                         <p>
-                            This application will support document ingestion, RAG question answering,
-                            evaluation runs, and comparison between MySQL keyword retrieval and
-                            ChromaDB vector retrieval.
+                            This application supports document ingestion and grounded RAG question
+                            answering. Evaluation runs and retrieval-configuration comparisons are
+                            planned for later iterations.
                         </p>
                     </div>
                 </div>
@@ -131,36 +131,63 @@ require __DIR__ . '/includes/header.php';
                             <span class="panel-kicker">Ask</span>
                             <h2>Question Answering</h2>
                         </div>
-                        <span class="status status-planned">FP6</span>
+                        <span class="status status-ready">Live</span>
                     </div>
 
-                    <div class="chat-card">
+                    <form class="chat-card" id="askForm">
                         <label class="form-label" for="questionInput">Question</label>
                         <textarea
                             class="form-control"
                             id="questionInput"
+                            name="question"
                             rows="4"
-                            disabled
+                            maxlength="2000"
+                            required
                             placeholder="Ask a question about Metro State documents..."
                         ></textarea>
                         <div class="d-flex flex-wrap gap-2 mt-3">
-                            <button class="btn btn-primary" type="button" disabled>Ask question</button>
-                            <button class="btn btn-outline-secondary" type="button" disabled>Clear</button>
+                            <button class="btn btn-primary" id="askButton" type="submit">
+                                Ask question
+                            </button>
+                            <button class="btn btn-outline-secondary" id="clearQuestionButton" type="button">
+                                Clear
+                            </button>
                         </div>
-                    </div>
+                    </form>
 
                     <div class="suggestions" aria-label="Sample questions">
                         <?php foreach ($sampleQuestions as $question): ?>
-                            <button type="button" disabled><?= h($question) ?></button>
+                            <button
+                                class="suggestion-button"
+                                type="button"
+                                data-question="<?= h($question) ?>"
+                            ><?= h($question) ?></button>
                         <?php endforeach; ?>
                     </div>
 
-                    <div class="answer-preview">
-                        <span class="preview-label">Answer preview</span>
-                        <p>
-                            Once implemented, this area will show the generated answer, retrieved
-                            source documents, and settings used for the response.
-                        </p>
+                    <div class="answer-preview" id="answerPanel" aria-live="polite">
+                        <div id="answerEmptyState">
+                            <span class="preview-label">Grounded answer</span>
+                            <p>Submit a question to see a Gemini answer and the Metro State sources used.</p>
+                        </div>
+
+                        <div class="answer-loading" id="answerLoadingState" hidden>
+                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                            <span>Retrieving sources and generating an answer...</span>
+                        </div>
+
+                        <div class="alert alert-danger mb-0" id="answerErrorState" role="alert" hidden></div>
+
+                        <div id="answerResult" hidden>
+                            <span class="preview-label">Grounded answer</span>
+                            <p class="answer-copy" id="answerText"></p>
+                            <div class="answer-meta" id="answerMeta"></div>
+
+                            <div class="source-results">
+                                <h3>Retrieved sources</h3>
+                                <div class="source-list" id="sourceList"></div>
+                            </div>
+                        </div>
                     </div>
                 </section>
 

@@ -15,6 +15,7 @@ llm-rag-evals/
 |-- includes/
 |-- pages/
 |-- api/
+|   `-- ask.php
 |-- database/
 |   |-- migrations/
 |   `-- seeds/
@@ -25,8 +26,13 @@ llm-rag-evals/
 |   `-- Evaluation/
 |-- rag/
 |   |-- chroma/
+|   |-- answer.py
+|   |-- database.py
 |   |-- ingest.py
+|   |-- llm.py
 |   |-- query.py
+|   |-- settings.py
+|   |-- vector_store.py
 |   `-- requirements.txt
 |-- storage/
 |   |-- uploads/
@@ -47,8 +53,8 @@ placeholder directories are unnecessary.
 - `api/`: PHP endpoints used by jQuery or other asynchronous requests.
 - `database/`: versioned schema changes and non-sensitive sample data.
 - `src/`: application and domain logic, separated from page markup.
-- `rag/`: Python helper layer for ChromaDB ingestion, embeddings, retrieval,
-  and optional advanced evaluation scripts.
+- `rag/`: Python helper layer for MySQL/ChromaDB ingestion, embeddings,
+  retrieval, grounded answer generation, and optional advanced evaluation.
 - `storage/`: generated files, uploads, and logs; private content is not committed.
 - `tests/`: automated tests and stable evaluation fixtures.
 - `docs/`: planning, architecture, UX, and setup documentation.

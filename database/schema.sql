@@ -4,7 +4,7 @@ CREATE DATABASE IF NOT EXISTS llm_rag_evals
 
 USE llm_rag_evals;
 
-CREATE TABLE documents (
+CREATE TABLE IF NOT EXISTS documents (
     document_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     category VARCHAR(100) NOT NULL,
@@ -12,13 +12,16 @@ CREATE TABLE documents (
     source_type VARCHAR(50) NOT NULL DEFAULT 'txt',
     status ENUM('pending', 'ingested', 'failed', 'archived') NOT NULL DEFAULT 'pending',
     source_hash CHAR(64) NULL,
+    chunk_size INT UNSIGNED NULL,
+    chunk_overlap INT UNSIGNED NULL,
+    ingestion_error TEXT NULL,
     imported_at TIMESTAMP NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_documents_source_path (source_path)
 );
 
-CREATE TABLE document_chunks (
+CREATE TABLE IF NOT EXISTS document_chunks (
     chunk_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     document_id BIGINT UNSIGNED NOT NULL,
     chunk_index INT UNSIGNED NOT NULL,
@@ -27,12 +30,13 @@ CREATE TABLE document_chunks (
     chroma_id VARCHAR(255) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_document_chunks_document_index (document_id, chunk_index),
+    UNIQUE KEY uq_document_chunks_chroma_id (chroma_id),
     CONSTRAINT fk_document_chunks_document
         FOREIGN KEY (document_id) REFERENCES documents (document_id)
         ON DELETE CASCADE
 );
 
-CREATE TABLE evaluation_questions (
+CREATE TABLE IF NOT EXISTS evaluation_questions (
     question_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     question_text TEXT NOT NULL,
     expected_answer TEXT NOT NULL,
@@ -43,7 +47,7 @@ CREATE TABLE evaluation_questions (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-CREATE TABLE model_settings (
+CREATE TABLE IF NOT EXISTS model_settings (
     setting_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     setting_name VARCHAR(120) NOT NULL,
     retrieval_method ENUM('mysql_keyword', 'chroma_vector') NOT NULL,
@@ -54,10 +58,11 @@ CREATE TABLE model_settings (
     chunk_overlap INT UNSIGNED NULL,
     top_k INT UNSIGNED NOT NULL DEFAULT 5,
     temperature DECIMAL(3,2) NOT NULL DEFAULT 0.00,
+    top_p DECIMAL(3,2) NOT NULL DEFAULT 1.00,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE evaluation_runs (
+CREATE TABLE IF NOT EXISTS evaluation_runs (
     run_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     setting_id BIGINT UNSIGNED NOT NULL,
     run_name VARCHAR(160) NOT NULL,
@@ -70,9 +75,10 @@ CREATE TABLE evaluation_runs (
         FOREIGN KEY (setting_id) REFERENCES model_settings (setting_id)
 );
 
-CREATE TABLE rag_responses (
+CREATE TABLE IF NOT EXISTS rag_responses (
     response_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     run_id BIGINT UNSIGNED NULL,
+    setting_id BIGINT UNSIGNED NULL,
     question_id BIGINT UNSIGNED NULL,
     question_text TEXT NOT NULL,
     answer_text MEDIUMTEXT NOT NULL,
@@ -83,12 +89,15 @@ CREATE TABLE rag_responses (
     CONSTRAINT fk_rag_responses_run
         FOREIGN KEY (run_id) REFERENCES evaluation_runs (run_id)
         ON DELETE SET NULL,
+    CONSTRAINT fk_rag_responses_setting
+        FOREIGN KEY (setting_id) REFERENCES model_settings (setting_id)
+        ON DELETE SET NULL,
     CONSTRAINT fk_rag_responses_question
         FOREIGN KEY (question_id) REFERENCES evaluation_questions (question_id)
         ON DELETE SET NULL
 );
 
-CREATE TABLE retrieved_contexts (
+CREATE TABLE IF NOT EXISTS retrieved_contexts (
     context_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     response_id BIGINT UNSIGNED NOT NULL,
     document_id BIGINT UNSIGNED NULL,
@@ -108,7 +117,7 @@ CREATE TABLE retrieved_contexts (
         ON DELETE SET NULL
 );
 
-CREATE TABLE evaluation_scores (
+CREATE TABLE IF NOT EXISTS evaluation_scores (
     score_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     response_id BIGINT UNSIGNED NOT NULL,
     exact_match_score DECIMAL(5,4) NULL,

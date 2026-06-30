@@ -15,7 +15,9 @@ llm-rag-evals/
 |-- includes/
 |-- pages/
 |-- api/
-|   `-- ask.php
+|   |-- ask.php
+|   |-- documents.php
+|   `-- evaluations.php
 |-- database/
 |   |-- migrations/
 |   `-- seeds/
@@ -28,6 +30,8 @@ llm-rag-evals/
 |   |-- chroma/
 |   |-- answer.py
 |   |-- database.py
+|   |-- document_loader.py
+|   |-- evaluate.py
 |   |-- ingest.py
 |   |-- llm.py
 |   |-- query.py
@@ -50,11 +54,13 @@ placeholder directories are unnecessary.
 - `config/`: configuration loading; secrets remain in ignored environment files.
 - `includes/`: reusable page layout such as header, navigation, and footer.
 - `pages/`: page controllers/templates reached through the web interface.
-- `api/`: PHP endpoints used by jQuery or other asynchronous requests.
+- `api/`: validated PHP endpoints used by jQuery or other asynchronous
+  requests, including Ask, document upload/management, and evaluation runs.
 - `database/`: versioned schema changes and non-sensitive sample data.
 - `src/`: application and domain logic, separated from page markup.
-- `rag/`: Python helper layer for MySQL/ChromaDB ingestion, embeddings,
-  retrieval, grounded answer generation, and optional advanced evaluation.
+- `rag/`: Python helper layer for TXT/PDF/DOCX text extraction,
+  MySQL/ChromaDB ingestion, embeddings, retrieval, grounded answer generation,
+  and evaluation metrics/experiments.
 - `storage/`: generated files, uploads, and logs; private content is not committed.
 - `tests/`: automated tests and stable evaluation fixtures.
 - `docs/`: planning, architecture, UX, and setup documentation.
@@ -68,8 +74,34 @@ placeholder directories are unnecessary.
 - Use `camelCase` for methods/variables and `PascalCase` for classes.
 - Escape rendered data with `htmlspecialchars`.
 - Validate input at the request boundary.
+- For uploads, validate PHP upload status, extension, MIME type, size, and the
+  parser result; generate server-controlled storage names.
 - Use PDO prepared statements for every database query.
 - Keep SQL, API calls, and business logic out of presentation templates.
+
+### Python Document Processing
+
+- Keep format-specific extraction in one loader module that returns normalized
+  text and metadata to the common ingestion pipeline.
+- Support `.txt`, text-based `.pdf`, and `.docx` first; do not silently treat a
+  scanned image PDF as successfully parsed text.
+- Never execute macros, embedded objects, or uploaded content.
+- Preserve the original filename for display but use a server-controlled path
+  for storage.
+- Make replace/re-ingest idempotent so a document cannot leave duplicate MySQL
+  chunks or ChromaDB vectors.
+- Unit test parsers with small non-sensitive fixtures.
+
+### Evaluation and Research
+
+- Store raw per-question metric results rather than only aggregate scores.
+- Record the exact question set, corpus variant, RAG settings, metric version,
+  and judge model/prompt used for each run.
+- Keep deterministic metrics separate from model-judged metrics.
+- Represent metric disagreement and failure categories explicitly so results
+  can be audited.
+- Do not encode a universal "best" metric in application logic; recommendations
+  must depend on the documented research purpose.
 
 ### HTML, CSS, and JavaScript
 

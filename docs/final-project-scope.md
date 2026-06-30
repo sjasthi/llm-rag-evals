@@ -6,34 +6,57 @@ LLM RAG Evaluation Project
 
 ## One-Sentence Definition
 
-This project is a PHP/MySQL web application that evaluates how well different
-RAG configurations answer Metro State questions using retrieved source
-documents.
+This project is a PHP/MySQL research application for running repeatable RAG
+experiments, comparing the usefulness of evaluation metrics, and studying how
+retrieval and document-collection choices affect grounded Metro State answers.
 
 ## Project Purpose
 
-The purpose is not simply to build a chatbot. The purpose is to build a small
-RAG evaluation system that can answer this question:
+The purpose is not simply to build a chatbot or finish a one-time semester
+application. The application is the research instrument used to answer these
+questions:
 
-> Which RAG configuration gives the most accurate, source-grounded answers for
-> Metro State questions?
+> What do different RAG evaluation metrics reveal, which problems does each
+> metric detect, where can each metric be misleading, and how are the results
+> affected by the document collection and RAG configuration?
 
 The final product should help:
 
-- business users or managers understand which approach performs better,
-- developers understand which settings improve or weaken the RAG pipeline, and
-- the developer demonstrate a repeatable evaluation process.
+- business users or managers understand which evidence is useful for a
+  particular decision,
+- developers distinguish ingestion, retrieval, and generation failures,
+- researchers understand where metrics agree or disagree, and
+- future developers reproduce and extend the experiments.
+
+The final report should recommend metrics for specific uses. It should not
+claim that one metric, provider, or configuration is universally best.
 
 ## Final Product Goal
 
 By the final submission, the application should let a user:
 
-1. Manage a small set of Metro State documents.
+1. Upload and manage TXT, text-based PDF, and DOCX Metro State documents.
 2. Ask questions against those documents.
 3. See generated answers with retrieved sources.
-4. Run a fixed evaluation set of Metro State questions.
-5. Compare at least two RAG configurations or evaluation methods.
-6. View a summary showing which configuration performed best.
+4. Run a reviewed evaluation set containing at least 25 Metro State questions.
+5. Apply multiple evaluation metrics to the same stored responses.
+6. Compare retrieval/configuration and collection-size experiments.
+7. Inspect metric disagreements and categorized failure cases.
+8. View findings explaining which metrics are useful for which purposes.
+
+## Research Contribution
+
+The expected contribution is a documented, reproducible evaluation method and
+the findings produced with it. The project should leave behind:
+
+- a reviewed evaluation question set with expected answers and sources;
+- response, context, setting, latency, and score records that can be audited;
+- an explanation of each implemented metric's usefulness and limitations;
+- comparisons showing metric agreement and disagreement;
+- evidence separating retrieval failures from answer-generation failures;
+- a controlled experiment on document-collection size or composition; and
+- limitations and future questions for organizations with hundreds, thousands,
+  or millions of documents.
 
 ## What Is Being Evaluated
 
@@ -56,7 +79,8 @@ the results are comparable.
 
 ## Primary Evaluation Focus
 
-The primary focus is RAG behavior:
+The primary focus is RAG behavior and the behavior of the metrics used to
+measure it:
 
 - Did the system retrieve the correct source chunks?
 - Did the generated answer match the expected answer?
@@ -65,6 +89,11 @@ The primary focus is RAG behavior:
 - Which configuration is most useful for this document set?
 - How do MySQL-based retrieval and ChromaDB-based retrieval compare for this
   project dataset?
+- Do exact match, semantic similarity, source accuracy, and groundedness agree
+  on which responses are successful?
+- Which failure types does each metric detect or miss?
+- Does adding more or more-similar documents change source ranking, answer
+  quality, refusal behavior, latency, or metric agreement?
 
 This is the core of the project.
 
@@ -150,15 +179,20 @@ Shows:
 - latency,
 - estimated API cost if available,
 - per-question failures,
-- best-performing configuration.
+- metric agreement/disagreement,
+- results grouped by configuration and corpus variant.
 
 ### 7. Report
 
 Summarizes findings in plain language:
 
-- which configuration performed best,
+- which configurations performed better for the tested goals and conditions,
+- which metrics provided useful or misleading evidence,
 - which questions failed,
+- whether failures originated in parsing, retrieval, generation, expected data,
+  or scoring,
 - what trade-offs were observed,
+- which conclusions are limited to the tested corpus,
 - recommended next steps.
 
 ## Minimum Required Features
@@ -171,19 +205,27 @@ The project should be considered successful if it implements:
 4. Similarity retrieval.
 5. Answer generation from retrieved context.
 6. Source display.
-7. Gold question dataset.
-8. At least two evaluation methods or two RAG configurations.
-9. Stored evaluation results.
-10. Results comparison table or dashboard.
+7. A manually reviewed dataset of at least 25 questions covering the current
+   categories and including unanswerable cases.
+8. Multiple metrics that separately measure answer, retrieval/source, and
+   grounding or refusal behavior.
+9. Stored per-question evaluation results and run settings.
+10. At least one controlled retrieval/configuration comparison.
+11. A controlled document-collection size or composition comparison.
+12. Results and failure-analysis views that explain metric usefulness.
+13. TXT, text-based PDF, and DOCX ingestion through the document interface.
 
 ## Preferred Focused Final Scope
 
 The preferred final scope is intentionally focused on the evaluation goal:
 
-- 10-20 Metro State documents.
-- 30-50 evaluation questions.
-- TXT/cleaned text support first.
-- PDF/DOCX support if time allows.
+- The existing 27 Metro State documents as the initial baseline, with approved
+  additions when they support a research experiment.
+- At least 25 reviewed evaluation questions, expanded when additional questions
+  improve category, document, difficulty, or failure-mode coverage.
+- Browser-based TXT, text-based PDF, and DOCX upload and ingestion.
+- No requirement to reproduce enterprise scale locally; use controlled document
+  subsets/additions and state the limits of extrapolating to very large corpora.
 - One main LLM provider working end-to-end.
 - Optional second provider if it helps demonstrate provider trade-offs.
 - No full authentication unless required; this is expected to be a local class
@@ -228,7 +270,10 @@ The final demo should show:
 5. The retrieved sources.
 6. An evaluation run or stored evaluation results.
 7. A comparison between two configurations.
-8. A conclusion explaining which configuration performed better and why.
+8. Cases where metrics agree and disagree.
+9. A corpus-size or composition comparison.
+10. A conclusion explaining which metrics are useful for particular decisions,
+    what failed, and what cannot yet be generalized.
 
 ## Example Final Comparison
 

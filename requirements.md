@@ -2,7 +2,7 @@
 
 ## 1. Project Overview
 
-The goal of this project is to build a web-based application for evaluating Retrieval-Augmented Generation (RAG) approaches using Metrostate documents as the example knowledge base.
+The goal of this project is to build a web-based research application for evaluating Retrieval-Augmented Generation (RAG) approaches using Metrostate documents as the example knowledge base. The application is the experimental instrument; the final contribution includes what the experiments teach about metric usefulness, failure modes, and the effects of document-collection size and composition.
 
 The system will allow users to upload or manage Metrostate-related documents, ask questions against those documents, generate AI-assisted responses using approved LLM providers such as OpenAI/ChatGPT, Gemini, or Claude, and compare different RAG evaluation approaches. The project is intended to help business users, managers, and developers understand which RAG approach or evaluation framework is most useful for informed decision making.
 
@@ -109,8 +109,13 @@ The application should answer questions such as:
 * Did the generated answer correctly answer the user’s question?
 * Was the answer faithful to the retrieved context?
 * Did the answer include unsupported or hallucinated information?
-* Which evaluation method gives the most useful results for business users and developers?
+* Which evaluation method gives the most useful results for a specific business, development, or research purpose?
+* Where do evaluation metrics agree or disagree on the same response?
+* Which retrieval or generation failures does each metric detect or miss?
+* How does document-collection size or composition affect retrieval and evaluation results?
 * Which RAG configuration produces better responses?
+
+The project shall not assume that one evaluation metric or configuration is universally best. Conclusions shall identify the corpus, questions, settings, metrics, and limitations behind each finding.
 
 ---
 
@@ -143,9 +148,9 @@ The system shall allow admin users to upload Metrostate documents.
 
 The system shall support common document formats such as:
 
-* PDF
 * TXT
-* DOCX, if supported
+* Text-based PDF
+* DOCX
 * HTML or copied webpage text, if supported
 
 The system shall store document metadata in MySQL, including:
@@ -163,6 +168,10 @@ The system shall allow admin users to view uploaded documents.
 The system shall allow admin users to delete or replace uploaded documents.
 
 The system shall prepare uploaded documents for RAG processing.
+
+The browser upload workflow shall validate extension, MIME type, file size, upload status, and parser output. Uploaded filenames shall not be trusted as server storage names. The system shall reject encrypted, unreadable, empty, or unsupported files with a clear error and record ingestion failures for diagnosis.
+
+TXT, PDF, and DOCX inputs shall be converted into normalized text and then use the same chunking, metadata, MySQL, and ChromaDB ingestion path. Scanned-image PDF OCR is optional unless separately required.
 
 ---
 
@@ -236,7 +245,16 @@ Each test question should include:
 * Category or topic
 * Difficulty level, if needed
 
-The project should include a set of sample Metrostate-related test questions.
+The project shall begin with at least 25 manually reviewed Metrostate-related test questions. Twenty-five is a starting target, not a fixed ratio between questions and documents. Additional questions shall be added when they improve category, document, difficulty, answerability, or failure-mode coverage.
+
+The initial test set shall:
+
+* Cover all current document categories
+* Include answerable and deliberately unanswerable questions
+* Include factual dates, amounts, requirements, and policy questions
+* Store a verified expected answer and expected source for answerable questions
+* Store answerability, category, and difficulty metadata
+* Avoid redundant questions unless repetition supports a documented experiment
 
 The test set will be used to compare RAG performance across different settings and evaluation methods.
 
@@ -245,6 +263,8 @@ The test set will be used to compare RAG performance across different settings a
 ## 6.6 RAG Evaluation Methods
 
 The system shall support multiple evaluation methods for comparing actual generated answers against expected answers and retrieved context.
+
+The same stored responses should be scored by multiple methods so metric results can be compared directly. The system shall preserve per-question scores and should identify cases where metrics disagree. Metric documentation shall explain what each method measures, its intended use, and its limitations.
 
 Possible evaluation methods include:
 
@@ -356,11 +376,15 @@ The system should generate summary reports for business users and managers.
 
 Reports should explain:
 
-* Which RAG approach performed best
-* Which evaluation framework was most useful
+* Which RAG approach performed better for the tested corpus and settings
+* Which evaluation framework was useful for each specific purpose
+* Where evaluation metrics agreed or disagreed
+* Which problems each metric detected or missed
 * Which settings improved answer quality
 * Which settings caused weaker results
 * Common failure cases
+* What was learned from document-collection size or composition experiments
+* Which conclusions cannot be generalized to enterprise-scale collections
 * Recommendations for future development
 
 Reports may include tables, charts, or summary text.
@@ -474,7 +498,9 @@ Database queries should use prepared statements to reduce SQL injection risk.
 
 ## 8.5 Performance
 
-The application should handle a reasonable number of Metrostate documents and test questions.
+The application should handle a reasonable number of Metrostate documents and test questions on a local development machine.
+
+The research shall recognize that organizations may search hundreds to millions of documents. The local project is not required to reproduce enterprise scale, but it shall support a controlled comparison between document subsets or differently composed collections and report how retrieval quality, answer quality, latency, and metric behavior change.
 
 The system should avoid unnecessary repeated API calls when possible.
 
@@ -499,7 +525,10 @@ The project will be considered successful if:
 * The system can run evaluation tests against expected answers.
 * The system compares at least two RAG evaluation methods.
 * The system stores evaluation results in MySQL.
-* The dashboard or report helps users understand which RAG approach performed better.
+* At least 25 reviewed questions cover the current categories and answerability cases.
+* TXT, text-based PDF, and DOCX documents can enter the common ingestion pipeline through the browser workflow.
+* The dashboard or report explains metric usefulness, metric disagreement, failure cases, and configuration results.
+* A controlled collection-size or collection-composition experiment is reproducible and its limits are documented.
 * The application provides a useful starting point for future developers.
 
 ---
@@ -551,6 +580,21 @@ Example:
 * Other supported model provider
 * Local model, if supported
 
+### Experiment 5: Document Collection Size and Composition
+
+Run the same applicable questions against reproducible document collections, such as a focused subset and the full current collection. If additional approved documents are available, include a larger collection or add similar distractor documents.
+
+Compare:
+
+* Expected-source hit rate and rank
+* Irrelevant-context rate
+* Answer correctness and faithfulness
+* Refusal correctness
+* Latency
+* Agreement and disagreement between evaluation metrics
+
+The results shall be presented as evidence from the tested collections, not as proof of behavior at millions-of-documents scale.
+
 ---
 
 ## 11. Project Scope
@@ -561,6 +605,7 @@ The following items are in scope:
 
 * Web-based application
 * Metrostate document upload and management
+* TXT, text-based PDF, and DOCX parsing
 * RAG question-answering system
 * Approved LLM provider integration
 * MySQL storage
@@ -568,6 +613,9 @@ The following items are in scope:
 * Evaluation dashboard
 * Comparison of RAG approaches
 * Reports for business users and developers
+* At least 25 reviewed evaluation questions
+* Metric-usefulness and metric-disagreement analysis
+* Controlled document-collection size or composition experiments
 
 ## 11.2 Out of Scope
 
@@ -590,13 +638,11 @@ The following questions should be clarified with the professor:
 1. Should the project port more from RagWorks or Student Compass?
 2. Should the final app require user login, or can it be a simple admin/user interface without authentication?
 3. Which Metrostate documents should be used first?
-4. How many evaluation questions are required?
-5. Which evaluation frameworks are required versus optional?
-6. Should RAGAS or DeepEval be integrated directly, or should the project implement simplified versions of those metrics?
-7. Should the application call LLM provider APIs directly from PHP, or should PHP call a separate helper script or service?
-8. What is the minimum expected dashboard/report for the final submission?
-9. Should the project focus more on business decision-making reports or developer implementation structure?
-10. Are charts required, or are tables and written summaries enough?
+4. Which evaluation frameworks beyond the initial baseline metrics are required versus optional?
+5. Should RAGAS or DeepEval be integrated directly, or should the project implement selected comparable metrics?
+6. What is the minimum expected dashboard/report for the final submission?
+7. Are charts required, or are tables and written summaries enough?
+8. Is scanned-PDF OCR required, or are text-based PDFs sufficient?
 
 ---
 
@@ -604,16 +650,16 @@ The following questions should be clarified with the professor:
 
 The initial MVP should include:
 
-1. Upload Metrostate documents
+1. Upload TXT, text-based PDF, and DOCX Metrostate documents
 2. Store document metadata in MySQL
 3. Chunk document text
-4. Generate embeddings using an API
+4. Generate embeddings using the configured local or provider model
 5. Retrieve relevant chunks for a question
 6. Generate an answer using an LLM API
 7. Display answer and sources
 8. Store question, answer, context, and settings
-9. Run a small evaluation set
-10. Display evaluation results in a simple table or dashboard
+9. Run the reviewed evaluation set with multiple metrics
+10. Display per-question and aggregate results in a table or dashboard
 
 ---
 
@@ -623,11 +669,11 @@ Possible future enhancements include:
 
 * More advanced RAG evaluation frameworks
 * More model providers
-* Better document parsing
+* OCR for scanned PDFs and additional document formats
 * Visual charts for evaluation results
 * User feedback buttons
 * Human evaluation workflow
 * Exportable reports
 * Admin authentication
 * Side-by-side model comparison
-* Automated recommendations for best RAG settings
+* Automated, purpose-specific recommendations with documented evidence

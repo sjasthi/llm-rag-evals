@@ -11,7 +11,8 @@ Reuse these concepts:
 - Admin document upload, listing, replacement, and deletion.
 - Document parsing, chunking, embedding, and retrieval.
 - Answers constrained to retrieved context with source citations.
-- A gold test set of approximately 50 Metro State questions and expected answers.
+- A gold test set starting with at least 25 reviewed Metro State questions,
+  expected answers, expected sources, and answerability labels.
 - Configurable chunk size, overlap, top-k, temperature, and top-p.
 - Stored evaluation runs and a comparison table.
 - Separate fast evaluation and deeper RAG-specific evaluation.
@@ -72,6 +73,12 @@ PHP + Bootstrap application
 PHP remains the main application server. Python handles the RAG layer because
 the reference projects use ChromaDB and ChromaDB is easiest to operate from
 Python. MySQL stores structured application data and evaluation results.
+
+Format-specific text extraction should also remain in Python. TXT, PDF, and
+DOCX parsers should return one normalized document representation so the
+existing chunking and persistence logic does not branch by file format. Use
+`pypdf` for text-based PDFs and `python-docx` for DOCX initially. Treat OCR for
+scanned PDFs as a separate enhancement.
 
 ## Storage Recommendation
 
@@ -149,7 +156,7 @@ Clarify whether:
 
 ## Development Sequence
 
-### Phase 1: Prove Retrieval Without a Web Interface
+### Phase 1: Prove Retrieval and Grounded Answers
 
 1. Select 3-5 public Metro State text documents.
 2. Parse and chunk the documents.
@@ -160,25 +167,44 @@ Clarify whether:
 
 This proves the complete RAG round trip before UI work expands.
 
-### Phase 2: Create the Gold Dataset
+Status: completed in FP5, including the PHP Ask workflow, MySQL persistence,
+and source display.
 
-1. Collect approximately 20 approved public Metro State documents.
-2. Write approximately 50 answerable questions.
-3. Record a concise expected answer and correct source for each question.
-4. Include some questions that cannot be answered from the documents.
+### Phase 2: Add Multi-Format Document Administration
+
+1. Add browser upload/list/replace controls.
+2. Validate TXT, PDF, and DOCX uploads in PHP.
+3. Extract normalized text in Python.
+4. Send parsed documents through the existing chunking, MySQL, and ChromaDB
+   ingestion path.
+5. Display ingestion status, chunk count, and actionable parsing errors.
+
+This is the primary FP6 implementation target because the Ask page planned for
+FP6 was completed early during FP5.
+
+### Phase 3: Create the Gold Dataset
+
+1. Start from the current 27 approved Metro State documents.
+2. Write at least 25 manually reviewed questions, expanding the set when more
+   questions improve research coverage.
+3. Cover all categories and multiple types of factual or policy questions.
+4. Record a concise expected answer, correct source, category, difficulty, and
+   answerability for each question.
+5. Include deliberately unanswerable questions to measure correct refusal and
+   hallucination behavior.
 
 The test set is central to the project. Evaluation results are not meaningful
 without stable questions and expected answers.
 
-### Phase 3: Add the PHP Application
+### Phase 4: Add Evaluation Management to the PHP Application
 
 Implement three primary areas:
 
-- Ask: question input, answer, sources, and suggested questions.
-- Admin: upload/list/replace/delete documents and show chunk counts.
-- Evaluate: choose settings, run the gold questions, and compare results.
+- Questions: manage expected answers, sources, categories, and answerability.
+- Evaluate: choose settings, run selected gold questions, and persist results.
+- Results: compare metrics and inspect individual responses and contexts.
 
-### Phase 4: Add Evaluation Incrementally
+### Phase 5: Add Evaluation Incrementally
 
 Start with:
 
@@ -189,9 +215,14 @@ Start with:
 
 Then add:
 
-5. LLM-as-judge scoring.
-6. Faithfulness and answer relevancy.
-7. Optional RAGAS runs through an offline Python script.
+5. Refusal correctness for unanswerable questions.
+6. LLM-as-judge scoring.
+7. Faithfulness and answer relevancy.
+8. Optional selected RAGAS metrics through an offline Python script.
+
+Apply multiple metrics to the same stored responses. Record where metrics agree
+or disagree, and label whether each failure originated in parsing, retrieval,
+generation, expected data, or the metric itself.
 
 ## Minimum Comparison Experiment
 
@@ -215,13 +246,31 @@ For each configuration, store:
 
 Avoid running every possible combination at first. A full grid can create many
 paid API calls. Begin with a small question subset, then run the strongest
-configurations against all 50 questions.
+configurations against the full reviewed question set.
 
-## First Architecture Decision to Confirm
+## Corpus Size and Composition Experiment
 
-Ask the professor:
+The professor noted that organizational RAG collections may range from hundreds
+to millions of documents. This project should study that concern without
+claiming to reproduce enterprise infrastructure.
 
-> Since the required web stack is PHP and MySQL, may we use an offline Python
-> helper/service for ChromaDB ingestion and retrieval while keeping PHP as the
-> main application server? MySQL would store structured app data and results,
-> while ChromaDB would store chunks and embeddings.
+1. Define reproducible collections, such as a focused category subset and the
+   full 27-document corpus.
+2. If more approved documents become available, add a larger collection or
+   similar distractor documents.
+3. Keep questions and RAG settings fixed where applicable.
+4. Compare expected-source hit rate/rank, irrelevant contexts, answer quality,
+   refusal behavior, latency, and metric agreement.
+5. Report observations from the tested collections and explicitly limit any
+   extrapolation to enterprise scale.
+
+Do not assume the number of evaluation questions must grow at the same ratio as
+the number of documents. Increase the question set when it improves coverage of
+topics, document types, difficulty, answerability, or known failure modes.
+
+## Confirmed Architecture Direction
+
+PHP remains the main web application and Python handles parsing, ChromaDB,
+retrieval, generation, and advanced evaluation. MySQL stores structured app
+data and results, while ChromaDB stores chunks and embeddings. FP5 verified this
+architecture end to end through the PHP Ask page.

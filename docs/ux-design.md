@@ -10,7 +10,7 @@ developers to diagnose retrieval and answer-quality problems.
 
 | Stakeholder | Primary goal | Supported workflow |
 | --- | --- | --- |
-| Business user or manager | Decide which RAG configuration or evaluation approach is most useful | Open dashboard, compare runs, inspect summary metrics, read recommendation |
+| Business user or manager | Understand which evidence and metric are useful for a decision | Open dashboard, compare runs, inspect metric explanations and limitations, read findings |
 | Developer | Build and improve the RAG pipeline | Review configuration, run tests, inspect retrieved chunks, diagnose low scores |
 | Administrator | Maintain the knowledge base and test set | Upload documents, manage test questions, run evaluations, review history |
 | General user | Ask a Metro State question and verify the answer | Submit question, read answer, inspect cited sources |
@@ -42,13 +42,39 @@ followed by source citations and expandable retrieved chunks.
 ### Evaluation Dashboard
 
 Uses summary cards for major metrics, filters for model and retrieval settings,
-and a comparison table or chart. Technical details remain available without
-overwhelming the initial business summary.
+and a comparison table or chart. It must allow users to inspect cases where
+metrics disagree instead of presenting only one combined score. Each metric
+should have a plain-language definition, intended use, and limitation.
+Technical details remain available without overwhelming the initial business
+summary.
 
 ### Document Management
 
 Uses a clear upload form and searchable table showing document status, type,
-upload date, and available actions.
+upload date, chunk count, and available actions. The FP6 browser form should
+accept TXT, text-based PDF, and DOCX files. It should show selected filename,
+type and size before submission, a visible parsing/ingestion progress state, and
+specific validation or parser errors. Successful ingestion should update the
+table without requiring the user to inspect terminal output.
+
+Replacement should clearly identify which document will be replaced and warn
+that its chunks and embeddings will be regenerated. Unsupported, encrypted,
+empty, and scanned-without-text files should produce understandable messages.
+
+### Evaluation Questions
+
+Provides a searchable list and form for at least 25 reviewed questions. The UI
+should display expected answer, expected source, category, difficulty, and
+whether the question is answerable from the corpus. Filters should help verify
+coverage across categories and answerability before running experiments.
+
+### Research Results and Failure Analysis
+
+Provides run-level summaries plus per-question drill-down. A detail view should
+show the question, expected answer/source, generated answer, retrieved chunks,
+settings, each metric score, and any assigned failure category. Users should be
+able to compare corpus variants or RAG settings while holding other variables
+fixed.
 
 ## Interaction and Accessibility Guidelines
 

@@ -4,6 +4,11 @@ An ICS 499 capstone web application for comparing Retrieval-Augmented
 Generation (RAG) configurations and evaluation methods using Metro State
 documents.
 
+The application is also a research instrument. Its final purpose is to produce
+repeatable evidence about what different RAG evaluation metrics measure, where
+they are useful, where they disagree, and how document-collection size and
+composition affect retrieval and evaluation results.
+
 ## Current Status
 
 FP5 implements the core document ingestion and retrieval pipeline. The 27 local
@@ -19,8 +24,25 @@ JSON endpoint. Users can submit a question in the browser, view the grounded
 answer and ranked source excerpts, and see the model, latency, and saved
 response ID.
 
-Document administration, evaluation runs, and dashboard results are planned for
-later iterations.
+FP6 will add browser-based TXT, PDF, and DOCX document administration. Later
+iterations will create a manually reviewed dataset of at least 25 evaluation
+questions, compare metrics on the same stored responses, study failure cases
+and corpus-size effects, and present research findings in the dashboard/report.
+
+## Research Direction
+
+The project is not intended to declare one evaluation metric universally best.
+It will compare the specific usefulness and limitations of normalized matching,
+semantic similarity, expected-source accuracy, refusal correctness,
+faithfulness/groundedness, answer relevance, latency, cost, and human review.
+
+The initial research dataset will contain at least 25 reviewed questions across
+the current Metro State categories, including answerable and unanswerable
+questions. A controlled experiment will compare a smaller or more focused
+document collection with the full collection to observe how added documents and
+similar distractors affect retrieval and metric behavior. See the
+[research plan](docs/research-plan.md) for the detailed questions, experiments,
+interpretation rules, and FP6-FP10 roadmap.
 
 ## Technology Stack
 
@@ -197,6 +219,7 @@ Current safe example values are stored in:
 - [UX design](docs/ux-design.md)
 - [Code structure and conventions](docs/code-structure.md)
 - [Recommended implementation approach](docs/implementation-approach.md)
+- [RAG evaluation research plan](docs/research-plan.md)
 
 ## Source Documents
 
@@ -209,6 +232,10 @@ Current local source set:
 
 - 27 text documents
 - 8 document categories
+
+FP6 will add browser upload and server-side parsing for TXT, text-based PDF, and
+DOCX documents. Uploaded files and generated vector data remain local runtime
+data and must not be committed.
 
 ## Security
 

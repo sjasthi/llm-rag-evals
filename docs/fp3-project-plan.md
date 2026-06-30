@@ -29,12 +29,33 @@ work.
 | --- | --- | --- |
 | FP3 | Finalize requirements, project plan, UX direction, code structure, and starter page | `requirements.md`, FP3 documents, responsive `index.php` |
 | FP4 | Establish application shell and database foundation | Shared layout, environment configuration, MySQL schema, database connection test |
-| FP5 | Implement the core non-GUI RAG round trip | MySQL/ChromaDB ingestion, semantic retrieval, grounded CLI answer with stored sources |
-| FP6 | Connect grounded answers to the web application | PHP question form, answer/source display, validation and response history |
-| FP7 | Create the evaluation test set and baseline metrics | Managed questions/expected answers, exact match and semantic similarity results |
-| FP8 | Add advanced evaluation and comparison features | LLM-as-judge or RAGAS-style metrics, configuration comparison, stored runs |
-| FP9 | Complete dashboard, reports, and system testing | Charts/tables, recommendations, accessibility/security checks, resolved defects |
-| FP10 | Stabilize and deliver the final application | Deployment guide, final demo data, presentation, final report, tagged release |
+| FP5 | Complete the core RAG round trip and first web workflow | MySQL/ChromaDB ingestion, retrieval, grounded Gemini answer, PHP Ask page, stored sources |
+| FP6 | Add document administration and multi-format ingestion | Browser upload/list/replace flow, TXT/PDF/DOCX extraction, ingestion status and regression tests |
+| FP7 | Create the research dataset and baseline metrics | At least 25 reviewed questions, managed expected answers/sources, normalized match, semantic, source, refusal and latency results |
+| FP8 | Compare advanced metrics and controlled experiments | Faithfulness/relevance or LLM-judge metrics, metric-disagreement analysis, retrieval and corpus-size/composition experiments |
+| FP9 | Complete research dashboard, interpretation, and system testing | Metric explanations, comparisons, failure analysis, preliminary findings, accessibility/security checks |
+| FP10 | Stabilize and deliver the research application | Reproducible experiment guide, findings and limitations, presentation, final report, tagged release |
+
+## Revised Research Direction After FP5 Review
+
+The application is the instrument used to run controlled RAG experiments. The
+final value of the project is not only the working question-answer interface;
+it is the evidence and explanation produced from comparing evaluation methods.
+
+The research should determine what each metric is specifically useful for,
+where automated metrics agree or disagree, and which combination provides a
+defensible evaluation of retrieval, correctness, grounding, and refusal
+behavior. The number of evaluation questions should be justified by coverage;
+at least 25 reviewed questions is the initial target rather than a fixed ratio
+between questions and documents.
+
+The professor also emphasized that real organizations may search hundreds to
+millions of documents. The local project is not expected to reproduce that
+scale. It should run a controlled collection-size or collection-composition
+experiment and clearly state the limits of generalizing from the local corpus.
+
+See `docs/research-plan.md` for the detailed experiment design and FP6-FP10
+implementation sequence.
 
 ## Working Agreement
 

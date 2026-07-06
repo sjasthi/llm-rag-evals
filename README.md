@@ -198,9 +198,10 @@ Run the Python unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 16 tests covering TXT/PDF/DOCX loading, empty and
+The current suite contains 17 tests covering TXT/PDF/DOCX loading, empty and
 binary input rejection, metadata-preserving chunking, stable IDs, retrieval
-reranking, grounded prompts, refusal instructions, and answer orchestration.
+reranking, grounded prompts, refusal instructions, answer orchestration, and a
+frontend regression check for safe document-list element creation.
 
 ## Database Schema
 

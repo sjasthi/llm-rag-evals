@@ -197,23 +197,23 @@ $(function () {
             return;
         }
 
-        const $stack = $("div").addClass("list-stack");
+        const $stack = $("<div>").addClass("list-stack");
         documents.forEach(function (item) {
-            const $row = $("article").addClass("list-item document-item");
-            const $details = $("div").addClass("document-details");
-            $("strong").text(item.title).appendTo($details);
-            $("span")
+            const $row = $("<article>").addClass("list-item document-item");
+            const $details = $("<div>").addClass("document-details");
+            $("<strong>").text(item.title).appendTo($details);
+            $("<span>")
                 .text(item.original_filename + " · " + item.category + " · " + item.chunk_count + " chunks")
                 .appendTo($details);
             if (item.ingestion_error) {
-                $("span").addClass("text-danger").text(item.ingestion_error).appendTo($details);
+                $("<span>").addClass("text-danger").text(item.ingestion_error).appendTo($details);
             }
             $details.appendTo($row);
 
-            const $actions = $("div").addClass("document-actions");
-            $("small").text(String(item.source_type).toUpperCase() + " · " + item.status).appendTo($actions);
+            const $actions = $("<div>").addClass("document-actions");
+            $("<small>").text(String(item.source_type).toUpperCase() + " · " + item.status).appendTo($actions);
             if (String(item.source_path).startsWith("storage/uploads/")) {
-                $("button")
+                $("<button>")
                     .addClass("btn btn-sm btn-outline-secondary replace-document-button")
                     .attr("type", "button")
                     .data("document", item)

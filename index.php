@@ -244,7 +244,7 @@ require __DIR__ . '/includes/header.php';
                             </button>
                         </div>
                         <div id="documentList" aria-live="polite">
-                            <p class="text-muted">Loading documents...</p>
+                            <p class="text-muted">Loading indexed documents...</p>
                         </div>
                     </div>
                 </section>

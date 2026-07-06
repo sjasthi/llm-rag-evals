@@ -22,6 +22,10 @@ $(function () {
     const $uploadSelection = $("#uploadSelection");
     const $documentMessage = $("#documentMessage");
     const $documentList = $("#documentList");
+    const $refreshDocumentsButton = $("#refreshDocumentsButton");
+    let documentListRequest = null;
+    let ingestionStartedAt = null;
+    let ingestionTimer = null;
 
     $navigation.find('a[href^="#"]').on("click", function () {
         const navigation = bootstrap.Collapse.getInstance($navigation[0]);
@@ -189,7 +193,7 @@ $(function () {
     function renderDocumentList(documents) {
         $documentList.empty();
         if (!Array.isArray(documents) || documents.length === 0) {
-            $("p").addClass("text-muted").text("No indexed documents were found.").appendTo($documentList);
+            $("<p>").addClass("text-muted").text("No indexed documents were found.").appendTo($documentList);
             return;
         }
 
@@ -223,8 +227,31 @@ $(function () {
     }
 
     function loadDocuments() {
-        $documentList.html('<p class="text-muted">Loading documents...</p>');
-        $.getJSON("api/documents.php")
+        if (documentListRequest) {
+            return documentListRequest;
+        }
+
+        const hasRenderedDocuments = $documentList.find(".document-item").length > 0;
+        if (!hasRenderedDocuments) {
+            $documentList.html('<p class="text-muted">Loading indexed documents...</p>');
+        }
+        $refreshDocumentsButton.prop("disabled", true).text("Refreshing...");
+
+        const delayedMessage = window.setTimeout(function () {
+            if (!hasRenderedDocuments) {
+                $documentList.html(
+                    '<p class="text-muted">The local server is still working. ' +
+                    "If a document is being ingested, this list will appear when it finishes.</p>"
+                );
+            }
+        }, 4000);
+
+        documentListRequest = $.ajax({
+            url: "api/documents.php",
+            method: "GET",
+            dataType: "json",
+            timeout: 130000,
+        })
             .done(function (response) {
                 if (response?.ok !== true) {
                     showDocumentMessage("The document list could not be loaded.", "danger");
@@ -234,8 +261,36 @@ $(function () {
             })
             .fail(function (xhr) {
                 showDocumentMessage(xhr.responseJSON?.error || "The document list could not be loaded.", "danger");
-                $documentList.html('<p class="text-danger">Document data is unavailable.</p>');
+                if (!hasRenderedDocuments) {
+                    $documentList.html('<p class="text-danger">Document data is unavailable. Use Refresh to try again.</p>');
+                }
+            })
+            .always(function () {
+                window.clearTimeout(delayedMessage);
+                documentListRequest = null;
+                $refreshDocumentsButton.prop("disabled", false).text("Refresh");
             });
+
+        return documentListRequest;
+    }
+
+    function startIngestionProgress() {
+        ingestionStartedAt = Date.now();
+        $refreshDocumentsButton.prop("disabled", true);
+        ingestionTimer = window.setInterval(function () {
+            const elapsedSeconds = Math.max(1, Math.floor((Date.now() - ingestionStartedAt) / 1000));
+            showDocumentMessage(
+                "Parsing, chunking, and embedding the document (" + elapsedSeconds + " seconds). " +
+                "The first upload after startup can take longer.",
+                "info"
+            );
+        }, 1000);
+    }
+
+    function stopIngestionProgress() {
+        window.clearInterval(ingestionTimer);
+        ingestionTimer = null;
+        ingestionStartedAt = null;
     }
 
     $documentFile.on("change", function () {
@@ -267,14 +322,20 @@ $(function () {
         $documentMessage.prop("hidden", true).text("");
     });
 
-    $("#refreshDocumentsButton").on("click", loadDocuments);
+    $refreshDocumentsButton.on("click", function () {
+        loadDocuments();
+    });
 
     $documentForm.on("submit", function (event) {
         event.preventDefault();
         const formData = new FormData(this);
         $uploadDocumentButton.prop("disabled", true).text("Parsing and ingesting...");
         $cancelReplaceButton.prop("disabled", true);
-        showDocumentMessage("The document is being parsed, chunked, embedded, and stored.", "info");
+        showDocumentMessage(
+            "Parsing, chunking, and embedding the document. Keep this page open; the indexed list will remain visible.",
+            "info"
+        );
+        startIngestionProgress();
 
         $.ajax({
             url: "api/documents.php",
@@ -294,8 +355,10 @@ $(function () {
                 showDocumentMessage(xhr.responseJSON?.error || "Document ingestion failed.", "danger");
             })
             .always(function () {
+                stopIngestionProgress();
                 $uploadDocumentButton.prop("disabled", false);
                 $cancelReplaceButton.prop("disabled", false);
+                $refreshDocumentsButton.prop("disabled", false);
                 $uploadDocumentButton.text($replaceDocumentId.val() ? "Replace and re-ingest" : "Upload and ingest");
             });
     });

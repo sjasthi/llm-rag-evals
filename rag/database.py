@@ -327,6 +327,28 @@ def database_counts(connection: MySQLConnection) -> dict[str, int]:
     return counts
 
 
+def delete_uploaded_document(connection: MySQLConnection, source_path: str) -> int:
+    """Delete one browser-managed document and its cascading chunk rows."""
+    if not source_path.startswith("storage/uploads/"):
+        raise ValueError("Only browser-uploaded documents can be deleted.")
+
+    try:
+        connection.start_transaction()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM documents WHERE source_path = %s",
+                (source_path,),
+            )
+            deleted = int(cursor.rowcount)
+        if deleted != 1:
+            raise ValueError("Uploaded document was not found.")
+        connection.commit()
+        return deleted
+    except Exception:
+        connection.rollback()
+        raise
+
+
 def get_or_create_model_setting(
     connection: MySQLConnection,
     *,

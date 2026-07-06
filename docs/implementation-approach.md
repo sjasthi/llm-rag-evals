@@ -186,7 +186,7 @@ Status: implemented locally in FP6. The PHP endpoint validates and stores
 uploads, `rag/document_loader.py` extracts normalized TXT/PDF/DOCX text, and
 `rag/admin.py` bridges the browser request to the shared MySQL/ChromaDB
 ingestion path. The UI lists document type, status, chunk count, and parser
-errors and permits same-format replacement of browser-managed uploads.
+errors and permits same-format replacement or deletion of browser-managed uploads.
 
 ### Phase 3: Create the Gold Dataset
 

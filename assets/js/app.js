@@ -23,6 +23,8 @@ $(function () {
     const $documentMessage = $("#documentMessage");
     const $documentList = $("#documentList");
     const $refreshDocumentsButton = $("#refreshDocumentsButton");
+    const $documentCount = $("#documentCount");
+    const $categoryCount = $("#categoryCount");
     let documentListRequest = null;
     let ingestionStartedAt = null;
     let ingestionTimer = null;
@@ -192,13 +194,19 @@ $(function () {
 
     function renderDocumentList(documents) {
         $documentList.empty();
-        if (!Array.isArray(documents) || documents.length === 0) {
+        const documentItems = Array.isArray(documents) ? documents : [];
+        const categories = new Set(documentItems.map(function (item) {
+            return item.category;
+        }));
+        $documentCount.text(String(documentItems.length));
+        $categoryCount.text(String(categories.size));
+        if (documentItems.length === 0) {
             $("<p>").addClass("text-muted").text("No indexed documents were found.").appendTo($documentList);
             return;
         }
 
         const $stack = $("<div>").addClass("list-stack");
-        documents.forEach(function (item) {
+        documentItems.forEach(function (item) {
             const $row = $("<article>").addClass("list-item document-item");
             const $details = $("<div>").addClass("document-details");
             $("<strong>").text(item.title).appendTo($details);
@@ -218,6 +226,12 @@ $(function () {
                     .attr("type", "button")
                     .data("document", item)
                     .text("Replace")
+                    .appendTo($actions);
+                $("<button>")
+                    .addClass("btn btn-sm btn-outline-danger delete-document-button")
+                    .attr("type", "button")
+                    .data("document", item)
+                    .text("Delete")
                     .appendTo($actions);
             }
             $actions.appendTo($row);
@@ -314,6 +328,32 @@ $(function () {
         $uploadDocumentButton.text("Replace and re-ingest");
         showDocumentMessage("Choose a new " + String(item.source_type).toUpperCase() + " file for " + item.title + ".", "info");
         $documentFile.trigger("focus");
+    });
+
+    $documentList.on("click", ".delete-document-button", function () {
+        const $button = $(this);
+        const item = $button.data("document");
+        if (!window.confirm("Delete " + item.title + " from MySQL, ChromaDB, and upload storage?")) {
+            return;
+        }
+
+        $button.prop("disabled", true).text("Deleting...");
+        showDocumentMessage("Removing the document and its indexed chunks...", "info");
+        $.ajax({
+            url: "api/documents.php",
+            method: "DELETE",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({ document_id: item.document_id }),
+        })
+            .done(function () {
+                showDocumentMessage("Document deleted.", "success");
+                loadDocuments();
+            })
+            .fail(function (xhr) {
+                showDocumentMessage(xhr.responseJSON?.error || "Document deletion failed.", "danger");
+                $button.prop("disabled", false).text("Delete");
+            });
     });
 
     $cancelReplaceButton.on("click", function () {

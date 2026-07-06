@@ -66,7 +66,7 @@ Status: implemented locally on July 6, 2026.
 - Format-specific extraction produces normalized text for one shared ingestion path.
 - MySQL stores original filename, type, status, errors, and chunk counts.
 - ChromaDB replacement removes the earlier vectors for the same source path.
-- The browser lists indexed documents and supports same-format replacement for uploads.
+- The browser lists indexed documents and supports same-format replacement and deletion for uploads.
 - Parser and FP5 regression tests pass before the milestone is committed.
 - FP7 begins with the manually reviewed 25+ question research dataset.
 

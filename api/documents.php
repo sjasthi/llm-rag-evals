@@ -153,15 +153,72 @@ function runDocumentIngestion(
     return $result;
 }
 
+function runDocumentDeletion(string $sourcePath): array
+{
+    $root = projectRoot();
+    $python = envValue('PYTHON_BIN', $root . '/.venv/Scripts/python.exe');
+    if (!is_string($python) || !is_file($python)) {
+        throw new RuntimeException('Project Python environment was not found.');
+    }
+
+    $process = proc_open(
+        [$python, $root . '/rag/admin.py', '--source-path', $sourcePath, '--delete'],
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+        $root,
+        null,
+        ['bypass_shell' => true]
+    );
+    if (!is_resource($process)) {
+        throw new RuntimeException('Could not start document deletion.');
+    }
+    fclose($pipes[0]);
+    $stdout = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $exitCode = proc_close($process);
+    if ($exitCode !== 0) {
+        throw new RuntimeException(trim($stderr) ?: 'Document deletion failed.');
+    }
+    $result = json_decode($stdout, true, 16, JSON_THROW_ON_ERROR);
+    if (!is_array($result) || ($result['deleted'] ?? false) !== true) {
+        throw new RuntimeException('Document deletion returned incomplete data.');
+    }
+    return $result;
+}
+
 try {
     $database = databaseConnection();
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     if ($method === 'GET') {
         documentResponse(200, ['ok' => true, 'data' => listDocuments($database)]);
     }
+    if ($method === 'DELETE') {
+        $payload = json_decode(file_get_contents('php://input') ?: '{}', true, 8, JSON_THROW_ON_ERROR);
+        $documentId = filter_var($payload['document_id'] ?? null, FILTER_VALIDATE_INT);
+        if (!$documentId) {
+            documentResponse(422, ['ok' => false, 'error' => 'A valid document ID is required.']);
+        }
+
+        $statement = $database->prepare('SELECT source_path FROM documents WHERE document_id = ?');
+        $statement->execute([$documentId]);
+        $document = $statement->fetch();
+        if (!$document || !str_starts_with($document['source_path'], 'storage/uploads/')) {
+            documentResponse(422, ['ok' => false, 'error' => 'Only browser-uploaded documents can be deleted.']);
+        }
+
+        $sourcePath = $document['source_path'];
+        runDocumentDeletion($sourcePath);
+        $absolutePath = projectRoot() . '/' . $sourcePath;
+        if (is_file($absolutePath) && !unlink($absolutePath)) {
+            error_log('Indexed document deleted but upload file could not be removed: ' . $sourcePath);
+        }
+        documentResponse(200, ['ok' => true, 'data' => ['document_id' => (int) $documentId]]);
+    }
     if ($method !== 'POST') {
-        header('Allow: GET, POST');
-        documentResponse(405, ['ok' => false, 'error' => 'Use GET or POST for documents.']);
+        header('Allow: GET, POST, DELETE');
+        documentResponse(405, ['ok' => false, 'error' => 'Use GET, POST, or DELETE for documents.']);
     }
 
     [$originalName, $temporaryPath, $extension] = validatedUpload($_FILES['document'] ?? []);

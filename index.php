@@ -97,12 +97,12 @@ require __DIR__ . '/includes/header.php';
                 <div class="stat-grid">
                     <article class="stat-card">
                         <span>Documents</span>
-                        <strong><?= h((string) $sourceStats['document_count']) ?></strong>
-                        <small>Metro State source files</small>
+                        <strong id="documentCount"><?= h((string) $sourceStats['document_count']) ?></strong>
+                        <small>currently indexed documents</small>
                     </article>
                     <article class="stat-card">
                         <span>Categories</span>
-                        <strong><?= h((string) $sourceStats['category_count']) ?></strong>
+                        <strong id="categoryCount"><?= h((string) $sourceStats['category_count']) ?></strong>
                         <small>document groups imported</small>
                     </article>
                     <article class="stat-card">

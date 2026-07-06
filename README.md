@@ -13,8 +13,8 @@ composition affect retrieval and evaluation results.
 
 FP6 implements browser document administration and normalized multi-format
 ingestion. Administrators can upload and list TXT, text-based PDF, and DOCX
-files, then replace browser-uploaded documents with another file of the same
-type. PHP validates upload status, size, extension, and MIME type; stores files
+files, then replace or delete browser-uploaded documents. Replacement uses
+another file of the same type. PHP validates upload status, size, extension, and MIME type; stores files
 under random server-controlled names; and calls the Python ingestion bridge.
 Python extracts and validates text, then sends every supported format through
 the same chunking, MySQL, and ChromaDB workflow. The interface reports status,
@@ -96,7 +96,7 @@ Expected result:
 - The dashboard shows the number of document categories.
 - The page identifies the stack as PHP + MySQL + ChromaDB.
 - The Ask section accepts questions and displays a Gemini answer with sources.
-- The Documents section uploads, lists, and replaces supported documents.
+- The Documents section uploads, lists, replaces, and deletes supported documents.
 
 To stop the PHP server, return to the terminal and press `Ctrl+C`.
 
@@ -107,8 +107,8 @@ browser.
 
 The Documents form uses `api/documents.php`. Uploaded files must be UTF-8 TXT,
 text-based PDF, or DOCX and no larger than 10 MB. Scanned PDFs without
-extractable text and encrypted PDFs are rejected. Replacement is limited to
-browser-uploaded documents and must keep the same file type.
+extractable text and encrypted PDFs are rejected. Replacement and deletion are
+limited to browser-uploaded documents, and replacement must keep the same file type.
 
 ## FP6 Setup
 

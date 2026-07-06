@@ -70,6 +70,22 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
             cursor.execute(
                 """
                 SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = %s
+                  AND table_name = 'documents'
+                  AND column_name = 'original_filename'
+                """,
+                (settings.db_name,),
+            )
+            row = cursor.fetchone()
+            if not row or int(row[0]) == 0:
+                cursor.execute(
+                    "ALTER TABLE documents ADD COLUMN original_filename VARCHAR(255) NULL "
+                    "AFTER source_type"
+                )
+            cursor.execute(
+                """
+                SELECT COUNT(*)
                 FROM information_schema.statistics
                 WHERE table_schema = %s
                   AND table_name = 'document_chunks'
@@ -170,6 +186,8 @@ def upsert_document_and_chunks(
     title: str,
     category: str,
     source_path: str,
+    source_type: str,
+    original_filename: str,
     source_hash: str,
     chunk_size: int,
     chunk_overlap: int,
@@ -182,21 +200,26 @@ def upsert_document_and_chunks(
             cursor.execute(
                 """
                 INSERT INTO documents (
-                    title, category, source_path, source_type, status, source_hash,
+                    title, category, source_path, source_type, original_filename, status, source_hash,
                     chunk_size, chunk_overlap, ingestion_error
                 )
-                VALUES (%s, %s, %s, 'txt', 'pending', %s, %s, %s, NULL)
+                VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s, %s, NULL)
                 ON DUPLICATE KEY UPDATE
                     document_id = LAST_INSERT_ID(document_id),
                     title = VALUES(title),
                     category = VALUES(category),
+                    source_type = VALUES(source_type),
+                    original_filename = VALUES(original_filename),
                     status = 'pending',
                     source_hash = VALUES(source_hash),
                     chunk_size = VALUES(chunk_size),
                     chunk_overlap = VALUES(chunk_overlap),
                     ingestion_error = NULL
                 """,
-                (title, category, source_path, source_hash, chunk_size, chunk_overlap),
+                (
+                    title, category, source_path, source_type, original_filename,
+                    source_hash, chunk_size, chunk_overlap,
+                ),
             )
             document_id = int(cursor.lastrowid)
 
@@ -249,6 +272,47 @@ def mark_document_failed(connection: MySQLConnection, document_id: int, error: s
             WHERE document_id = %s
             """,
             (error[:65535], document_id),
+        )
+    connection.commit()
+
+
+def record_document_failure(
+    connection: MySQLConnection,
+    *,
+    title: str,
+    category: str,
+    source_path: str,
+    source_type: str,
+    original_filename: str,
+    source_hash: str,
+    error: str,
+) -> None:
+    """Record a parser failure without discarding chunks from an earlier good version."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO documents (
+                title, category, source_path, source_type, original_filename,
+                status, source_hash, ingestion_error
+            ) VALUES (%s, %s, %s, %s, %s, 'failed', %s, %s)
+            ON DUPLICATE KEY UPDATE
+                title = VALUES(title),
+                category = VALUES(category),
+                source_type = VALUES(source_type),
+                original_filename = VALUES(original_filename),
+                status = 'failed',
+                source_hash = VALUES(source_hash),
+                ingestion_error = VALUES(ingestion_error)
+            """,
+            (
+                title,
+                category,
+                source_path,
+                source_type,
+                original_filename,
+                source_hash,
+                error[:65535],
+            ),
         )
     connection.commit()
 

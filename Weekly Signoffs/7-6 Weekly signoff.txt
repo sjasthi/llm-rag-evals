@@ -1,0 +1,33 @@
+ICS 499 Capstone Project Weekly Signoff Sheet 7/6
+
+Project Title: LLM Rag Eval
+
+Team Name: Andrew
+
+Student Name: Andrew Xiong
+
+Final Project Iteration Number: FP6
+
+Reviewed the weekly progress with the instructor:  [  ] Yes   [  ] No
+
+
+Weekly Contribution: Please provide a summary of your contributions to the project during this week. Be specific about tasks, responsibilities, and any challenges you encountered. Describe how your work benefited the overall team and project.
+
+Implemented browser-based document administration and multi-format ingestion for FP6. The application can now upload, list, and replace UTF-8 TXT, text-based PDF, and DOCX documents. Uploaded documents are parsed on the server and sent through the existing chunking, MySQL, and ChromaDB pipeline, which makes their content available to the existing RAG question-answer workflow.
+
+Added PHP upload validation for upload status, file size, extension, MIME type, and real HTTP upload state. Uploaded files receive random server-controlled storage names, while the original filename is stored separately as display metadata. Replacement is limited to browser-uploaded documents of the same format so the bundled Metro State source documents cannot be overwritten accidentally.
+
+Added a normalized Python document loader using strict UTF-8 decoding for TXT, pypdf for text-based PDF files, and python-docx for Word paragraphs and tables. Invalid, encrypted, empty, binary, and non-extractable documents return actionable errors. Scanned PDFs are identified as requiring OCR, which is outside the current FP6 scope.
+
+Expanded the database and ingestion helpers to preserve original filenames, parser status, errors, and chunk counts while replacing prior MySQL chunks and ChromaDB vectors without duplicates. Updated the browser interface with upload progress, document status, chunk counts, refresh controls, replacement controls, and safe error messages.
+
+Verified the milestone with 16 automated tests, real DOCX and text-based PDF extraction, and live HTTP upload and replacement tests. The FP5 regression remained stable at 27 bundled documents, 77 MySQL chunks, and 77 ChromaDB vectors, and the existing Ask workflow continued retrieving the expected source.
+
+The main challenge was coordinating secure browser uploads across PHP and Python while preserving one shared ingestion path for every supported format. This implementation prepares the project for FP7, which will create at least 25 manually reviewed evaluation questions and baseline evaluation metrics.
+
+
+Did you give the demo of this iteration?  [  ] Yes   [  ] No
+
+Note 1: It is not good enough to submit the weekly signoff. You get full credit only if you demo your work in the breakout room. It is also OK if your team demonstrates your work on your behalf.
+Note 2: If you are absent, and if your team couldn't demonstrate your work, then you earn only partial credit at instructor's discretion.
+

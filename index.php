@@ -37,12 +37,6 @@ $sampleQuestions = [
     'What does financial aid pay first?',
 ];
 
-$plannedDocuments = [
-    ['title' => 'Registration overview', 'type' => 'TXT', 'status' => 'Source file ready'],
-    ['title' => 'Financial aid overview', 'type' => 'TXT', 'status' => 'Source file ready'],
-    ['title' => 'Academic calendar documents', 'type' => 'TXT', 'status' => 'Source files ready'],
-];
-
 $plannedRuns = [
     [
         'name' => 'MySQL keyword baseline',
@@ -197,25 +191,61 @@ require __DIR__ . '/includes/header.php';
                             <span class="panel-kicker">Admin</span>
                             <h2>Documents</h2>
                         </div>
-                        <span class="status status-ready">Source ready</span>
+                        <span class="status status-ready">FP6 live</span>
                     </div>
 
-                    <div class="upload-dropzone">
-                        <strong>Upload documents</strong>
-                        <span>TXT first, PDF/DOCX after parsing is confirmed.</span>
-                        <input class="form-control" type="file" disabled>
-                    </div>
+                    <form class="upload-dropzone" id="documentUploadForm" enctype="multipart/form-data">
+                        <strong>Upload and ingest a document</strong>
+                        <span>TXT, text-based PDF, or DOCX; maximum 10 MB.</span>
+                        <label class="form-label" for="documentFile">Document</label>
+                        <input
+                            class="form-control"
+                            id="documentFile"
+                            name="document"
+                            type="file"
+                            accept=".txt,.pdf,.docx"
+                            required
+                        >
+                        <div class="row g-2 mt-1">
+                            <div class="col-md-6">
+                                <label class="form-label" for="documentTitle">Title</label>
+                                <input class="form-control" id="documentTitle" name="title" maxlength="255">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="documentCategory">Category</label>
+                                <input
+                                    class="form-control"
+                                    id="documentCategory"
+                                    name="category"
+                                    pattern="[a-z0-9][a-z0-9_-]{1,49}"
+                                    placeholder="student_support"
+                                    required
+                                >
+                            </div>
+                        </div>
+                        <input id="replaceDocumentId" name="replace_document_id" type="hidden">
+                        <div class="d-flex flex-wrap gap-2 mt-3">
+                            <button class="btn btn-primary" id="uploadDocumentButton" type="submit">
+                                Upload and ingest
+                            </button>
+                            <button class="btn btn-outline-secondary" id="cancelReplaceButton" type="button" hidden>
+                                Cancel replacement
+                            </button>
+                        </div>
+                        <div class="upload-selection mt-2" id="uploadSelection" aria-live="polite"></div>
+                        <div class="alert mt-3 mb-0" id="documentMessage" role="status" hidden></div>
+                    </form>
 
-                    <div class="list-stack">
-                        <?php foreach ($plannedDocuments as $document): ?>
-                            <article class="list-item">
-                                <div>
-                                    <strong><?= h($document['title']) ?></strong>
-                                    <span><?= h($document['status']) ?></span>
-                                </div>
-                                <small><?= h($document['type']) ?></small>
-                            </article>
-                        <?php endforeach; ?>
+                    <div class="document-list mt-3">
+                        <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+                            <h3 class="h6 mb-0">Indexed documents</h3>
+                            <button class="btn btn-sm btn-outline-secondary" id="refreshDocumentsButton" type="button">
+                                Refresh
+                            </button>
+                        </div>
+                        <div id="documentList" aria-live="polite">
+                            <p class="text-muted">Loading documents...</p>
+                        </div>
                     </div>
                 </section>
 

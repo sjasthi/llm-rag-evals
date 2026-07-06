@@ -487,6 +487,28 @@ body {
     border-radius: 0.45rem;
 }
 
+.document-details {
+    min-width: 0;
+}
+
+.document-details strong,
+.document-details span {
+    overflow-wrap: anywhere;
+}
+
+.document-actions {
+    display: grid;
+    flex: 0 0 auto;
+    gap: 0.45rem;
+    justify-items: end;
+}
+
+.upload-selection {
+    min-height: 1.25rem;
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
 .app-table {
     margin: 0;
 }

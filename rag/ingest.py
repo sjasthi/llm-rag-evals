@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from document_loader import DocumentLoadError, LoadedDocument, SUPPORTED_TYPES, load_document
 from settings import PROJECT_ROOT, load_settings
 
 
@@ -24,6 +25,8 @@ class Chunk:
     text: str
     source_hash: str
     chroma_id: str
+    source_type: str = "txt"
+    original_filename: str = ""
 
 
 @dataclass(frozen=True)
@@ -37,10 +40,14 @@ class IngestionSummary:
     chunk_overlap: int
 
 
-def read_text_documents(source_dir: Path) -> list[Path]:
+def read_documents(source_dir: Path) -> list[Path]:
     if not source_dir.is_dir():
         raise FileNotFoundError(f"Source directory does not exist: {source_dir}")
-    return sorted(path for path in source_dir.rglob("*.txt") if path.is_file())
+    return sorted(
+        path
+        for path in source_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() in {".txt", ".pdf", ".docx"}
+    )
 
 
 def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
@@ -71,25 +78,142 @@ def stable_chroma_id(source_path: str, chunk_index: int) -> str:
 
 def build_chunks(source_dir: Path, chunk_size: int, overlap: int) -> list[Chunk]:
     chunks: list[Chunk] = []
-    for document_path in read_text_documents(source_dir):
-        source_bytes = document_path.read_bytes()
-        text = source_bytes.decode("utf-8")
-        source_hash = hashlib.sha256(source_bytes).hexdigest()
+    for document_path in read_documents(source_dir):
+        loaded = load_document(document_path)
         relative_path = document_path.relative_to(PROJECT_ROOT).as_posix()
         category = document_path.parent.name
 
-        for index, chunk in enumerate(chunk_text(text, chunk_size, overlap)):
+        for index, chunk in enumerate(chunk_text(loaded.text, chunk_size, overlap)):
             chunks.append(
                 Chunk(
                     source_path=relative_path,
                     category=category,
                     chunk_index=index,
                     text=chunk,
-                    source_hash=source_hash,
+                    source_hash=loaded.source_hash,
                     chroma_id=stable_chroma_id(relative_path, index),
+                    source_type=loaded.source_type,
+                    original_filename=loaded.original_filename,
                 )
             )
     return chunks
+
+
+def build_loaded_document_chunks(
+    loaded: LoadedDocument,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+    overlap: int,
+) -> list[Chunk]:
+    return [
+        Chunk(
+            source_path=source_path,
+            category=category,
+            chunk_index=index,
+            text=text,
+            source_hash=loaded.source_hash,
+            chroma_id=stable_chroma_id(source_path, index),
+            source_type=loaded.source_type,
+            original_filename=loaded.original_filename,
+        )
+        for index, text in enumerate(chunk_text(loaded.text, chunk_size, overlap))
+    ]
+
+
+def ingest_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    title: str,
+    original_filename: str | None = None,
+    chunk_size: int,
+    overlap: int,
+    init_schema: bool = False,
+) -> tuple[int, int]:
+    """Extract and replace one document in MySQL and ChromaDB."""
+    settings = load_settings()
+    try:
+        loaded = load_document(document_path, original_filename=original_filename)
+    except DocumentLoadError as error:
+        from database import database_connection, initialize_schema, record_document_failure
+
+        if init_schema:
+            initialize_schema(settings)
+        source_type = SUPPORTED_TYPES.get(document_path.suffix.lower(), "unknown")
+        source_hash = hashlib.sha256(document_path.read_bytes()).hexdigest()
+        with database_connection(settings) as connection:
+            record_document_failure(
+                connection,
+                title=title,
+                category=category,
+                source_path=source_path,
+                source_type=source_type,
+                original_filename=Path(original_filename or document_path.name).name,
+                source_hash=source_hash,
+                error=str(error),
+            )
+        raise
+    chunks = build_loaded_document_chunks(
+        loaded,
+        source_path=source_path,
+        category=category,
+        chunk_size=chunk_size,
+        overlap=overlap,
+    )
+
+    from database import (
+        database_connection,
+        initialize_schema,
+        mark_document_failed,
+        mark_document_ingested,
+        upsert_document_and_chunks,
+    )
+    from vector_store import get_collection, replace_document_chunks
+
+    if init_schema:
+        initialize_schema(settings)
+    collection = get_collection(settings)
+    with database_connection(settings) as connection:
+        document_id, chunk_ids = upsert_document_and_chunks(
+            connection,
+            title=title,
+            category=category,
+            source_path=source_path,
+            source_type=loaded.source_type,
+            original_filename=loaded.original_filename,
+            source_hash=loaded.source_hash,
+            chunk_size=chunk_size,
+            chunk_overlap=overlap,
+            chunks=[(chunk.chunk_index, chunk.text, chunk.chroma_id) for chunk in chunks],
+        )
+        try:
+            replace_document_chunks(
+                collection,
+                ids=[chunk.chroma_id for chunk in chunks],
+                documents=[chunk.text for chunk in chunks],
+                metadatas=[
+                    {
+                        "source_path": chunk.source_path,
+                        "category": chunk.category,
+                        "chunk_index": chunk.chunk_index,
+                        "source_hash": chunk.source_hash,
+                        "source_type": loaded.source_type,
+                        "original_filename": loaded.original_filename,
+                        "document_id": document_id,
+                        "chunk_id": chunk_id,
+                    }
+                    for chunk, chunk_id in zip(chunks, chunk_ids)
+                ],
+                source_path=source_path,
+            )
+            mark_document_ingested(connection, document_id)
+        except Exception as error:
+            mark_document_failed(connection, document_id, str(error))
+            raise
+    return document_id, len(chunks)
 
 
 def _group_chunks(chunks: list[Chunk]) -> dict[str, list[Chunk]]:
@@ -112,7 +236,7 @@ def ingest(
         raise ValueError("Cannot use --skip-mysql and --skip-chroma together")
 
     settings = load_settings()
-    documents = read_text_documents(source_dir)
+    documents = read_documents(source_dir)
     chunks = build_chunks(source_dir, chunk_size, overlap)
     grouped_chunks = _group_chunks(chunks)
 
@@ -169,6 +293,8 @@ def ingest(
                     title=document_path.stem.replace("_", " ").title(),
                     category=document_path.parent.name,
                     source_path=source_path,
+                    source_type=document_chunks[0].source_type if document_chunks else document_path.suffix[1:],
+                    original_filename=document_path.name,
                     source_hash=source_hash,
                     chunk_size=chunk_size,
                     chunk_overlap=overlap,
@@ -219,7 +345,7 @@ def ingest(
 def main() -> None:
     settings = load_settings()
     parser = argparse.ArgumentParser(
-        description="Ingest Metro State text documents into MySQL and ChromaDB."
+        description="Ingest Metro State documents into MySQL and ChromaDB."
     )
     parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR)
     parser.add_argument("--chunk-size", type=int, default=settings.chunk_size)
@@ -248,7 +374,7 @@ def main() -> None:
         return
 
     print(
-        f"Prepared {summary.chunks} chunks from {summary.documents} text documents "
+        f"Prepared {summary.chunks} chunks from {summary.documents} documents "
         f"(chunk size {summary.chunk_size}, overlap {summary.chunk_overlap})."
     )
     if summary.mysql_documents is not None:

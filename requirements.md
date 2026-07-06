@@ -163,6 +163,9 @@ The system shall store document metadata in MySQL, including:
 * Document type
 * Status
 
+The system shall store the original display filename separately from the
+server-controlled runtime storage path.
+
 The system shall allow admin users to view uploaded documents.
 
 The system shall allow admin users to delete or replace uploaded documents.

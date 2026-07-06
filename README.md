@@ -11,7 +11,17 @@ composition affect retrieval and evaluation results.
 
 ## Current Status
 
-FP5 implements the core document ingestion and retrieval pipeline. The 27 local
+FP6 implements browser document administration and normalized multi-format
+ingestion. Administrators can upload and list TXT, text-based PDF, and DOCX
+files, then replace browser-uploaded documents with another file of the same
+type. PHP validates upload status, size, extension, and MIME type; stores files
+under random server-controlled names; and calls the Python ingestion bridge.
+Python extracts and validates text, then sends every supported format through
+the same chunking, MySQL, and ChromaDB workflow. The interface reports status,
+chunk counts, and actionable parser errors. Uploaded files remain in ignored
+runtime storage.
+
+The FP5 core remains operational. The 27 local
 Metro State documents are split into 77 chunks, tracked in MySQL, embedded with
 the free local `all-MiniLM-L6-v2` model, and persisted in ChromaDB. The query
 helper supports Chroma semantic retrieval with lexical reranking as well as the
@@ -24,8 +34,7 @@ JSON endpoint. Users can submit a question in the browser, view the grounded
 answer and ranked source excerpts, and see the model, latency, and saved
 response ID.
 
-FP6 will add browser-based TXT, PDF, and DOCX document administration. Later
-iterations will create a manually reviewed dataset of at least 25 evaluation
+FP7 will create a manually reviewed dataset of at least 25 evaluation
 questions, compare metrics on the same stored responses, study failure cases
 and corpus-size effects, and present research findings in the dashboard/report.
 
@@ -59,6 +68,7 @@ interpretation rules, and FP6-FP10 roadmap.
 - Python 3 installed and available from the terminal
 - MySQL 8 installed and running
 - PHP PDO MySQL extension enabled
+- PHP Fileinfo extension enabled for MIME validation
 - PHP `proc_open` enabled so the Ask endpoint can run the Python helper
 
 Ingestion and retrieval do not require an API key. The grounded answer command
@@ -86,6 +96,7 @@ Expected result:
 - The dashboard shows the number of document categories.
 - The page identifies the stack as PHP + MySQL + ChromaDB.
 - The Ask section accepts questions and displays a Gemini answer with sources.
+- The Documents section uploads, lists, and replaces supported documents.
 
 To stop the PHP server, return to the terminal and press `Ctrl+C`.
 
@@ -94,7 +105,12 @@ question, runs the project virtual environment's `rag/answer.py --json`, and
 returns structured answer/source data without exposing the Gemini key to the
 browser.
 
-## FP5 Setup
+The Documents form uses `api/documents.php`. Uploaded files must be UTF-8 TXT,
+text-based PDF, or DOCX and no larger than 10 MB. Scanned PDFs without
+extractable text and encrypted PDFs are rejected. Replacement is limited to
+browser-uploaded documents and must keep the same file type.
+
+## FP6 Setup
 
 Run these commands from the project root:
 
@@ -123,6 +139,14 @@ ChromaDB collection now contains 77 embedded chunks.
 
 Rerunning the same command replaces the existing chunk records instead of
 creating duplicates.
+
+The Python requirements include `pypdf` and `python-docx`. On Windows, ensure
+these lines are enabled in the PHP installation's active `php.ini`:
+
+```ini
+extension=pdo_mysql
+extension=fileinfo
+```
 
 ## FP5 Verification Commands
 
@@ -174,7 +198,8 @@ Run the Python unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains ten tests covering chunking, stable IDs, retrieval
+The current suite contains 16 tests covering TXT/PDF/DOCX loading, empty and
+binary input rejection, metadata-preserving chunking, stable IDs, retrieval
 reranking, grounded prompts, refusal instructions, and answer orchestration.
 
 ## Database Schema
@@ -196,8 +221,9 @@ It defines tables for:
 - retrieved contexts
 - evaluation scores
 
-`rag/ingest.py --init-schema` imports this schema and safely applies the FP5
-ingestion columns to an earlier FP4 database.
+`rag/ingest.py --init-schema` imports this schema and safely applies the FP5 and
+FP6 ingestion columns to an earlier database. FP6 adds the original uploaded
+filename while preserving the server-controlled storage path separately.
 
 ## Configuration
 
@@ -233,11 +259,13 @@ Current local source set:
 - 27 text documents
 - 8 document categories
 
-FP6 will add browser upload and server-side parsing for TXT, text-based PDF, and
+FP6 adds browser upload and server-side parsing for TXT, text-based PDF, and
 DOCX documents. Uploaded files and generated vector data remain local runtime
 data and must not be committed.
 
 ## Security
 
 Do not commit API keys, database passwords, private Metro State documents, or
-uploaded user files. Use local environment configuration for secrets.
+uploaded user files. Use local environment configuration for secrets. The
+upload endpoint enforces extension/MIME agreement, a 10 MB limit, randomized
+storage names, parser validation, and server-side-only processing.

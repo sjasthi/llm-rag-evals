@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS documents (
     category VARCHAR(100) NOT NULL,
     source_path VARCHAR(500) NOT NULL,
     source_type VARCHAR(50) NOT NULL DEFAULT 'txt',
+    original_filename VARCHAR(255) NULL,
     status ENUM('pending', 'ingested', 'failed', 'archived') NOT NULL DEFAULT 'pending',
     source_hash CHAR(64) NULL,
     chunk_size INT UNSIGNED NULL,

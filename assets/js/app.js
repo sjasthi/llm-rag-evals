@@ -12,6 +12,16 @@ $(function () {
     const $answerText = $("#answerText");
     const $answerMeta = $("#answerMeta");
     const $sourceList = $("#sourceList");
+    const $documentForm = $("#documentUploadForm");
+    const $documentFile = $("#documentFile");
+    const $documentTitle = $("#documentTitle");
+    const $documentCategory = $("#documentCategory");
+    const $replaceDocumentId = $("#replaceDocumentId");
+    const $cancelReplaceButton = $("#cancelReplaceButton");
+    const $uploadDocumentButton = $("#uploadDocumentButton");
+    const $uploadSelection = $("#uploadSelection");
+    const $documentMessage = $("#documentMessage");
+    const $documentList = $("#documentList");
 
     $navigation.find('a[href^="#"]').on("click", function () {
         const navigation = bootstrap.Collapse.getInstance($navigation[0]);
@@ -160,4 +170,135 @@ $(function () {
             $askForm.trigger("submit");
         }
     });
+
+    function showDocumentMessage(message, type) {
+        $documentMessage
+            .removeClass("alert-success alert-danger alert-info")
+            .addClass("alert-" + type)
+            .text(message)
+            .prop("hidden", false);
+    }
+
+    function resetReplacement() {
+        $replaceDocumentId.val("");
+        $cancelReplaceButton.prop("hidden", true);
+        $uploadDocumentButton.text("Upload and ingest");
+        $uploadSelection.text("");
+    }
+
+    function renderDocumentList(documents) {
+        $documentList.empty();
+        if (!Array.isArray(documents) || documents.length === 0) {
+            $("p").addClass("text-muted").text("No indexed documents were found.").appendTo($documentList);
+            return;
+        }
+
+        const $stack = $("div").addClass("list-stack");
+        documents.forEach(function (item) {
+            const $row = $("article").addClass("list-item document-item");
+            const $details = $("div").addClass("document-details");
+            $("strong").text(item.title).appendTo($details);
+            $("span")
+                .text(item.original_filename + " · " + item.category + " · " + item.chunk_count + " chunks")
+                .appendTo($details);
+            if (item.ingestion_error) {
+                $("span").addClass("text-danger").text(item.ingestion_error).appendTo($details);
+            }
+            $details.appendTo($row);
+
+            const $actions = $("div").addClass("document-actions");
+            $("small").text(String(item.source_type).toUpperCase() + " · " + item.status).appendTo($actions);
+            if (String(item.source_path).startsWith("storage/uploads/")) {
+                $("button")
+                    .addClass("btn btn-sm btn-outline-secondary replace-document-button")
+                    .attr("type", "button")
+                    .data("document", item)
+                    .text("Replace")
+                    .appendTo($actions);
+            }
+            $actions.appendTo($row);
+            $row.appendTo($stack);
+        });
+        $stack.appendTo($documentList);
+    }
+
+    function loadDocuments() {
+        $documentList.html('<p class="text-muted">Loading documents...</p>');
+        $.getJSON("api/documents.php")
+            .done(function (response) {
+                if (response?.ok !== true) {
+                    showDocumentMessage("The document list could not be loaded.", "danger");
+                    return;
+                }
+                renderDocumentList(response.data);
+            })
+            .fail(function (xhr) {
+                showDocumentMessage(xhr.responseJSON?.error || "The document list could not be loaded.", "danger");
+                $documentList.html('<p class="text-danger">Document data is unavailable.</p>');
+            });
+    }
+
+    $documentFile.on("change", function () {
+        const file = this.files[0];
+        if (!file) {
+            $uploadSelection.text("");
+            return;
+        }
+        $uploadSelection.text(file.name + " · " + Math.ceil(file.size / 1024) + " KB");
+        if (!$documentTitle.val().trim()) {
+            $documentTitle.val(file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "));
+        }
+    });
+
+    $documentList.on("click", ".replace-document-button", function () {
+        const item = $(this).data("document");
+        $replaceDocumentId.val(item.document_id);
+        $documentTitle.val(item.title);
+        $documentCategory.val(item.category);
+        $cancelReplaceButton.prop("hidden", false);
+        $uploadDocumentButton.text("Replace and re-ingest");
+        showDocumentMessage("Choose a new " + String(item.source_type).toUpperCase() + " file for " + item.title + ".", "info");
+        $documentFile.trigger("focus");
+    });
+
+    $cancelReplaceButton.on("click", function () {
+        resetReplacement();
+        $documentForm[0].reset();
+        $documentMessage.prop("hidden", true).text("");
+    });
+
+    $("#refreshDocumentsButton").on("click", loadDocuments);
+
+    $documentForm.on("submit", function (event) {
+        event.preventDefault();
+        const formData = new FormData(this);
+        $uploadDocumentButton.prop("disabled", true).text("Parsing and ingesting...");
+        $cancelReplaceButton.prop("disabled", true);
+        showDocumentMessage("The document is being parsed, chunked, embedded, and stored.", "info");
+
+        $.ajax({
+            url: "api/documents.php",
+            method: "POST",
+            data: formData,
+            processData: false,
+            contentType: false,
+            dataType: "json",
+        })
+            .done(function (response) {
+                showDocumentMessage("Document ingested with " + response.data.chunk_count + " chunks.", "success");
+                $documentForm[0].reset();
+                resetReplacement();
+                loadDocuments();
+            })
+            .fail(function (xhr) {
+                showDocumentMessage(xhr.responseJSON?.error || "Document ingestion failed.", "danger");
+            })
+            .always(function () {
+                $uploadDocumentButton.prop("disabled", false);
+                $cancelReplaceButton.prop("disabled", false);
+                $uploadDocumentButton.text($replaceDocumentId.val() ? "Replace and re-ingest" : "Upload and ingest");
+            });
+    });
+
+    loadDocuments();
 });

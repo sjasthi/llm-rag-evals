@@ -169,6 +169,9 @@ the professor explicitly requires it.
 
 ### FP6: Document Administration and Multi-Format Ingestion
 
+Implementation status: completed locally July 6, 2026; final milestone
+verification and commit pending.
+
 - Add browser upload/list/replace controls.
 - Support TXT, text-based PDF, and DOCX extraction.
 - Connect uploaded files to the existing MySQL/ChromaDB ingestion workflow.

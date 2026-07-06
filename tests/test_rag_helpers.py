@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -13,7 +15,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "rag"))
 
 from answer import answer_question  # noqa: E402
-from ingest import chunk_text, stable_chroma_id  # noqa: E402
+from document_loader import DocumentLoadError, load_document  # noqa: E402
+from ingest import build_loaded_document_chunks, chunk_text, stable_chroma_id  # noqa: E402
 from llm import REFUSAL_MESSAGE, SYSTEM_INSTRUCTION, build_grounded_prompt, generate_with_gemini  # noqa: E402
 from query import SearchResult, lexical_score  # noqa: E402
 from settings import load_settings  # noqa: E402
@@ -45,6 +48,80 @@ class StableIdTests(unittest.TestCase):
             stable_chroma_id("data/example.txt", 2),
             stable_chroma_id("data/example.txt", 3),
         )
+
+
+class DocumentLoaderTests(unittest.TestCase):
+    def test_utf8_txt_is_loaded_with_safe_original_name(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "stored.txt"
+            path.write_text("Metro State registration details", encoding="utf-8-sig")
+            loaded = load_document(path, original_filename="../Registration.txt")
+
+        self.assertEqual("txt", loaded.source_type)
+        self.assertEqual("Registration.txt", loaded.original_filename)
+        self.assertIn("registration details", loaded.text)
+
+    def test_binary_txt_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad.txt"
+            path.write_bytes(b"text\x00binary")
+            with self.assertRaisesRegex(DocumentLoadError, "binary data"):
+                load_document(path)
+
+    def test_empty_pdf_is_rejected_as_non_extractable(self) -> None:
+        fake_reader = SimpleNamespace(is_encrypted=False, pages=[SimpleNamespace(extract_text=lambda: "")])
+        fake_module = SimpleNamespace(PdfReader=lambda _path: fake_reader)
+        with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, {"pypdf": fake_module}):
+            path = Path(directory) / "scan.pdf"
+            path.write_bytes(b"%PDF fixture")
+            with self.assertRaisesRegex(DocumentLoadError, "require OCR"):
+                load_document(path)
+
+    def test_pdf_text_is_extracted(self) -> None:
+        fake_reader = SimpleNamespace(
+            is_encrypted=False,
+            pages=[SimpleNamespace(extract_text=lambda: "Financial aid deadline")],
+        )
+        fake_module = SimpleNamespace(PdfReader=lambda _path: fake_reader)
+        with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, {"pypdf": fake_module}):
+            path = Path(directory) / "aid.pdf"
+            path.write_bytes(b"%PDF fixture")
+            loaded = load_document(path)
+        self.assertEqual("pdf", loaded.source_type)
+        self.assertEqual("Financial aid deadline", loaded.text)
+
+    def test_docx_paragraph_and_table_are_extracted(self) -> None:
+        from docx import Document
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "support.docx"
+            document = Document()
+            document.add_paragraph("Student support services")
+            table = document.add_table(rows=1, cols=2)
+            table.cell(0, 0).text = "Office"
+            table.cell(0, 1).text = "Library"
+            document.save(path)
+            loaded = load_document(path)
+
+        self.assertIn("Student support services", loaded.text)
+        self.assertIn("Office\tLibrary", loaded.text)
+
+    def test_loaded_metadata_is_preserved_in_chunks(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "policy.txt"
+            path.write_text("A policy statement long enough for two chunks.", encoding="utf-8")
+            loaded = load_document(path, original_filename="Policy.txt")
+            chunks = build_loaded_document_chunks(
+                loaded,
+                source_path="storage/uploads/id.txt",
+                category="policies",
+                chunk_size=30,
+                overlap=5,
+            )
+
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(chunk.source_type == "txt" for chunk in chunks))
+        self.assertTrue(all(chunk.original_filename == "Policy.txt" for chunk in chunks))
 
 
 class LexicalScoreTests(unittest.TestCase):

@@ -19,8 +19,8 @@
     <div class="sidebar-note">
         <span class="status-dot"></span>
         <div>
-            <strong>FP4 foundation</strong>
-            <p>Config, schema, and RAG helper scaffolding are now in place.</p>
+            <strong>FP6 document ingestion</strong>
+            <p>Browser upload and TXT/PDF/DOCX parsing are available.</p>
         </div>
     </div>
 </aside>

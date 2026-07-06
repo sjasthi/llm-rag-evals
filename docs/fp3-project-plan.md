@@ -57,6 +57,19 @@ experiment and clearly state the limits of generalizing from the local corpus.
 See `docs/research-plan.md` for the detailed experiment design and FP6-FP10
 implementation sequence.
 
+## FP6 Exit Criteria
+
+Status: implemented locally on July 6, 2026.
+
+- Browser upload accepts validated TXT, text-based PDF, and DOCX files.
+- Uploaded files use random server-controlled names in ignored runtime storage.
+- Format-specific extraction produces normalized text for one shared ingestion path.
+- MySQL stores original filename, type, status, errors, and chunk counts.
+- ChromaDB replacement removes the earlier vectors for the same source path.
+- The browser lists indexed documents and supports same-format replacement for uploads.
+- Parser and FP5 regression tests pass before the milestone is committed.
+- FP7 begins with the manually reviewed 25+ question research dataset.
+
 ## Working Agreement
 
 - Review the iteration scope at the start of each iteration.

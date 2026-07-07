@@ -36,9 +36,13 @@ JSON endpoint. Users can submit a question in the browser, view the grounded
 answer and ranked source excerpts, and see the model, latency, and saved
 response ID.
 
-FP7 will create a manually reviewed dataset of at least 25 evaluation
-questions, compare metrics on the same stored responses, study failure cases
-and corpus-size effects, and present research findings in the dashboard/report.
+FP7 begins the evaluation research foundation. The working scope keeps the
+manually reviewed dataset target of at least 25 questions and adds the
+professor-confirmed objective of researching approximately ten evaluator
+types. These evaluators will span lexical, token-overlap, semantic, BERT-based,
+source/retrieval, LLM-as-judge, and RAGAS approaches. They will score the same
+stored responses so the project can explain agreement, disagreement, cost,
+speed, determinism, failure coverage, and appropriate use cases.
 
 ## Research Direction
 
@@ -54,6 +58,8 @@ document collection with the full collection to observe how added documents and
 similar distractors affect retrieval and metric behavior. See the
 [research plan](docs/research-plan.md) for the detailed questions, experiments,
 interpretation rules, and FP6-FP10 roadmap.
+The [evaluation strategy](docs/evaluation-strategy.md) defines the proposed ten
+evaluator types, controlled protocol, trade-off questions, and FP7 resume point.
 
 ## Technology Stack
 
@@ -251,6 +257,7 @@ Current safe example values are stored in:
 - [Code structure and conventions](docs/code-structure.md)
 - [Recommended implementation approach](docs/implementation-approach.md)
 - [RAG evaluation research plan](docs/research-plan.md)
+- [Ten-evaluator strategy and FP7 resume plan](docs/evaluation-strategy.md)
 
 ## Source Documents
 

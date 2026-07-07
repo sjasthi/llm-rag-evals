@@ -40,6 +40,11 @@ The final project should produce:
 - recommendations explaining which metrics are useful for particular purposes;
 - limitations and follow-up questions for larger organizational document sets.
 
+The confirmed research emphasis is approximately ten evaluator/metric types
+drawn from multiple method families, not ten questions and not a RAGAS-only
+integration. See `docs/evaluation-strategy.md` for the proposed evaluator set,
+controlled protocol, trade-off matrix, teaching examples, and FP7-FP10 sequence.
+
 ## Evaluation Dataset Design
 
 Begin with at least 25 manually reviewed questions. Twenty-five is a practical
@@ -74,6 +79,11 @@ LLM-as-judge, RAGAS, human evaluation, and production A/B testing. FP7 should
 implement approximately ten evaluator/metric types against the same stored
 responses, record cost/speed/determinism trade-offs, and use human-reviewed
 expected answers/sources to interpret metric agreement and disagreement.
+
+RAGAS is one evaluator framework within the comparison rather than the entire
+research scope. Human review is the calibration baseline. Production A/B
+testing is discussed as an option but is not an implementation target for a
+localhost capstone without real traffic.
 
 | Metric | What it helps assess | Main limitation |
 | --- | --- | --- |
@@ -196,15 +206,21 @@ Implementation status: completed, verified, committed, and pushed July 6, 2026.
 - Create at least 25 manually verified evaluation questions.
 - Cover all current categories and include unanswerable cases.
 - Add question-management and evaluation-run interfaces.
-- Implement normalized match, semantic similarity, expected-source accuracy,
-  refusal correctness, and latency.
-- Store per-question scores and all run settings.
+- Add evaluator definitions and heterogeneous per-question result storage.
+- Implement local baseline families: exact/contains, token overlap,
+  embedding-semantic similarity, BERTScore, expected-source accuracy, refusal
+  correctness, latency, and evaluator runtime.
+- Generate each RAG response once and apply all compatible evaluators to the
+  same saved answer and contexts.
+- Store raw scores/details, evaluator versions/settings, errors, runtime, and
+  cost estimates.
 
 ### FP8: Advanced Metrics and Research Experiments
 
-- Add faithfulness/groundedness and answer-relevance evaluation.
-- Evaluate whether LLM-as-judge or selected RAGAS-style metrics add useful
-  evidence beyond the baseline metrics.
+- Add a versioned LLM-as-judge rubric plus RAGAS Faithfulness, Response
+  Relevancy, Context Precision, and Context Recall.
+- Determine what judged/RAGAS metrics add beyond local baselines and where
+  their cost, variability, or evaluator bias changes their usefulness.
 - Run controlled retrieval/top-k and corpus-size/composition experiments.
 - Analyze disagreements and label failure cases.
 

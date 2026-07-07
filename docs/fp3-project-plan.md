@@ -31,10 +31,10 @@ work.
 | FP4 | Establish application shell and database foundation | Shared layout, environment configuration, MySQL schema, database connection test |
 | FP5 | Complete the core RAG round trip and first web workflow | MySQL/ChromaDB ingestion, retrieval, grounded Gemini answer, PHP Ask page, stored sources |
 | FP6 | Add document administration and multi-format ingestion | Browser upload/list/replace/delete flow, live counts, TXT/PDF/DOCX extraction, ingestion status and regression tests |
-| FP7 | Create the research dataset and baseline metrics | At least 25 reviewed questions, managed expected answers/sources, normalized match, semantic, source, refusal and latency results |
-| FP8 | Compare advanced metrics and controlled experiments | Faithfulness/relevance or LLM-judge metrics, metric-disagreement analysis, retrieval and corpus-size/composition experiments |
-| FP9 | Complete research dashboard, interpretation, and system testing | Metric explanations, comparisons, failure analysis, preliminary findings, accessibility/security checks |
-| FP10 | Stabilize and deliver the research application | Reproducible experiment guide, findings and limitations, presentation, final report, tagged release |
+| FP7 | Build the reviewed dataset and evaluator foundation | At least 25 reviewed questions, evaluator/result schema, shared saved responses, local lexical/token/semantic/BERT/source baselines |
+| FP8 | Complete approximately ten evaluator types and controlled experiments | LLM-as-judge and RAGAS retrieval/generation evaluators, cost/runtime tracking, disagreement analysis, retrieval and corpus experiments |
+| FP9 | Complete research dashboard, interpretation, and system testing | Per-evaluator explanations and trade-offs, comparisons, failure analysis, preliminary findings, accessibility/security checks |
+| FP10 | Stabilize and teach the research findings | Reproducible experiment guide, use-case recommendations, findings and limitations, presentation, final report, tagged release |
 
 ## Revised Research Direction After FP5 Review
 
@@ -55,7 +55,8 @@ scale. It should run a controlled collection-size or collection-composition
 experiment and clearly state the limits of generalizing from the local corpus.
 
 See `docs/research-plan.md` for the detailed experiment design and FP6-FP10
-implementation sequence.
+implementation sequence and `docs/evaluation-strategy.md` for the confirmed
+ten-evaluator research direction.
 
 ## FP6 Exit Criteria
 

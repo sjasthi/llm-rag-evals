@@ -204,6 +204,11 @@ a page reload, while bundled source documents remain protected.
 The test set is central to the project. Evaluation results are not meaningful
 without stable questions and expected answers.
 
+The dataset size and evaluator count are separate requirements. The working
+dataset target remains at least 25 reviewed questions, while the professor's
+confirmed research direction is approximately ten evaluator types applied to
+the same saved responses.
+
 ### Phase 4: Add Evaluation Management to the PHP Application
 
 Implement three primary areas:
@@ -214,23 +219,28 @@ Implement three primary areas:
 
 ### Phase 5: Add Evaluation Incrementally
 
-Start with:
+Implement evaluator families in phases. Start with inexpensive local methods:
 
-1. Exact or normalized string match.
-2. Semantic similarity between expected and generated answers.
-3. Retrieval source accuracy.
-4. Latency and estimated API cost.
+1. Exact/contains match.
+2. BLEU/ROUGE/METEOR token-overlap family.
+3. Embedding semantic similarity.
+4. BERTScore.
+5. Expected-source accuracy.
+6. Refusal correctness, latency, evaluator runtime, and estimated cost.
 
-Then add:
+Then add judged/RAG-specific methods:
 
-5. Refusal correctness for unanswerable questions.
-6. LLM-as-judge scoring.
-7. Faithfulness and answer relevancy.
-8. Optional selected RAGAS metrics through an offline Python script.
+7. A versioned LLM-as-judge rubric.
+8. RAGAS Faithfulness.
+9. RAGAS Response Relevancy.
+10. RAGAS Context Precision and Context Recall.
 
 Apply multiple metrics to the same stored responses. Record where metrics agree
 or disagree, and label whether each failure originated in parsing, retrieval,
 generation, expected data, or the metric itself.
+
+See `docs/evaluation-strategy.md` for the authoritative evaluator definitions,
+inputs, limitations, controlled protocol, and teaching requirements.
 
 ## Minimum Comparison Experiment
 

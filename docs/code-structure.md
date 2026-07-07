@@ -105,6 +105,13 @@ placeholder directories are unnecessary.
   can be audited.
 - Do not encode a universal "best" metric in application logic; recommendations
   must depend on the documented research purpose.
+- Model evaluator definitions separately from evaluator results so lexical,
+  embedding-based, and LLM-judged outputs can share one auditable run model.
+- Save evaluator name/version/configuration, raw details, runtime, estimated
+  cost, and errors; never regenerate a RAG answer merely to score it with a
+  different evaluator.
+- Use `docs/evaluation-strategy.md` as the authoritative source for the proposed
+  ten evaluator types and controlled experiment protocol.
 
 ### HTML, CSS, and JavaScript
 

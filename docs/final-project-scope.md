@@ -31,6 +31,13 @@ The final product should help:
 The final report should recommend metrics for specific uses. It should not
 claim that one metric, provider, or configuration is universally best.
 
+The professor-confirmed emphasis is to research and explain approximately ten
+evaluator/metric types across multiple method families. RAGAS is part of this
+comparison, not the sole evaluation approach. The project must teach why scores
+differ and describe each evaluator's inputs, cost, speed, determinism,
+strengths, limitations, and appropriate use cases. The detailed working set and
+protocol are defined in `docs/evaluation-strategy.md`.
+
 ## Final Product Goal
 
 By the final submission, the application should let a user:
@@ -207,8 +214,9 @@ The project should be considered successful if it implements:
 6. Source display.
 7. A manually reviewed dataset of at least 25 questions covering the current
    categories and including unanswerable cases.
-8. Multiple metrics that separately measure answer, retrieval/source, and
-   grounding or refusal behavior.
+8. Approximately ten evaluator types spanning lexical/token overlap, semantic,
+   contextual embedding, source/retrieval, LLM-as-judge, and RAGAS measures,
+   applied to common stored responses.
 9. Stored per-question evaluation results and run settings.
 10. At least one controlled retrieval/configuration comparison.
 11. A controlled document-collection size or composition comparison.
@@ -240,7 +248,8 @@ The preferred final scope is intentionally focused on the evaluation goal:
   based on the instructor's note.
 - Python helper/service for ChromaDB ingestion and retrieval, while PHP remains
   the main application interface.
-- Optional offline Python evaluation only if needed for RAGAS.
+- Python evaluation layer for local evaluator libraries, LLM-as-judge, and the
+  selected RAGAS metrics while PHP remains the main application interface.
 
 ## Out of Scope Unless It Supports the Evaluation Goal
 

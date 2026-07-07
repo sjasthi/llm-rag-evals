@@ -274,6 +274,21 @@ The system shall support multiple evaluation methods for comparing actual genera
 
 The same stored responses should be scored by multiple methods so metric results can be compared directly. The system shall preserve per-question scores and should identify cases where metrics disagree. Metric documentation shall explain what each method measures, its intended use, and its limitations.
 
+The project shall research and compare approximately ten evaluator/metric types
+across lexical, token-overlap, semantic, contextual-embedding,
+source/retrieval, LLM-as-judge, and RAGAS method families. RAGAS shall be
+treated as one framework within the comparison rather than the complete
+evaluation strategy. Every applicable evaluator shall operate on the same
+stored response and retrieved contexts for a controlled comparison.
+
+For each evaluator, the system or final report shall record its required
+inputs, retrieval/generation dimension, raw and normalized result where
+applicable, configuration/version, deterministic or judged classification,
+runtime, estimated cost, error status, strengths, limitations, and recommended
+use case. Human review shall be used to calibrate and interpret automated
+scores. See `docs/evaluation-strategy.md` for the working evaluator set and
+experiment protocol.
+
 Possible evaluation methods include:
 
 ### Exact Match / String Match
@@ -293,6 +308,19 @@ Examples:
 ### Semantic Similarity
 
 Compares the generated answer and expected answer using embeddings or semantic similarity.
+
+### BERTScore
+
+Uses contextual token embeddings to calculate precision, recall, and F1 between
+the generated and expected answers. It provides a heavier local semantic
+comparison that remains distinct from factual grounding.
+
+### Expected-Source Accuracy
+
+Checks whether the manually verified source document appears in the ranked
+retrieval results and records its rank. This directly evaluates a project-level
+retrieval requirement but does not by itself prove that the retrieved excerpt
+contains sufficient evidence.
 
 ### LLM-as-Judge
 

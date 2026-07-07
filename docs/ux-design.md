@@ -48,6 +48,13 @@ should have a plain-language definition, intended use, and limitation.
 Technical details remain available without overwhelming the initial business
 summary.
 
+The dashboard must support the approximately ten-evaluator research objective
+without collapsing unlike scores into one unexplained grade. Each evaluator
+view should identify whether it measures retrieval, generation, or both and
+show its method family, score, explanation/details, runtime, cost estimate,
+version/configuration, and error state. Users must be able to hold a question
+and saved response fixed while comparing evaluator outputs side by side.
+
 ### Document Management
 
 Uses a clear upload form and indexed list showing document status, type, chunk
@@ -77,6 +84,12 @@ show the question, expected answer/source, generated answer, retrieved chunks,
 settings, each metric score, and any assigned failure category. Users should be
 able to compare corpus variants or RAG settings while holding other variables
 fixed.
+
+The comparison view should expose teaching examples: correct paraphrases that
+lexical metrics penalize, factually wrong answers that semantic metrics score
+highly, faithful answers based on incomplete retrieval, context
+precision/recall trade-offs, and disagreements between automated metrics and
+human review.
 
 ## Interaction and Accessibility Guidelines
 

@@ -64,6 +64,17 @@ the evaluation set should instead sample the behaviors and risks that matter.
 
 ## Metrics and Their Specific Uses
 
+Professor-provided evaluation reference:
+
+- [RAG Chatbot Accuracy Evaluation: Options & Trade-offs](https://github.com/sjasthi/ics499/blob/main/presentations/rag_chatbot_evaluations.md)
+
+This reference separates retrieval quality from generation quality and compares
+exact/string matching, BLEU/ROUGE/METEOR, semantic similarity, BERTScore,
+LLM-as-judge, RAGAS, human evaluation, and production A/B testing. FP7 should
+implement approximately ten evaluator/metric types against the same stored
+responses, record cost/speed/determinism trade-offs, and use human-reviewed
+expected answers/sources to interpret metric agreement and disagreement.
+
 | Metric | What it helps assess | Main limitation |
 | --- | --- | --- |
 | Normalized exact/contains match | Whether a required fact, date, or phrase appears | Penalizes correct paraphrases and can reward unsupported keyword copying |

@@ -1,8 +1,24 @@
+Basic Use Case: We RAGGed 50 documents. Chatbot Works
+
+Use Case 1:  A new process document is added (Doc 51).
+Use Case 2:  An existing document is deleted (Doc 49 should be deleted)
+Use Case 3:  An existing document got updated (Doc 48 should be revised)   (  = Use Case 2 + Use Case 1)
+
+When it comes to Use Case 1, do you just Vectorize Doc51? or do you vectorize all 51 documents?
+When itcomes to Use Case 2, how do you remove the embeddings of Just Doc 49?  Or is it required to RE-RAG the remaining 49 documents?
+
+===========================================
+
+
+
 Reference Repo 1:  https://github.com/sjasthi/ragworks
 Reference Repo 2: https://github.com/sjasthi/student-compass
 https://github.com/sjasthi/student-compass/tree/main/documents  (use these documents as starting point)
 
-Reference md files: See the three files I uploaded. You can review, delete, consolidate, edit, fix, enhance these md files
+Reference md files: See the three f
+
+
+iles I uploaded. You can review, delete, consolidate, edit, fix, enhance these md files
 
 ICS499 Summer 2026 Repo: https://github.com/sjasthi/llm-rag-evals
 

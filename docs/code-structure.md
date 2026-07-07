@@ -28,6 +28,7 @@ llm-rag-evals/
 |   `-- Evaluation/
 |-- rag/
 |   |-- chroma/
+|   |-- admin.py
 |   |-- answer.py
 |   |-- database.py
 |   |-- document_loader.py
@@ -90,6 +91,8 @@ placeholder directories are unnecessary.
   for storage.
 - Make replace/re-ingest idempotent so a document cannot leave duplicate MySQL
   chunks or ChromaDB vectors.
+- Restrict browser deletion to server-managed upload paths and remove the file,
+  structured record/chunks, and matching vectors.
 - Unit test parsers with small non-sensitive fixtures.
 
 ### Evaluation and Research

@@ -14,12 +14,14 @@ composition affect retrieval and evaluation results.
 FP6 implements browser document administration and normalized multi-format
 ingestion. Administrators can upload and list TXT, text-based PDF, and DOCX
 files, then replace or delete browser-uploaded documents. Replacement uses
-another file of the same type. PHP validates upload status, size, extension, and MIME type; stores files
+another file of the same type. PHP validates upload status, size, extension,
+and MIME type; stores files
 under random server-controlled names; and calls the Python ingestion bridge.
 Python extracts and validates text, then sends every supported format through
 the same chunking, MySQL, and ChromaDB workflow. The interface reports status,
 chunk counts, and actionable parser errors. Uploaded files remain in ignored
-runtime storage.
+runtime storage. Dashboard document/category counts update from the indexed
+database records after each upload, replacement, deletion, or manual refresh.
 
 The FP5 core remains operational. The 27 local
 Metro State documents are split into 77 chunks, tracked in MySQL, embedded with
@@ -92,7 +94,7 @@ http://127.0.0.1:8000/
 Expected result:
 
 - The RAG Evaluation Workspace page loads.
-- The dashboard shows the current Metro State source document count.
+- The dashboard shows live indexed-document and category counts.
 - The dashboard shows the number of document categories.
 - The page identifies the stack as PHP + MySQL + ChromaDB.
 - The Ask section accepts questions and displays a Gemini answer with sources.
@@ -108,7 +110,9 @@ browser.
 The Documents form uses `api/documents.php`. Uploaded files must be UTF-8 TXT,
 text-based PDF, or DOCX and no larger than 10 MB. Scanned PDFs without
 extractable text and encrypted PDFs are rejected. Replacement and deletion are
-limited to browser-uploaded documents, and replacement must keep the same file type.
+limited to browser-uploaded documents, and replacement must keep the same file
+type. Deletion removes the uploaded file, MySQL record/chunks, and matching
+ChromaDB vectors; the 27 bundled Metro State documents are protected.
 
 ## FP6 Setup
 
@@ -260,9 +264,10 @@ Current local source set:
 - 27 text documents
 - 8 document categories
 
-FP6 adds browser upload and server-side parsing for TXT, text-based PDF, and
-DOCX documents. Uploaded files and generated vector data remain local runtime
-data and must not be committed.
+FP6 adds browser upload, live listing/counts, protected replacement/deletion,
+and server-side parsing for TXT, text-based PDF, and DOCX documents. Uploaded
+files and generated vector data remain local runtime data and must not be
+committed.
 
 ## Security
 

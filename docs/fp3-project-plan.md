@@ -30,7 +30,7 @@ work.
 | FP3 | Finalize requirements, project plan, UX direction, code structure, and starter page | `requirements.md`, FP3 documents, responsive `index.php` |
 | FP4 | Establish application shell and database foundation | Shared layout, environment configuration, MySQL schema, database connection test |
 | FP5 | Complete the core RAG round trip and first web workflow | MySQL/ChromaDB ingestion, retrieval, grounded Gemini answer, PHP Ask page, stored sources |
-| FP6 | Add document administration and multi-format ingestion | Browser upload/list/replace flow, TXT/PDF/DOCX extraction, ingestion status and regression tests |
+| FP6 | Add document administration and multi-format ingestion | Browser upload/list/replace/delete flow, live counts, TXT/PDF/DOCX extraction, ingestion status and regression tests |
 | FP7 | Create the research dataset and baseline metrics | At least 25 reviewed questions, managed expected answers/sources, normalized match, semantic, source, refusal and latency results |
 | FP8 | Compare advanced metrics and controlled experiments | Faithfulness/relevance or LLM-judge metrics, metric-disagreement analysis, retrieval and corpus-size/composition experiments |
 | FP9 | Complete research dashboard, interpretation, and system testing | Metric explanations, comparisons, failure analysis, preliminary findings, accessibility/security checks |
@@ -59,14 +59,15 @@ implementation sequence.
 
 ## FP6 Exit Criteria
 
-Status: implemented locally on July 6, 2026.
+Status: implemented, verified, committed, and pushed on July 6, 2026.
 
 - Browser upload accepts validated TXT, text-based PDF, and DOCX files.
 - Uploaded files use random server-controlled names in ignored runtime storage.
 - Format-specific extraction produces normalized text for one shared ingestion path.
 - MySQL stores original filename, type, status, errors, and chunk counts.
 - ChromaDB replacement removes the earlier vectors for the same source path.
-- The browser lists indexed documents and supports same-format replacement and deletion for uploads.
+- The browser lists indexed documents, updates document/category counts live,
+  and supports same-format replacement and deletion for uploads.
 - Parser and FP5 regression tests pass before the milestone is committed.
 - FP7 begins with the manually reviewed 25+ question research dataset.
 

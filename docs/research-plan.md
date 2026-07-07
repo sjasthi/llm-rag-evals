@@ -134,7 +134,7 @@ Review low-scoring and metric-disagreement cases. Assign a failure type:
 
 ## Multi-Format Document Capability
 
-FP6 should add browser-based TXT, PDF, and DOCX upload. All formats should feed
+FP6 adds browser-based TXT, PDF, and DOCX upload. All formats feed
 one normalized ingestion pipeline:
 
 ```text
@@ -158,6 +158,9 @@ Implementation requirements:
 - extract text server-side and never execute uploaded content;
 - record parsing/ingestion failures in MySQL;
 - replace or re-ingest a document without leaving duplicate chunks;
+- delete browser-managed uploads from storage, MySQL, and ChromaDB while
+  protecting bundled sources;
+- update indexed document/category counts from the live document list;
 - keep uploaded files and generated vector data out of Git;
 - add parser and upload tests using small non-sensitive fixtures.
 
@@ -169,10 +172,9 @@ the professor explicitly requires it.
 
 ### FP6: Document Administration and Multi-Format Ingestion
 
-Implementation status: completed locally July 6, 2026; final milestone
-verification and commit pending.
+Implementation status: completed, verified, committed, and pushed July 6, 2026.
 
-- Add browser upload/list/replace controls.
+- Add browser upload/list/replace/delete controls and live counts.
 - Support TXT, text-based PDF, and DOCX extraction.
 - Connect uploaded files to the existing MySQL/ChromaDB ingestion workflow.
 - Display document type, ingestion status, chunk count, and useful errors.

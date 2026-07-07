@@ -170,6 +170,11 @@ The system shall allow admin users to view uploaded documents.
 
 The system shall allow admin users to delete or replace uploaded documents.
 
+FP6 implements live document/category counts plus replacement and confirmed
+deletion for browser-managed uploads. Deletion removes the stored file, MySQL
+document/chunks, and matching ChromaDB vectors. The bundled Metro State source
+documents are intentionally protected from browser replacement or deletion.
+
 The system shall prepare uploaded documents for RAG processing.
 
 The browser upload workflow shall validate extension, MIME type, file size, upload status, and parser output. Uploaded filenames shall not be trusted as server storage names. The system shall reject encrypted, unreadable, empty, or unsupported files with a clear error and record ingestion failures for diagnosis.

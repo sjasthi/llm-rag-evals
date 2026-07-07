@@ -50,16 +50,18 @@ summary.
 
 ### Document Management
 
-Uses a clear upload form and searchable table showing document status, type,
-upload date, chunk count, and available actions. The FP6 browser form should
-accept TXT, text-based PDF, and DOCX files. It should show selected filename,
-type and size before submission, a visible parsing/ingestion progress state, and
-specific validation or parser errors. Successful ingestion should update the
-table without requiring the user to inspect terminal output.
+Uses a clear upload form and indexed list showing document status, type, chunk
+count, and available actions. The implemented FP6 browser form accepts TXT,
+text-based PDF, and DOCX files. It shows the selected filename and size before
+submission, an elapsed parsing/ingestion state, and specific validation or
+parser errors. Successful ingestion updates the list and dashboard counts
+without a page reload.
 
-Replacement should clearly identify which document will be replaced and warn
-that its chunks and embeddings will be regenerated. Unsupported, encrypted,
-empty, and scanned-without-text files should produce understandable messages.
+Replacement identifies which document will be replaced and regenerates its
+chunks and embeddings. Deletion requires confirmation and removes a
+browser-managed upload from file storage, MySQL, and ChromaDB. Bundled sources
+cannot be replaced or deleted. Unsupported, encrypted, empty, and
+scanned-without-text files produce understandable messages.
 
 ### Evaluation Questions
 

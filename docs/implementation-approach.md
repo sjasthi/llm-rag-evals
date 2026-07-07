@@ -172,7 +172,7 @@ and source display.
 
 ### Phase 2: Add Multi-Format Document Administration
 
-1. Add browser upload/list/replace controls.
+1. Add browser upload/list/replace/delete controls and live indexed counts.
 2. Validate TXT, PDF, and DOCX uploads in PHP.
 3. Extract normalized text in Python.
 4. Send parsed documents through the existing chunking, MySQL, and ChromaDB
@@ -182,11 +182,13 @@ and source display.
 This is the primary FP6 implementation target because the Ask page planned for
 FP6 was completed early during FP5.
 
-Status: implemented locally in FP6. The PHP endpoint validates and stores
+Status: implemented, verified, and pushed in FP6. The PHP endpoint validates and stores
 uploads, `rag/document_loader.py` extracts normalized TXT/PDF/DOCX text, and
 `rag/admin.py` bridges the browser request to the shared MySQL/ChromaDB
 ingestion path. The UI lists document type, status, chunk count, and parser
-errors and permits same-format replacement or deletion of browser-managed uploads.
+errors and permits same-format replacement or deletion of browser-managed
+uploads. Document/category summary counts update from the API response without
+a page reload, while bundled source documents remain protected.
 
 ### Phase 3: Create the Gold Dataset
 

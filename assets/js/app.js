@@ -25,16 +25,49 @@ $(function () {
     const $refreshDocumentsButton = $("#refreshDocumentsButton");
     const $documentCount = $("#documentCount");
     const $categoryCount = $("#categoryCount");
+    const $evaluationQuestionCount = $("#evaluationQuestionCount");
+    const $evaluationDatasetSummary = $("#evaluationDatasetSummary");
+    const $evaluationQuestionList = $("#evaluationQuestionList");
+    const $evaluationCategoryFilter = $("#evaluationCategoryFilter");
+    const $evaluationStatusFilter = $("#evaluationStatusFilter");
+    const $evaluatorCount = $("#evaluatorCount");
+    const $evaluatorSummary = $("#evaluatorSummary");
+    const $evaluationRunList = $("#evaluationRunList");
+    const $evaluationResultDetail = $("#evaluationResultDetail");
+    let evaluationQuestions = [];
     let documentListRequest = null;
     let ingestionStartedAt = null;
     let ingestionTimer = null;
 
-    $navigation.find('a[href^="#"]').on("click", function () {
-        const navigation = bootstrap.Collapse.getInstance($navigation[0]);
+    const $workspaceViews = $("[data-view-panel]");
 
-        if (navigation) {
-            navigation.hide();
+    function activateWorkspaceView(viewName, updateHistory) {
+        const normalizedView = $workspaceViews.filter('[data-view-panel="' + viewName + '"]').length
+            ? viewName
+            : "overview";
+        $workspaceViews.each(function () {
+            $(this).prop("hidden", $(this).data("viewPanel") !== normalizedView);
+        });
+        $navigation.find("[data-view]").each(function () {
+            const isActive = $(this).data("view") === normalizedView;
+            $(this).toggleClass("active", isActive).attr("aria-current", isActive ? "page" : null);
+        });
+        if (updateHistory) {
+            window.history.replaceState(null, "", "#" + normalizedView);
         }
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    $(document).on("click", 'a[href^="#"]', function (event) {
+        const viewName = String($(this).attr("href") || "").slice(1);
+        if ($workspaceViews.filter('[data-view-panel="' + viewName + '"]').length) {
+            event.preventDefault();
+            activateWorkspaceView(viewName, true);
+        }
+    });
+
+    $(window).on("hashchange", function () {
+        activateWorkspaceView(window.location.hash.slice(1), false);
     });
 
     function setBusy(isBusy) {
@@ -403,5 +436,154 @@ $(function () {
             });
     });
 
+    function renderEvaluationQuestions() {
+        const category = $evaluationCategoryFilter.val();
+        const status = $evaluationStatusFilter.val();
+        const filtered = evaluationQuestions.filter(function (question) {
+            return (!category || question.category === category) && (!status || question.review_status === status);
+        });
+        $evaluationQuestionList.empty();
+        if (!filtered.length) {
+            $evaluationQuestionList.append($("<p>").addClass("text-muted").text("No questions match these filters."));
+            return;
+        }
+        filtered.forEach(function (question) {
+            const $item = $("<article>").addClass("evaluation-question");
+            const $heading = $("<div>").addClass("evaluation-question-heading");
+            $heading.append($("<strong>").text(question.display_order + ". " + question.question_text));
+            $heading.append($("<span>").addClass("status status-" + (question.review_status === "reviewed" ? "ready" : "planned")).text(question.review_status.replace("_", " ")));
+            $item.append($heading);
+            $item.append($("<p>").text(question.expected_answer));
+            $item.append($("<small>").text(question.category + " · " + question.difficulty + " · " + (Number(question.is_answerable) ? "answerable" : "unanswerable")));
+            const $actions = $("<div>").addClass("evaluation-review-actions");
+            ["reviewed", "needs_revision", "draft"].forEach(function (nextStatus) {
+                $actions.append(
+                    $("<button>")
+                        .attr("type", "button")
+                        .addClass("btn btn-sm btn-outline-secondary evaluation-review-button")
+                        .prop("disabled", question.review_status === nextStatus)
+                        .data({ questionId: question.question_id, reviewStatus: nextStatus })
+                        .text(nextStatus === "needs_revision" ? "Needs revision" : nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1))
+                );
+            });
+            $item.append($actions);
+            $evaluationQuestionList.append($item);
+        });
+    }
+
+    function loadEvaluationDataset() {
+        $.getJSON("api/evaluations.php")
+            .done(function (response) {
+                const data = response.data;
+                evaluationQuestions = data.questions || [];
+                const dataset = data.dataset;
+                if (!dataset) {
+                    $evaluationDatasetSummary.text("No evaluation dataset has been seeded.");
+                    return;
+                }
+                $evaluationQuestionCount.text(dataset.question_count);
+                $evaluationDatasetSummary.text(
+                    dataset.dataset_name + " " + dataset.version + ": " + dataset.reviewed_count + " of " + dataset.question_count +
+                    " reviewed; " + dataset.unanswerable_count + " unanswerable cases across " + dataset.category_count + " categories."
+                );
+                $evaluatorCount.text((data.evaluators || []).length + " evaluator definitions registered");
+                $evaluatorSummary.text(
+                    (data.runs || []).length + " saved runs are available. Scores remain separate by evaluator; select a response to inspect evidence and disagreements."
+                );
+                const categories = [...new Set(evaluationQuestions.map(function (question) { return question.category; }))].sort();
+                $evaluationCategoryFilter.find("option:not(:first)").remove();
+                categories.forEach(function (value) {
+                    $evaluationCategoryFilter.append($("<option>").val(value).text(value.replaceAll("_", " ")));
+                });
+                renderEvaluationQuestions();
+                renderEvaluationRuns(data.runs || [], data.responses || []);
+            })
+            .fail(function () {
+                $evaluationDatasetSummary.text("Evaluation data could not be loaded. Run the FP7 schema and seed commands.");
+            });
+    }
+
+    function renderEvaluationRuns(runs, responses) {
+        $evaluationRunList.empty();
+        if (!runs.length) {
+            $evaluationRunList.append($("<p>").addClass("text-muted").text("No controlled evaluation runs have been saved yet."));
+            return;
+        }
+        runs.forEach(function (run) {
+            const $run = $("<article>").addClass("evaluation-run");
+            $run.append($("<strong>").text("Run " + run.run_id + ": " + run.run_name));
+            $run.append($("<span>").text(run.status + " · " + run.response_count + " responses · " + run.result_count + " evaluator results"));
+            const runResponses = responses.filter(function (response) { return String(response.run_id) === String(run.run_id); });
+            const $buttons = $("<div>").addClass("evaluation-response-buttons");
+            runResponses.forEach(function (response) {
+                $buttons.append(
+                    $("<button>")
+                        .attr("type", "button")
+                        .addClass("btn btn-sm btn-outline-primary evaluation-response-button")
+                        .data("responseId", response.response_id)
+                        .text("Response " + response.response_id + ": " + response.question_text)
+                );
+            });
+            $run.append($buttons);
+            $evaluationRunList.append($run);
+        });
+    }
+
+    function renderEvaluationDetail(data) {
+        const response = data.response;
+        $evaluationResultDetail.empty().prop("hidden", false);
+        $evaluationResultDetail.append($("<h3>").addClass("h5").text("Response " + response.response_id + " inspection"));
+        $evaluationResultDetail.append($("<strong>").text(response.question_text));
+        $evaluationResultDetail.append($("<p>").text(response.answer_text));
+        if (response.expected_answer) {
+            $evaluationResultDetail.append($("<p>").addClass("evaluation-expected").text("Expected: " + response.expected_answer));
+        }
+        const $scores = $("<div>").addClass("evaluation-score-list");
+        (data.results || []).forEach(function (result) {
+            const score = result.normalized_score === null ? "N/A" : Number(result.normalized_score).toFixed(3);
+            const $score = $("<article>").addClass("evaluation-score");
+            $score.append($("<strong>").text(result.display_name + ": " + score));
+            $score.append($("<span>").text(result.dimension + " · " + result.family + " · " + result.runtime_ms + " ms"));
+            $score.append($("<p>").text(result.error_message || result.explanation));
+            $scores.append($score);
+        });
+        $evaluationResultDetail.append($scores);
+        const $contexts = $("<details>");
+        $contexts.append($("<summary>").text("Retrieved evidence (" + (data.contexts || []).length + ")"));
+        (data.contexts || []).forEach(function (context) {
+            $contexts.append($("<strong>").text("Rank " + context.rank_position + ": " + (context.source_path || "unknown source")));
+            $contexts.append($("<p>").text(context.context_excerpt));
+        });
+        $evaluationResultDetail.append($contexts);
+    }
+
+    $evaluationCategoryFilter.add($evaluationStatusFilter).on("change", renderEvaluationQuestions);
+    $evaluationQuestionList.on("click", ".evaluation-review-button", function () {
+        const $button = $(this);
+        $button.prop("disabled", true);
+        $.ajax({
+            url: "api/evaluations.php",
+            method: "PATCH",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({ question_id: $button.data("questionId"), review_status: $button.data("reviewStatus") }),
+        }).done(loadEvaluationDataset).fail(function () {
+            $button.prop("disabled", false);
+        });
+    });
+
+    $evaluationRunList.on("click", ".evaluation-response-button", function () {
+        const $button = $(this);
+        $button.prop("disabled", true);
+        $.getJSON("api/evaluations.php", { response_id: $button.data("responseId") })
+            .done(function (response) {
+                renderEvaluationDetail(response.data);
+                $evaluationResultDetail[0].scrollIntoView({ behavior: "smooth", block: "nearest" });
+            })
+            .always(function () { $button.prop("disabled", false); });
+    });
+
     loadDocuments();
+    loadEvaluationDataset();
+    activateWorkspaceView(window.location.hash.slice(1) || "overview", false);
 });

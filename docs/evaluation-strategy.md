@@ -133,6 +133,8 @@ For every evaluator, the application/report must answer:
 
 ### FP7: Evaluation Foundation and Local Baselines
 
+Status: completed and verified July 10, 2026.
+
 - Finalize and manually verify the evaluation question schema and initial
   dataset.
 - Add question management and dataset-version support.
@@ -142,6 +144,15 @@ For every evaluator, the application/report must answer:
   BLEU/ROUGE/METEOR family, semantic similarity, BERTScore, expected-source
   accuracy, refusal correctness, and latency/runtime tracking.
 - Add per-question result tables and raw evaluator error reporting.
+
+The implemented local set separates the token-overlap family into token F1 and
+ROUGE-L and adds required-fact coverage as an auditable reviewed-fact signal.
+Together with exact/contains, semantic similarity, BERTScore, expected-source
+accuracy, and refusal correctness, FP7 currently registers eight local or
+supporting evaluators. This does not change the final approximately-ten-method
+research objective: FP8 adds the versioned LLM judge and four RAGAS dimensions,
+then the report will group related lexical methods by family when explaining the
+overall comparison.
 
 ### FP8: Judged/RAGAS Evaluators and Experiments
 
@@ -187,9 +198,9 @@ For every evaluator, the application/report must answer:
 
 ## Immediate Resume Point
 
-FP6 is complete. FP7 should begin by finalizing the database representation for
-question metadata, dataset versions, evaluator definitions, evaluator runs,
-and heterogeneous results. Before installing RAGAS or other heavy dependencies,
-create the reviewed-question workflow and prove that multiple inexpensive
-evaluators can score the same saved response without regenerating it.
-
+FP7 is complete. FP8 should begin with the saved run 3 responses and add a
+versioned LLM-as-judge rubric plus RAGAS Faithfulness, Response Relevancy,
+Context Precision, and Context Recall. Apply these methods to the existing
+saved answers and contexts first; do not regenerate answers merely to add a new
+evaluator. Record judge model/prompt/version, API usage, runtime, cost, raw
+details, and errors before expanding to larger controlled experiments.

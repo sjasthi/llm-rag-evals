@@ -20,7 +20,10 @@ $metaDescription = $metaDescription
         integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
         crossorigin="anonymous"
     >
-    <link rel="stylesheet" href="assets/css/styles.css">
+    <link
+        rel="stylesheet"
+        href="assets/css/styles.css?v=<?= (int) filemtime(dirname(__DIR__) . '/assets/css/styles.css') ?>"
+    >
 </head>
 <body class="app-body">
     <a class="skip-link" href="#main-content">Skip to main content</a>

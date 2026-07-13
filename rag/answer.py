@@ -42,6 +42,8 @@ def answer_question(
     top_k: int,
     save: bool = True,
     generator: AnswerGenerator = generate_with_gemini,
+    question_id: int | None = None,
+    run_id: int | None = None,
 ) -> AnswerResult:
     if not question.strip():
         raise ValueError("Question cannot be empty")
@@ -78,6 +80,8 @@ def answer_question(
                     answer=answer,
                     latency_ms=latency_ms,
                     contexts=contexts,
+                    question_id=question_id,
+                    run_id=run_id,
                 )
         except Exception as error:
             persistence_error = str(error)

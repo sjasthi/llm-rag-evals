@@ -14,6 +14,14 @@ from settings import PROJECT_ROOT, Settings
 
 
 SCHEMA_PATH = PROJECT_ROOT / "database" / "schema.sql"
+MIGRATIONS_PATH = PROJECT_ROOT / "database" / "migrations"
+
+
+def _execute_sql_script(connection: MySQLConnection, sql: str) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute(sql)
+        while cursor.nextset():
+            pass
 
 
 def _connection_arguments(settings: Settings, include_database: bool = True) -> dict[str, object]:
@@ -35,16 +43,29 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
     sql = schema_path.read_text(encoding="utf-8")
     connection = mysql.connector.connect(**_connection_arguments(settings, include_database=False))
     try:
-        with connection.cursor() as cursor:
-            cursor.execute(sql)
-            while cursor.nextset():
-                pass
+        _execute_sql_script(connection, sql)
         connection.commit()
     finally:
         connection.close()
 
     connection = mysql.connector.connect(**_connection_arguments(settings))
     try:
+        if MIGRATIONS_PATH.is_dir():
+            for migration_path in sorted(MIGRATIONS_PATH.glob("*.sql")):
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT 1 FROM schema_migrations WHERE migration_name = %s",
+                        (migration_path.name,),
+                    )
+                    if cursor.fetchone():
+                        continue
+                _execute_sql_script(connection, migration_path.read_text(encoding="utf-8"))
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO schema_migrations (migration_name) VALUES (%s)",
+                        (migration_path.name,),
+                    )
+                connection.commit()
         with connection.cursor() as cursor:
             fp5_columns = (
                 ("chunk_size", "INT UNSIGNED NULL AFTER source_hash"),
@@ -67,6 +88,36 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                     cursor.execute(
                         f"ALTER TABLE documents ADD COLUMN {column_name} {definition}"
                     )
+            fp7_columns = (
+                ("question_key", "CHAR(64) NULL AFTER question_id"),
+                ("expected_evidence", "TEXT NULL AFTER expected_source"),
+                ("accepted_answers", "JSON NULL AFTER expected_evidence"),
+                ("required_facts", "JSON NULL AFTER accepted_answers"),
+                ("difficulty", "ENUM('easy', 'medium', 'hard') NOT NULL DEFAULT 'medium' AFTER category"),
+                ("is_answerable", "BOOLEAN NOT NULL DEFAULT TRUE AFTER difficulty"),
+                ("reviewer_notes", "TEXT NULL AFTER is_answerable"),
+                ("review_status", "ENUM('draft', 'reviewed', 'needs_revision') NOT NULL DEFAULT 'draft' AFTER reviewer_notes"),
+            )
+            for column_name, definition in fp7_columns:
+                cursor.execute(
+                    """SELECT COUNT(*) FROM information_schema.columns
+                       WHERE table_schema=%s AND table_name='evaluation_questions' AND column_name=%s""",
+                    (settings.db_name, column_name),
+                )
+                row = cursor.fetchone()
+                if not row or int(row[0]) == 0:
+                    cursor.execute(f"ALTER TABLE evaluation_questions ADD COLUMN {column_name} {definition}")
+            cursor.execute(
+                """SELECT COUNT(*) FROM information_schema.statistics
+                   WHERE table_schema=%s AND table_name='evaluation_questions'
+                     AND index_name='uq_evaluation_questions_key'""",
+                (settings.db_name,),
+            )
+            row = cursor.fetchone()
+            if not row or int(row[0]) == 0:
+                cursor.execute(
+                    "ALTER TABLE evaluation_questions ADD UNIQUE KEY uq_evaluation_questions_key (question_key)"
+                )
             cursor.execute(
                 """
                 SELECT COUNT(*)
@@ -427,6 +478,8 @@ def save_grounded_response(
     answer: str,
     latency_ms: int,
     contexts: Sequence[Any],
+    question_id: int | None = None,
+    run_id: int | None = None,
 ) -> int:
     """Store one CLI answer and the exact retrieved contexts used to produce it."""
     try:
@@ -435,10 +488,10 @@ def save_grounded_response(
             cursor.execute(
                 """
                 INSERT INTO rag_responses (
-                    setting_id, question_text, answer_text, retrieval_method, latency_ms
-                ) VALUES (%s, %s, %s, 'chroma_vector', %s)
+                    run_id, setting_id, question_id, question_text, answer_text, retrieval_method, latency_ms
+                ) VALUES (%s, %s, %s, %s, %s, 'chroma_vector', %s)
                 """,
-                (setting_id, question, answer, latency_ms),
+                (run_id, setting_id, question_id, question, answer, latency_ms),
             )
             response_id = int(cursor.lastrowid)
 

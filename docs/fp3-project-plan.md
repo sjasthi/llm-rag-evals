@@ -36,6 +36,10 @@ work.
 | FP9 | Complete research dashboard, interpretation, and system testing | Per-evaluator explanations and trade-offs, comparisons, failure analysis, preliminary findings, accessibility/security checks |
 | FP10 | Stabilize and teach the research findings | Reproducible experiment guide, use-case recommendations, findings and limitations, presentation, final report, tagged release |
 
+FP7 status: completed and verified July 10, 2026. Dataset version 1.0 contains
+25 reviewed cases, eight local/supporting evaluators are registered, and a
+three-question controlled run produced 24 inspectable evaluator results.
+
 ## Revised Research Direction After FP5 Review
 
 The application is the instrument used to run controlled RAG experiments. The

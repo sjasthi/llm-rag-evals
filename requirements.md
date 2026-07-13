@@ -242,6 +242,11 @@ The system should avoid answering questions that are not supported by the retrie
 
 ## 6.5 Evaluation Test Set
 
+FP7 implementation status: dataset version 1.0 contains 25 reviewed questions
+with expected evidence, accepted answer variants, required facts, category,
+difficulty, answerability, reviewer notes, and versioned membership. The browser
+supports filtering and review-state management before controlled runs.
+
 The system shall allow admin users to create and manage evaluation test questions.
 
 Each test question should include:
@@ -269,6 +274,13 @@ The test set will be used to compare RAG performance across different settings a
 ---
 
 ## 6.6 RAG Evaluation Methods
+
+FP7 implements the evaluator foundation and eight local/supporting evaluators:
+exact/contains, required-fact coverage, token F1, ROUGE-L, embedding semantic
+similarity, BERTScore, expected-source accuracy, and refusal correctness. Each
+result is attached to one saved response and stores its raw/normalized score,
+explanation, structured details, runtime, cost placeholder, status, and error.
+LLM-as-judge and RAGAS evaluators remain the FP8 extension.
 
 The system shall support multiple evaluation methods for comparing actual generated answers against expected answers and retrieved context.
 

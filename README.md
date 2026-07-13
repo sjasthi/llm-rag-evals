@@ -36,13 +36,18 @@ JSON endpoint. Users can submit a question in the browser, view the grounded
 answer and ranked source excerpts, and see the model, latency, and saved
 response ID.
 
-FP7 begins the evaluation research foundation. The working scope keeps the
-manually reviewed dataset target of at least 25 questions and adds the
-professor-confirmed objective of researching approximately ten evaluator
-types. These evaluators will span lexical, token-overlap, semantic, BERT-based,
-source/retrieval, LLM-as-judge, and RAGAS approaches. They will score the same
-stored responses so the project can explain agreement, disagreement, cost,
-speed, determinism, failure coverage, and appropriate use cases.
+FP7 is implemented and verified. The repository now includes an
+idempotent, versioned 25-question reviewed dataset with expected answers, sources,
+evidence, accepted variants, required facts, category, difficulty, and
+answerability metadata. The browser exposes review, filtering, run history, and
+per-response result inspection, and the additive
+schema stores evaluator definitions plus heterogeneous raw per-response results.
+Eight local evaluators are registered: exact/contains, required-fact coverage,
+token F1, ROUGE-L, embedding semantic similarity, BERTScore, expected-source
+accuracy, and refusal correctness. A controlled runner generates each reviewed answer once, saves its
+exact contexts, and applies evaluators to that saved response. The first live
+three-question baseline completed successfully with 24 stored evaluator results;
+LLM-as-judge and RAGAS remain FP8 work.
 
 ## Research Direction
 
@@ -208,10 +213,40 @@ Run the Python unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 17 tests covering TXT/PDF/DOCX loading, empty and
+The current suite contains 25 tests covering TXT/PDF/DOCX loading, empty and
 binary input rejection, metadata-preserving chunking, stable IDs, retrieval
 reranking, grounded prompts, refusal instructions, answer orchestration, and a
 frontend regression check for safe document-list element creation.
+
+## FP7 Evaluation Foundation
+
+Apply the additive schema and seed the versioned reviewed dataset:
+
+```powershell
+python rag\ingest.py --init-schema --json
+python rag\evaluation.py --seed --json
+```
+
+Review questions in the browser before running paid generation. Only active
+questions marked `reviewed` are selected by the runner. A bounded proof run is:
+
+```powershell
+python rag\run_evaluation.py --dataset-id 5 --limit 3 --json
+```
+
+Use the dataset ID returned by the seed command; it may differ on another
+database. To apply or reapply selected local evaluators to an existing saved
+response without regenerating it:
+
+```powershell
+python rag\evaluation.py --response-id 17 --evaluators exact_contains,rouge_l,semantic_similarity,bertscore --json
+```
+
+Use the actual saved response ID. Semantic similarity uses the local
+`all-MiniLM-L6-v2` model and may download model dependencies on first use.
+BERTScore uses `distilbert-base-uncased`. Both models are cached after their
+first load in a runner process. The current thresholds are descriptive research
+starting points, not universal pass/fail standards.
 
 ## Database Schema
 
@@ -257,7 +292,7 @@ Current safe example values are stored in:
 - [Code structure and conventions](docs/code-structure.md)
 - [Recommended implementation approach](docs/implementation-approach.md)
 - [RAG evaluation research plan](docs/research-plan.md)
-- [Ten-evaluator strategy and FP7 resume plan](docs/evaluation-strategy.md)
+- [Ten-evaluator strategy and FP8 resume plan](docs/evaluation-strategy.md)
 
 ## Source Documents
 

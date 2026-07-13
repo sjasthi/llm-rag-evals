@@ -16,6 +16,18 @@ sys.path.insert(0, str(PROJECT_ROOT / "rag"))
 
 from answer import answer_question  # noqa: E402
 from document_loader import DocumentLoadError, load_document  # noqa: E402
+from evaluation import (  # noqa: E402
+    EvaluationInput,
+    exact_contains,
+    expected_source_accuracy,
+    normalize_text,
+    refusal_correctness,
+    required_fact_coverage,
+    rouge_l,
+    token_f1,
+    run_evaluator,
+    LOCAL_EVALUATORS,
+)
 from ingest import build_loaded_document_chunks, chunk_text, stable_chroma_id  # noqa: E402
 from llm import REFUSAL_MESSAGE, SYSTEM_INSTRUCTION, build_grounded_prompt, generate_with_gemini  # noqa: E402
 from query import SearchResult, lexical_score  # noqa: E402
@@ -178,6 +190,86 @@ class GroundedAnswerTests(unittest.TestCase):
         settings = replace(load_settings(), llm_api_key="")
         with self.assertRaisesRegex(RuntimeError, "API key is not configured"):
             generate_with_gemini("prompt", settings)
+
+
+def sample_evaluation_input(**overrides: object) -> EvaluationInput:
+    values = {
+        "response_id": 7,
+        "question": "When does Fall 2026 registration begin?",
+        "expected_answer": "Fall 2026 registration begins Monday, March 23, 2026.",
+        "actual_answer": "Registration begins on Monday, March 23, 2026.",
+        "expected_source": "data/metrostate_documents/academic_calendar/fall_2026.txt",
+        "retrieved_sources": ["data/metrostate_documents/academic_calendar/fall_2026.txt"],
+        "accepted_answers": ["March 23, 2026"],
+        "required_facts": ["March 23, 2026"],
+        "is_answerable": True,
+    }
+    values.update(overrides)
+    return EvaluationInput(**values)  # type: ignore[arg-type]
+
+
+class LocalEvaluatorTests(unittest.TestCase):
+    def test_normalization_ignores_case_and_punctuation(self) -> None:
+        self.assertEqual("march 23 2026", normalize_text("March 23, 2026!"))
+
+    def test_exact_contains_accepts_reviewed_variant(self) -> None:
+        score, passed, _explanation, details = exact_contains(sample_evaluation_input())
+        self.assertTrue(passed)
+        self.assertEqual(0.75, score)
+        self.assertTrue(details["contains"])
+
+    def test_required_fact_coverage_reports_missing_facts(self) -> None:
+        score, passed, _explanation, details = required_fact_coverage(
+            sample_evaluation_input(required_facts=["March 23, 2026", "eServices"])
+        )
+        self.assertEqual(0.5, score)
+        self.assertFalse(passed)
+        self.assertEqual(["eServices"], details["missing"])
+
+    def test_token_f1_is_bounded(self) -> None:
+        score, _passed, _explanation, details = token_f1(sample_evaluation_input())
+        self.assertGreater(score, 0.0)
+        self.assertLessEqual(score, 1.0)
+        self.assertLessEqual(details["precision"], 1.0)
+
+    def test_rouge_l_uses_ordered_common_sequence(self) -> None:
+        score, passed, _explanation, details = rouge_l(sample_evaluation_input())
+        self.assertGreater(score, 0.0)
+        self.assertLessEqual(score, 1.0)
+        self.assertTrue(passed)
+        self.assertGreater(details["lcs_tokens"], 0)
+
+    def test_expected_source_accuracy_records_rank(self) -> None:
+        score, passed, _explanation, details = expected_source_accuracy(sample_evaluation_input())
+        self.assertEqual(1.0, score)
+        self.assertTrue(passed)
+        self.assertEqual(1, details["retrieved_rank"])
+
+    def test_refusal_correctness_uses_answerability_label(self) -> None:
+        item = sample_evaluation_input(
+            expected_answer=REFUSAL_MESSAGE,
+            actual_answer=REFUSAL_MESSAGE,
+            expected_source=None,
+            retrieved_sources=[],
+            accepted_answers=[REFUSAL_MESSAGE],
+            required_facts=[],
+            is_answerable=False,
+        )
+        score, passed, _explanation, details = refusal_correctness(item)
+        self.assertEqual(1.0, score)
+        self.assertTrue(passed)
+        self.assertTrue(details["returned_fixed_refusal"])
+
+    def test_evaluator_failure_is_returned_as_a_result(self) -> None:
+        def failing_evaluator(_item: EvaluationInput) -> object:
+            raise RuntimeError("controlled evaluator failure")
+
+        with patch.dict(LOCAL_EVALUATORS, {"failing": failing_evaluator}):
+            result = run_evaluator("failing", sample_evaluation_input())
+
+        self.assertEqual("failed", result.status)
+        self.assertIn("controlled evaluator failure", result.error_message or "")
+        self.assertIsNone(result.normalized_score)
 
 
 if __name__ == "__main__":

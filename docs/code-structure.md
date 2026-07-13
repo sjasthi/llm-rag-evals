@@ -32,7 +32,8 @@ llm-rag-evals/
 |   |-- answer.py
 |   |-- database.py
 |   |-- document_loader.py
-|   |-- evaluate.py
+|   |-- evaluation.py
+|   |-- run_evaluation.py
 |   |-- ingest.py
 |   |-- llm.py
 |   |-- query.py
@@ -62,6 +63,12 @@ placeholder directories are unnecessary.
 - `rag/`: Python helper layer for TXT/PDF/DOCX text extraction,
   MySQL/ChromaDB ingestion, embeddings, retrieval, grounded answer generation,
   and evaluation metrics/experiments.
+
+FP7 uses `rag/evaluation.py` for versioned dataset seeding, local evaluator
+implementations, and saved-response scoring. `rag/run_evaluation.py` creates a
+controlled run, generates one answer per reviewed question, and applies all
+configured local evaluators to that stored response. `api/evaluations.php`
+provides dataset review, run summaries, and response-level result inspection.
 - `storage/`: generated files, uploads, and logs; private content is not committed.
 - `tests/`: automated tests and stable evaluation fixtures.
 - `docs/`: planning, architecture, UX, and setup documentation.

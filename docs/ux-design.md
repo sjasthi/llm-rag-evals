@@ -6,6 +6,25 @@ The application should translate technical RAG evaluation results into clear
 evidence that managers can use for decisions while preserving enough detail for
 developers to diagnose retrieval and answer-quality problems.
 
+## Finalized Application Model
+
+The frontend uses task-focused views rather than one long dashboard. Navigation
+preserves a stable URL hash for each workspace:
+
+- Overview: research purpose, current baseline, corpus, dataset, and evaluator counts.
+- Playground: one interactive question with its answer and evidence side by side.
+- Dataset: reviewed question coverage, filters, expected answers, and review state.
+- Experiments: immutable run history with a two-pane response inspector for
+  outputs, references, evaluator signals, runtime, and retrieved contexts.
+- Sources: document ingestion and a contained source library.
+- Findings: conclusions, failure patterns, metric trade-offs, and recommendations.
+
+This lifecycle follows established LLM-evaluation product patterns: iterate on
+one case in a playground, maintain a versioned dataset, preserve experiments,
+inspect individual failures and traces, then turn evidence into findings. It
+maps directly to the capstone research protocol without exposing internal FP
+milestone organization as the primary user experience.
+
 ## Stakeholders and Primary Workflows
 
 | Stakeholder | Primary goal | Supported workflow |
@@ -17,15 +36,14 @@ developers to diagnose retrieval and answer-quality problems.
 
 ## Information Architecture
 
-The main navigation will contain:
+The main navigation contains:
 
-- Home: project purpose, current capabilities, and entry points.
-- Ask: question-answer interface with retrieved sources.
-- Documents: upload and manage Metro State documents.
-- Evaluations: manage test cases and launch evaluation runs.
-- Dashboard: compare metrics, configurations, and previous runs.
-- Reports: summarize findings and recommendations.
-- About: explain the project, evaluation methods, and limitations.
+- Overview: project purpose, current capabilities, and entry points.
+- Playground: question-answer interface with retrieved evidence.
+- Dataset: manage reviewed questions and coverage.
+- Experiments: compare saved runs and inspect individual responses.
+- Sources: upload and manage Metro State documents.
+- Findings: summarize research evidence, recommendations, and limitations.
 
 ## Key Screens
 

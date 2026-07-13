@@ -37,93 +37,77 @@ $sampleQuestions = [
     'What does financial aid pay first?',
 ];
 
-$plannedRuns = [
-    [
-        'name' => 'MySQL keyword baseline',
-        'retrieval' => 'MySQL',
-        'chunk_size' => 'N/A',
-        'top_k' => 5,
-        'temperature' => '0.0',
-        'score' => 'TBD',
-    ],
-    [
-        'name' => 'ChromaDB vector baseline',
-        'retrieval' => 'ChromaDB',
-        'chunk_size' => 800,
-        'top_k' => 5,
-        'temperature' => '0.0',
-        'score' => 'TBD',
-    ],
-    [
-        'name' => 'Higher recall',
-        'retrieval' => 'ChromaDB',
-        'chunk_size' => 800,
-        'top_k' => 8,
-        'temperature' => '0.0',
-        'score' => 'TBD',
-    ],
-];
-
 require __DIR__ . '/includes/header.php';
 ?>
 <div class="app-shell">
     <?php require __DIR__ . '/includes/nav.php'; ?>
 
     <div class="app-main">
-        <header class="topbar">
-            <div>
-                <p class="eyebrow">Metro State document evaluation</p>
-                <h1>RAG Evaluation Workspace</h1>
+        <main id="main-content">
+        <header class="topbar workspace-view" data-view-panel="overview">
+            <div class="topbar-copy">
+                <p class="eyebrow">Evidence-led RAG research</p>
+                <h1>See what your RAG system <em>actually</em> knows.</h1>
+                <p class="topbar-description">Ask questions against Metro State documents, preserve the retrieved evidence, and compare the signals that describe answer quality.</p>
             </div>
             <div class="topbar-actions">
-                <span class="pill">Local demo</span>
-                <span class="pill muted">PHP + MySQL + ChromaDB</span>
+                <span class="pill live-pill"><span></span> Ready for evaluation</span>
+                <span class="pill muted">Local-first · evidence retained</span>
             </div>
         </header>
 
-        <main id="main-content">
-            <section class="workspace-section" id="overview">
-                <div class="section-title-row">
+            <section class="workspace-section workspace-view" id="overview" data-view-panel="overview">
+                <div class="section-title-row hero-overview">
                     <div>
-                        <h2>Project Snapshot</h2>
+                        <span class="panel-kicker">The research loop</span>
+                        <h2>Answer, inspect, compare, learn.</h2>
                         <p>
-                            This application supports document ingestion and grounded RAG question
-                            answering. Evaluation runs and retrieval-configuration comparisons are
-                            planned for later iterations.
+                            Every response is paired with the source chunks that informed it. That gives you a clear trail from question to evidence to evaluation result.
                         </p>
+                        <div class="hero-actions">
+                            <a class="btn btn-primary" href="#ask">Ask a source-backed question</a>
+                            <a class="btn btn-outline-light" href="#results">Explore saved runs</a>
+                        </div>
+                    </div>
+                    <div class="research-signal" aria-label="Current project stage">
+                        <span>Current research layer</span>
+                        <strong>01</strong>
+                        <small>Local evaluation baseline</small>
+                        <div class="signal-bar"><span></span></div>
                     </div>
                 </div>
 
                 <div class="stat-grid">
                     <article class="stat-card">
-                        <span>Documents</span>
+                        <span class="stat-label">Source corpus</span>
                         <strong id="documentCount"><?= h((string) $sourceStats['document_count']) ?></strong>
-                        <small>currently indexed documents</small>
+                        <small>indexed Metro State documents</small>
                     </article>
                     <article class="stat-card">
-                        <span>Categories</span>
+                        <span class="stat-label">Topics</span>
                         <strong id="categoryCount"><?= h((string) $sourceStats['category_count']) ?></strong>
-                        <small>document groups imported</small>
+                        <small>distinct source categories</small>
                     </article>
                     <article class="stat-card">
-                        <span>Questions</span>
-                        <strong>30-50</strong>
-                        <small>planned gold dataset</small>
+                        <span class="stat-label">Reviewed prompts</span>
+                        <strong id="evaluationQuestionCount">25</strong>
+                        <small>questions with expected evidence</small>
                     </article>
                     <article class="stat-card">
-                        <span>Storage</span>
-                        <strong>2</strong>
-                        <small>MySQL and ChromaDB</small>
+                        <span class="stat-label">Quality lenses</span>
+                        <strong>8</strong>
+                        <small>separate evaluation signals</small>
                     </article>
                 </div>
             </section>
 
             <div class="workspace-grid">
-                <section class="panel panel-large" id="ask">
+                <section class="panel panel-large ask-panel workspace-view" id="ask" data-view-panel="ask" hidden>
                     <div class="panel-header">
                         <div>
-                            <span class="panel-kicker">Ask</span>
-                            <h2>Question Answering</h2>
+                            <span class="panel-kicker">Playground</span>
+                            <h2>Ask, retrieve, inspect</h2>
+                            <p>Test one question interactively before promoting it into a repeatable experiment.</p>
                         </div>
                         <span class="status status-ready">Live</span>
                     </div>
@@ -137,7 +121,7 @@ require __DIR__ . '/includes/header.php';
                             rows="4"
                             maxlength="2000"
                             required
-                            placeholder="Ask a question about Metro State documents..."
+                            placeholder="Example: When does Fall 2026 registration begin?"
                         ></textarea>
                         <div class="d-flex flex-wrap gap-2 mt-3">
                             <button class="btn btn-primary" id="askButton" type="submit">
@@ -185,18 +169,19 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </section>
 
-                <section class="panel" id="documents">
+                <section class="panel documents-panel workspace-view" id="documents" data-view-panel="documents" hidden>
                     <div class="panel-header">
                         <div>
-                            <span class="panel-kicker">Admin</span>
-                            <h2>Documents</h2>
+                            <span class="panel-kicker">Source library</span>
+                            <h2>Curate the knowledge base</h2>
+                            <p>Control which evidence is available to retrieval and verify its ingestion state.</p>
                         </div>
                         <span class="status status-ready">FP6 live</span>
                     </div>
 
                     <form class="upload-dropzone" id="documentUploadForm" enctype="multipart/form-data">
-                        <strong>Upload and ingest a document</strong>
-                        <span>TXT, text-based PDF, or DOCX; maximum 10 MB.</span>
+                        <strong>Add source material</strong>
+                        <span>TXT, text-based PDF, or DOCX · server-side validation · maximum 10 MB</span>
                         <label class="form-label" for="documentFile">Document</label>
                         <input
                             class="form-control"
@@ -249,79 +234,76 @@ require __DIR__ . '/includes/header.php';
                     </div>
                 </section>
 
-                <section class="panel panel-large" id="evaluation">
+                <section class="panel panel-large workspace-view" id="evaluation" data-view-panel="evaluation" hidden>
                     <div class="panel-header">
                         <div>
-                            <span class="panel-kicker">Evaluation</span>
-                            <h2>Configuration Runs</h2>
+                            <span class="panel-kicker">Versioned dataset</span>
+                            <h2>Ground truth and test coverage</h2>
                         </div>
-                        <span class="status status-planned">FP7-FP8</span>
+                        <span class="status status-ready">FP7 active</span>
+                    </div>
+                    <p id="evaluationDatasetSummary">Loading the versioned FP7 question set...</p>
+                    <div class="evaluation-toolbar">
+                        <label for="evaluationCategoryFilter">Category</label>
+                        <select class="form-select form-select-sm" id="evaluationCategoryFilter">
+                            <option value="">All categories</option>
+                        </select>
+                        <label for="evaluationStatusFilter">Review status</label>
+                        <select class="form-select form-select-sm" id="evaluationStatusFilter">
+                            <option value="">All statuses</option>
+                            <option value="draft">Draft</option>
+                            <option value="reviewed">Reviewed</option>
+                            <option value="needs_revision">Needs revision</option>
+                        </select>
+                    </div>
+                    <div id="evaluationQuestionList" class="evaluation-question-list" aria-live="polite"></div>
+                </section>
+
+                <section class="panel results-panel workspace-view" id="results" data-view-panel="results" hidden>
+                    <div class="panel-header">
+                        <div>
+                            <span class="panel-kicker">Experiments</span>
+                            <h2>Compare immutable runs</h2>
+                            <p>Open a response to compare its output, expected answer, evaluator signals, and retrieved evidence.</p>
+                        </div>
+                        <span class="status status-ready">Local baselines</span>
                     </div>
 
-                    <div class="table-responsive">
-                        <table class="table app-table align-middle">
-                            <thead>
-                                <tr>
-                                    <th scope="col">Run</th>
-                                    <th scope="col">Retrieval</th>
-                                    <th scope="col">Chunk</th>
-                                    <th scope="col">Top-K</th>
-                                    <th scope="col">Temp</th>
-                                    <th scope="col">Score</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($plannedRuns as $run): ?>
-                                    <tr>
-                                        <th scope="row"><?= h($run['name']) ?></th>
-                                        <td><?= h($run['retrieval']) ?></td>
-                                        <td><?= h((string) $run['chunk_size']) ?></td>
-                                        <td><?= h((string) $run['top_k']) ?></td>
-                                        <td><?= h($run['temperature']) ?></td>
-                                        <td><?= h($run['score']) ?></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
+                    <div class="empty-state" id="evaluationResultsSummary">
+                        <strong id="evaluatorCount">Eight evaluators registered</strong>
+                        <p id="evaluatorSummary">Loading saved FP7 runs and response results...</p>
+                    </div>
+                    <div id="evaluationRunList" class="evaluation-run-list mt-3"></div>
+                    <div id="evaluationResultDetail" class="evaluation-result-detail">
+                        <div class="detail-placeholder">
+                            <span>Response inspector</span>
+                            <strong>Select a response from an experiment</strong>
+                            <p>The saved output, expected answer, evaluator explanations, and retrieved chunks will appear here together.</p>
+                        </div>
                     </div>
                 </section>
 
-                <section class="panel" id="results">
-                    <div class="panel-header">
-                        <div>
-                            <span class="panel-kicker">Results</span>
-                            <h2>Comparison</h2>
-                        </div>
-                        <span class="status status-planned">Planned</span>
-                    </div>
-
-                    <div class="empty-state">
-                        <strong>No evaluation results yet</strong>
-                        <p>Scores will appear after the RAG pipeline and evaluation runner are implemented.</p>
-                    </div>
-                </section>
-
-                <section class="panel panel-large" id="report">
+                <section class="panel panel-large workspace-view" id="report" data-view-panel="report" hidden>
                     <div class="panel-header">
                         <div>
                             <span class="panel-kicker">Report</span>
-                            <h2>Final Recommendation</h2>
+                            <h2>Research findings</h2>
                         </div>
                         <span class="status status-planned">Planned</span>
                     </div>
 
                     <div class="report-grid">
                         <article>
-                            <strong>Best configuration</strong>
-                            <p>Which settings performed best and why.</p>
+                            <strong>Configuration choice</strong>
+                            <p>Compare settings with evidence, not a single unexplained grade.</p>
                         </article>
                         <article>
-                            <strong>Failure cases</strong>
-                            <p>Questions where retrieval or generation failed.</p>
+                            <strong>Failure patterns</strong>
+                            <p>Separate retrieval misses from generation and evaluator failures.</p>
                         </article>
                         <article>
-                            <strong>Trade-offs</strong>
-                            <p>Accuracy, latency, source quality, and cost.</p>
+                            <strong>Metric trade-offs</strong>
+                            <p>Explain what each method detects, misses, costs, and supports.</p>
                         </article>
                     </div>
                 </section>

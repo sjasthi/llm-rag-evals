@@ -203,6 +203,8 @@ Implementation status: completed, verified, committed, and pushed July 6, 2026.
 
 ### FP7: Gold Dataset and Baseline Metrics
 
+Implementation status: completed and verified July 10, 2026.
+
 - Create at least 25 manually verified evaluation questions.
 - Cover all current categories and include unanswerable cases.
 - Add question-management and evaluation-run interfaces.
@@ -214,6 +216,20 @@ Implementation status: completed, verified, committed, and pushed July 6, 2026.
   same saved answer and contexts.
 - Store raw scores/details, evaluator versions/settings, errors, runtime, and
   cost estimates.
+
+Implemented FP7 evidence:
+
+- dataset version 1.0 contains 25 reviewed questions across all eight source
+  categories plus three deliberately unanswerable questions;
+- eight local evaluators operate on the same saved response: exact/contains,
+  required-fact coverage, token F1, ROUGE-L, semantic similarity, BERTScore,
+  expected-source accuracy, and refusal correctness;
+- a controlled runner links responses to questions and runs, saves exact ranked
+  contexts, and records heterogeneous results without regenerating answers;
+- the browser supports dataset review/filtering, run history, response detail,
+  separate evaluator scores/explanations/runtime, and retrieved evidence; and
+- the representative three-question run stored 24 successful evaluator results
+  with all expected sources ranked first.
 
 ### FP8: Advanced Metrics and Research Experiments
 

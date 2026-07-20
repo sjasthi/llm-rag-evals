@@ -31,12 +31,22 @@ The final product should help:
 The final report should recommend metrics for specific uses. It should not
 claim that one metric, provider, or configuration is universally best.
 
-The professor-confirmed emphasis is to research and explain approximately ten
-evaluator/metric types across multiple method families. RAGAS is part of this
-comparison, not the sole evaluation approach. The project must teach why scores
-differ and describe each evaluator's inputs, cost, speed, determinism,
-strengths, limitations, and appropriate use cases. The detailed working set and
-protocol are defined in `docs/evaluation-strategy.md`.
+The working emphasis is to research and explain representative evaluator types
+across multiple method families. The professor's reference lists eight broad
+options, not eight required advanced models. RAGAS is part of this comparison,
+not the sole evaluation approach. The project must teach what each score is
+based on, why scores differ, and each evaluator's inputs, cost, speed,
+determinism, strengths, limitations, and appropriate use cases. The detailed
+working set and protocol are defined in `docs/evaluation-strategy.md`.
+
+## Current Implementation Boundary (July 14, 2026)
+
+The complete application support through FP9 is present: eight baselines, five
+advanced evaluator paths, immutable attempts, reproducible controlled runs,
+MySQL/Chroma retrieval choices, human response review, four-layer Experiments,
+and evidence-first Findings. No paid advanced call or matched final experiment
+is being claimed merely because its runner and UI exist. FP10 remains the
+collection, calibration, analysis, and teaching phase described below.
 
 ## Final Product Goal
 
@@ -180,14 +190,18 @@ Runs selected questions through selected RAG settings:
 
 Shows:
 
-- average answer score,
-- source accuracy,
-- faithfulness or groundedness score if available,
+- each named answer/retrieval score with its own calculation, scale, threshold
+  provenance, applicability, and limitation,
+- source accuracy and retained rank,
+- faithfulness or groundedness when applicable,
 - latency,
 - estimated API cost if available,
 - per-question failures,
 - metric agreement/disagreement,
 - results grouped by configuration and corpus variant.
+
+The dashboard must not average unlike lexical, semantic, retrieval, judged, and
+human signals into one universal answer grade.
 
 ### 7. Report
 
@@ -214,9 +228,9 @@ The project should be considered successful if it implements:
 6. Source display.
 7. A manually reviewed dataset of at least 25 questions covering the current
    categories and including unanswerable cases.
-8. Approximately ten evaluator types spanning lexical/token overlap, semantic,
+8. Representative evaluator types spanning lexical/token overlap, semantic,
    contextual embedding, source/retrieval, LLM-as-judge, and RAGAS measures,
-   applied to common stored responses.
+   applied to common stored responses with documented score contracts.
 9. Stored per-question evaluation results and run settings.
 10. At least one controlled retrieval/configuration comparison.
 11. A controlled document-collection size or composition comparison.
@@ -284,15 +298,16 @@ The final demo should show:
 10. A conclusion explaining which metrics are useful for particular decisions,
     what failed, and what cannot yet be generalized.
 
-## Example Final Comparison
+## Example Final Comparison Structure
 
-| Configuration | Chunk Size | Top-K | Temperature | Avg Answer Score | Source Accuracy | Notes |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| A | 500 | 3 | 0.0 | 78% | 85% | Faster but missed some context |
-| B | 800 | 5 | 0.0 | 86% | 93% | Best balance for the test set |
-| C | 800 | 8 | 0.3 | 81% | 90% | More context, less consistent answers |
+| Configuration | Retrieval | Top-K | Dataset coverage | Expected-source hit rate | RAGAS faithfulness | Human acceptable | Runtime/cost | Notes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| A | Chroma | 3 | measured/25 | report observed | report observed | reviewed sample | recorded | Fixed baseline |
+| B | MySQL | 3 | measured/25 | report observed | report observed | reviewed sample | recorded | Retrieval method changed only |
 
-The final report should explain this table in plain language.
+The placeholders must be replaced with stored experiment evidence. The final
+report should explain metric trade-offs in plain language and may not invent an
+`Avg Answer Score` by mixing incompatible metrics.
 
 ## Difference From `implementation-approach.md`
 

@@ -71,8 +71,8 @@ require __DIR__ . '/includes/header.php';
                     </div>
                     <div class="research-signal" aria-label="Current project stage">
                         <span>Current research layer</span>
-                        <strong>01</strong>
-                        <small>Local evaluation baseline</small>
+                        <strong>03</strong>
+                        <small>Baseline + advanced + human review</small>
                         <div class="signal-bar"><span></span></div>
                     </div>
                 </div>
@@ -95,9 +95,16 @@ require __DIR__ . '/includes/header.php';
                     </article>
                     <article class="stat-card">
                         <span class="stat-label">Quality lenses</span>
-                        <strong>8</strong>
-                        <small>separate evaluation signals</small>
+                        <strong id="overviewEvaluatorCount">13</strong>
+                        <small>metric and model-backed evaluators</small>
                     </article>
+                </div>
+
+                <div class="workflow-strip" aria-label="Evaluation workflow">
+                    <article><span>1</span><div><strong>Curate sources</strong><small>Ingest the evidence the system may retrieve.</small></div></article>
+                    <article><span>2</span><div><strong>Review test cases</strong><small>Verify a sampled answer key against cited evidence.</small></div></article>
+                    <article><span>3</span><div><strong>Run experiments</strong><small>Answer selected questions with fixed settings.</small></div></article>
+                    <article><span>4</span><div><strong>Compare signals</strong><small>Inspect failures, disagreements, and trade-offs.</small></div></article>
                 </div>
             </section>
 
@@ -240,9 +247,21 @@ require __DIR__ . '/includes/header.php';
                             <span class="panel-kicker">Versioned dataset</span>
                             <h2>Ground truth and test coverage</h2>
                         </div>
-                        <span class="status status-ready">FP7 active</span>
+                        <span class="status status-ready">FP8/FP9 active</span>
                     </div>
                     <p id="evaluationDatasetSummary">Loading the versioned FP7 question set...</p>
+                    <div class="evaluation-guide" aria-labelledby="datasetReviewGuideTitle">
+                        <strong id="datasetReviewGuideTitle">Review the test case, not the model response</strong>
+                        <p>
+                            This is a sampled answer key for repeatable experiments—not every question the corpus could answer.
+                            A reviewer or subject-matter expert checks the expected answer against the cited source evidence.
+                        </p>
+                        <dl class="evaluation-status-guide">
+                            <div><dt>Reviewed</dt><dd>Source-verified and eligible for experiment runs.</dd></div>
+                            <div><dt>Needs revision</dt><dd>The question, expected answer, or cited evidence needs correction.</dd></div>
+                            <div><dt>Draft</dt><dd>Still being prepared and excluded from runs.</dd></div>
+                        </dl>
+                    </div>
                     <div class="evaluation-toolbar">
                         <label for="evaluationCategoryFilter">Category</label>
                         <select class="form-select form-select-sm" id="evaluationCategoryFilter">
@@ -264,21 +283,53 @@ require __DIR__ . '/includes/header.php';
                         <div>
                             <span class="panel-kicker">Experiments</span>
                             <h2>Compare immutable runs</h2>
-                            <p>Open a response to compare its output, expected answer, evaluator signals, and retrieved evidence.</p>
+                            <p>A run makes the RAG system answer a selected portion of the reviewed dataset using one fixed configuration.</p>
                         </div>
-                        <span class="status status-ready">Local baselines</span>
+                        <span class="status status-ready">Four evidence layers</span>
                     </div>
 
-                    <div class="empty-state" id="evaluationResultsSummary">
-                        <strong id="evaluatorCount">Eight evaluators registered</strong>
+                    <div class="experiment-summary-grid" id="evaluationResultsSummary">
+                        <article>
+                            <span>Reviewed test set</span>
+                            <strong id="experimentDatasetCount">—</strong>
+                            <small>questions available</small>
+                        </article>
+                        <article>
+                            <span>Saved experiments</span>
+                            <strong id="experimentRunCount">—</strong>
+                            <small>immutable runs</small>
+                        </article>
+                        <article>
+                            <span>Active evaluators</span>
+                            <strong id="evaluatorCount">—</strong>
+                            <small>8 baseline + 5 advanced</small>
+                        </article>
+                        <article>
+                            <span>Human reviews</span>
+                            <strong id="experimentHumanReviewCount">—</strong>
+                            <small>current rubric decisions</small>
+                        </article>
+                    </div>
+                    <div class="experiment-guide">
+                        <span>How to read this view</span>
+                        <strong>Dataset questions become responses only after an experiment is run.</strong>
                         <p id="evaluatorSummary">Loading saved FP7 runs and response results...</p>
                     </div>
-                    <div id="evaluationRunList" class="evaluation-run-list mt-3"></div>
-                    <div id="evaluationResultDetail" class="evaluation-result-detail">
-                        <div class="detail-placeholder">
-                            <span>Response inspector</span>
-                            <strong>Select a response from an experiment</strong>
-                            <p>The saved output, expected answer, evaluator explanations, and retrieved chunks will appear here together.</p>
+                    <div class="evaluation-layer-guide" id="evaluationLayerGuide" aria-label="Evaluation evidence layers"></div>
+                    <div class="experiment-workspace">
+                        <aside class="experiment-browser" aria-label="Saved experiment runs">
+                            <div class="subsection-heading">
+                                <span>Run history</span>
+                                <strong>Choose a saved response</strong>
+                            </div>
+                            <div id="evaluationRunList" class="evaluation-run-list"></div>
+                        </aside>
+                        <div id="evaluationResultDetail" class="evaluation-result-detail">
+                            <div class="detail-placeholder">
+                                <span>Response inspector</span>
+                                <strong>Loading the newest saved response</strong>
+                                <p>The generated output, reviewed reference, evaluator explanations, and retrieved chunks appear here together.</p>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -286,26 +337,54 @@ require __DIR__ . '/includes/header.php';
                 <section class="panel panel-large workspace-view" id="report" data-view-panel="report" hidden>
                     <div class="panel-header">
                         <div>
-                            <span class="panel-kicker">Report</span>
-                            <h2>Research findings</h2>
+                            <span class="panel-kicker">FP9 analysis workspace</span>
+                            <h2>Findings without a mystery grade</h2>
+                            <p>Compare the same metric across configurations, then inspect disagreements and failures before drawing a conclusion.</p>
                         </div>
-                        <span class="status status-planned">Planned</span>
+                        <span class="status status-ready">Live</span>
                     </div>
 
-                    <div class="report-grid">
+                    <div class="findings-summary-grid">
                         <article>
-                            <strong>Configuration choice</strong>
-                            <p>Compare settings with evidence, not a single unexplained grade.</p>
+                            <span>Baseline methods</span>
+                            <strong id="findingBaselineCount">—</strong>
+                            <small>transparent diagnostic signals</small>
                         </article>
                         <article>
-                            <strong>Failure patterns</strong>
-                            <p>Separate retrieval misses from generation and evaluator failures.</p>
+                            <span>Advanced methods</span>
+                            <strong id="findingAdvancedCount">—</strong>
+                            <small>RAGAS and rubric judge</small>
                         </article>
                         <article>
-                            <strong>Metric trade-offs</strong>
-                            <p>Explain what each method detects, misses, costs, and supports.</p>
+                            <span>Human reviews</span>
+                            <strong id="findingHumanCount">—</strong>
+                            <small>current independent decisions</small>
                         </article>
                     </div>
+
+                    <section class="findings-rules" aria-labelledby="findingsRulesTitle">
+                        <div class="subsection-heading">
+                            <span>Interpretation rules</span>
+                            <strong id="findingsRulesTitle">How conclusions are made</strong>
+                        </div>
+                        <ol id="findingRules"></ol>
+                    </section>
+
+                    <section class="findings-section" aria-labelledby="runComparisonTitle">
+                        <div class="subsection-heading">
+                            <span>Run evidence</span>
+                            <strong id="runComparisonTitle">Configuration and coverage comparison</strong>
+                        </div>
+                        <div class="finding-run-grid" id="findingRunComparison"></div>
+                    </section>
+
+                    <section class="findings-section" aria-labelledby="metricCatalogTitle">
+                        <div class="subsection-heading">
+                            <span>Evaluator catalog</span>
+                            <strong id="metricCatalogTitle">What every score is based on</strong>
+                        </div>
+                        <div class="finding-metric-catalog" id="findingMetricCatalog"></div>
+                    </section>
                 </section>
             </div>
         </main>

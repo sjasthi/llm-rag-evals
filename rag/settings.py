@@ -47,6 +47,17 @@ def _float_between_zero_and_one(name: str, default: float) -> float:
     return value
 
 
+def _nonnegative_float(name: str, default: float) -> float:
+    raw_value = _env_value(name, str(default))
+    try:
+        value = float(raw_value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a number, received {raw_value!r}") from error
+    if value < 0.0:
+        raise ValueError(f"{name} must be zero or greater")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     db_host: str
@@ -65,6 +76,12 @@ class Settings:
     llm_temperature: float
     llm_top_p: float
     retrieval_top_k: int
+    evaluator_provider: str
+    evaluator_model: str
+    evaluator_temperature: float
+    evaluator_embedding_model: str
+    evaluator_input_cost_per_million: float
+    evaluator_output_cost_per_million: float
 
 
 def load_settings() -> Settings:
@@ -92,4 +109,16 @@ def load_settings() -> Settings:
         llm_temperature=_float_between_zero_and_one("LLM_TEMPERATURE", 0.0),
         llm_top_p=_float_between_zero_and_one("LLM_TOP_P", 0.9),
         retrieval_top_k=_positive_int("RETRIEVAL_TOP_K", 3),
+        evaluator_provider=_env_value("EVALUATOR_PROVIDER", "gemini").lower(),
+        evaluator_model=_env_value("EVALUATOR_MODEL", "gemini-2.5-flash"),
+        evaluator_temperature=_float_between_zero_and_one("EVALUATOR_TEMPERATURE", 0.0),
+        evaluator_embedding_model=_env_value(
+            "EVALUATOR_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
+        ),
+        evaluator_input_cost_per_million=_nonnegative_float(
+            "EVALUATOR_INPUT_COST_PER_MILLION", 0.0
+        ),
+        evaluator_output_cost_per_million=_nonnegative_float(
+            "EVALUATOR_OUTPUT_COST_PER_MILLION", 0.0
+        ),
     )

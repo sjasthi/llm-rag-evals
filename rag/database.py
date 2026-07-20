@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
+import re
 from typing import Any, Iterator, Sequence
 
 import mysql.connector
@@ -15,6 +16,13 @@ from settings import PROJECT_ROOT, Settings
 
 SCHEMA_PATH = PROJECT_ROOT / "database" / "schema.sql"
 MIGRATIONS_PATH = PROJECT_ROOT / "database" / "migrations"
+DATABASE_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _schema_sql_for_database(sql: str, database_name: str) -> str:
+    if not DATABASE_NAME_PATTERN.fullmatch(database_name):
+        raise ValueError("DB_NAME may contain only letters, numbers, and underscores.")
+    return sql.replace("llm_rag_evals", database_name)
 
 
 def _execute_sql_script(connection: MySQLConnection, sql: str) -> None:
@@ -40,7 +48,9 @@ def _connection_arguments(settings: Settings, include_database: bool = True) -> 
 
 def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> None:
     """Create the project database and tables from the versioned schema."""
-    sql = schema_path.read_text(encoding="utf-8")
+    sql = _schema_sql_for_database(
+        schema_path.read_text(encoding="utf-8"), settings.db_name
+    )
     connection = mysql.connector.connect(**_connection_arguments(settings, include_database=False))
     try:
         _execute_sql_script(connection, sql)
@@ -50,6 +60,30 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
 
     connection = mysql.connector.connect(**_connection_arguments(settings))
     try:
+        # Migration 003 backfills these columns. Existing FP7 databases do not
+        # gain columns from CREATE TABLE IF NOT EXISTS, so ensure the migration
+        # prerequisites before ordered migration scripts execute.
+        with connection.cursor() as cursor:
+            fp8_run_columns = (
+                ("dataset_id", "BIGINT UNSIGNED NULL AFTER setting_id"),
+                ("baseline_run_id", "BIGINT UNSIGNED NULL AFTER dataset_id"),
+                ("experiment_key", "VARCHAR(120) NULL AFTER run_name"),
+                ("corpus_variant_key", "VARCHAR(120) NOT NULL DEFAULT 'full_current' AFTER experiment_key"),
+                ("run_configuration_json", "JSON NULL AFTER corpus_variant_key"),
+            )
+            for column_name, definition in fp8_run_columns:
+                cursor.execute(
+                    """SELECT COUNT(*) FROM information_schema.columns
+                       WHERE table_schema=%s AND table_name='evaluation_runs' AND column_name=%s""",
+                    (settings.db_name, column_name),
+                )
+                row = cursor.fetchone()
+                if not row or int(row[0]) == 0:
+                    cursor.execute(
+                        f"ALTER TABLE evaluation_runs ADD COLUMN {column_name} {definition}"
+                    )
+        connection.commit()
+
         if MIGRATIONS_PATH.is_dir():
             for migration_path in sorted(MIGRATIONS_PATH.glob("*.sql")):
                 with connection.cursor() as cursor:
@@ -59,7 +93,10 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                     )
                     if cursor.fetchone():
                         continue
-                _execute_sql_script(connection, migration_path.read_text(encoding="utf-8"))
+                migration_sql = _schema_sql_for_database(
+                    migration_path.read_text(encoding="utf-8"), settings.db_name
+                )
+                _execute_sql_script(connection, migration_sql)
                 with connection.cursor() as cursor:
                     cursor.execute(
                         "INSERT INTO schema_migrations (migration_name) VALUES (%s)",
@@ -108,6 +145,18 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                 if not row or int(row[0]) == 0:
                     cursor.execute(f"ALTER TABLE evaluation_questions ADD COLUMN {column_name} {definition}")
             cursor.execute(
+                """SELECT COUNT(*) FROM information_schema.columns
+                   WHERE table_schema=%s AND table_name='evaluator_results'
+                     AND column_name='updated_at'""",
+                (settings.db_name,),
+            )
+            row = cursor.fetchone()
+            if not row or int(row[0]) == 0:
+                cursor.execute(
+                    "ALTER TABLE evaluator_results ADD COLUMN updated_at TIMESTAMP NOT NULL "
+                    "DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at"
+                )
+            cursor.execute(
                 """SELECT COUNT(*) FROM information_schema.statistics
                    WHERE table_schema=%s AND table_name='evaluation_questions'
                      AND index_name='uq_evaluation_questions_key'""",
@@ -149,6 +198,17 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                 cursor.execute(
                     "ALTER TABLE document_chunks "
                     "ADD UNIQUE KEY uq_document_chunks_chroma_id (chroma_id)"
+                )
+            cursor.execute(
+                """SELECT COUNT(*) FROM information_schema.statistics
+                   WHERE table_schema=%s AND table_name='document_chunks'
+                     AND index_name='ft_document_chunks_text'""",
+                (settings.db_name,),
+            )
+            row = cursor.fetchone()
+            if not row or int(row[0]) == 0:
+                cursor.execute(
+                    "ALTER TABLE document_chunks ADD FULLTEXT KEY ft_document_chunks_text (chunk_text)"
                 )
 
             cursor.execute(
@@ -205,6 +265,29 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                     "ALTER TABLE model_settings "
                     "ADD COLUMN top_p DECIMAL(3,2) NOT NULL DEFAULT 1.00 AFTER temperature"
                 )
+
+            fp8_constraints = (
+                (
+                    "fk_evaluation_runs_dataset",
+                    "ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_dataset "
+                    "FOREIGN KEY (dataset_id) REFERENCES evaluation_datasets (dataset_id) ON DELETE SET NULL",
+                ),
+                (
+                    "fk_evaluation_runs_baseline",
+                    "ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_baseline "
+                    "FOREIGN KEY (baseline_run_id) REFERENCES evaluation_runs (run_id) ON DELETE SET NULL",
+                ),
+            )
+            for constraint_name, statement in fp8_constraints:
+                cursor.execute(
+                    """SELECT COUNT(*) FROM information_schema.table_constraints
+                       WHERE constraint_schema=%s AND table_name='evaluation_runs'
+                         AND constraint_name=%s""",
+                    (settings.db_name, constraint_name),
+                )
+                row = cursor.fetchone()
+                if not row or int(row[0]) == 0:
+                    cursor.execute(statement)
         connection.commit()
     finally:
         connection.close()
@@ -411,13 +494,16 @@ def get_or_create_model_setting(
     top_k: int,
     temperature: float,
     top_p: float,
+    retrieval_method: str = "chroma_vector",
 ) -> int:
+    if retrieval_method not in {"chroma_vector", "mysql_keyword"}:
+        raise ValueError(f"Unsupported retrieval method {retrieval_method!r}")
     with connection.cursor() as cursor:
         cursor.execute(
             """
             SELECT setting_id
             FROM model_settings
-            WHERE retrieval_method = 'chroma_vector'
+            WHERE retrieval_method = %s
               AND llm_provider = %s
               AND chat_model = %s
               AND embedding_model = %s
@@ -430,6 +516,7 @@ def get_or_create_model_setting(
             LIMIT 1
             """,
             (
+                retrieval_method,
                 provider,
                 chat_model,
                 embedding_model,
@@ -451,10 +538,11 @@ def get_or_create_model_setting(
             INSERT INTO model_settings (
                 setting_name, retrieval_method, llm_provider, chat_model,
                 embedding_model, chunk_size, chunk_overlap, top_k, temperature, top_p
-            ) VALUES (%s, 'chroma_vector', %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 f"{provider} {chat_model} grounded CLI",
+                retrieval_method,
                 provider,
                 chat_model,
                 embedding_model,
@@ -480,6 +568,7 @@ def save_grounded_response(
     contexts: Sequence[Any],
     question_id: int | None = None,
     run_id: int | None = None,
+    retrieval_method: str = "chroma_vector",
 ) -> int:
     """Store one CLI answer and the exact retrieved contexts used to produce it."""
     try:
@@ -489,9 +578,9 @@ def save_grounded_response(
                 """
                 INSERT INTO rag_responses (
                     run_id, setting_id, question_id, question_text, answer_text, retrieval_method, latency_ms
-                ) VALUES (%s, %s, %s, %s, %s, 'chroma_vector', %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (run_id, setting_id, question_id, question, answer, latency_ms),
+                (run_id, setting_id, question_id, question, answer, retrieval_method, latency_ms),
             )
             response_id = int(cursor.lastrowid)
 

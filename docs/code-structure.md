@@ -32,8 +32,12 @@ llm-rag-evals/
 |   |-- answer.py
 |   |-- database.py
 |   |-- document_loader.py
+|   |-- advanced_evaluation.py
 |   |-- evaluation.py
+|   |-- evaluation_store.py
+|   |-- evaluator_catalog.py
 |   |-- run_evaluation.py
+|   |-- run_advanced_evaluation.py
 |   |-- ingest.py
 |   |-- llm.py
 |   |-- query.py
@@ -65,10 +69,22 @@ placeholder directories are unnecessary.
   and evaluation metrics/experiments.
 
 FP7 uses `rag/evaluation.py` for versioned dataset seeding, local evaluator
-implementations, and saved-response scoring. `rag/run_evaluation.py` creates a
-controlled run, generates one answer per reviewed question, and applies all
-configured local evaluators to that stored response. `api/evaluations.php`
-provides dataset review, run summaries, and response-level result inspection.
+implementations, and saved-response scoring. FP8/FP9 add:
+
+- `rag/evaluator_catalog.py`: the authoritative 13-method metadata and score
+  contracts used by storage, execution, and UI;
+- `rag/evaluation_store.py`: immutable attempt insertion and latest-attempt
+  canonical-result maintenance;
+- `rag/advanced_evaluation.py`: structured judge/RAGAS execution,
+  applicability, failure isolation, and usage/cost metadata;
+- `rag/run_advanced_evaluation.py`: selection, reuse, dry-run preflight, repeat
+  attempts, and paid-call/application/cost guardrails; and
+- `rag/run_evaluation.py`: controlled answer-generation runs with frozen
+  dataset, model, retrieval, corpus category, and document-manifest metadata.
+
+`api/evaluations.php` provides dataset review, evaluator contracts, run and
+Findings summaries, response-level attempts/contexts/disagreement inspection,
+and versioned human response review.
 - `storage/`: generated files, uploads, and logs; private content is not committed.
 - `tests/`: automated tests and stable evaluation fixtures.
 - `docs/`: planning, architecture, UX, and setup documentation.
@@ -117,8 +133,9 @@ provides dataset review, run summaries, and response-level result inspection.
 - Save evaluator name/version/configuration, raw details, runtime, estimated
   cost, and errors; never regenerate a RAG answer merely to score it with a
   different evaluator.
-- Use `docs/evaluation-strategy.md` as the authoritative source for the proposed
-  ten evaluator types and controlled experiment protocol.
+- Use `rag/evaluator_catalog.py` as the executable source for the 13 evaluator
+  definitions/score contracts and `docs/evaluation-strategy.md` as the
+  authoritative controlled experiment and interpretation protocol.
 
 ### HTML, CSS, and JavaScript
 

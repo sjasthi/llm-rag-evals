@@ -36,18 +36,45 @@ JSON endpoint. Users can submit a question in the browser, view the grounded
 answer and ranked source excerpts, and see the model, latency, and saved
 response ID.
 
-FP7 is implemented and verified. The repository now includes an
+FP7 is implemented and verified. The repository includes an
 idempotent, versioned 25-question reviewed dataset with expected answers, sources,
 evidence, accepted variants, required facts, category, difficulty, and
-answerability metadata. The browser exposes review, filtering, run history, and
-per-response result inspection, and the additive
+answerability metadata. The redesigned task-focused browser explains the full
+Sources -> Dataset -> Experiments -> Findings workflow. Dataset cards expose
+cited evidence and manual review controls, while Experiments shows dataset/run
+coverage, limited or failed run explanations, compact run navigation, and an
+automatically populated response inspector. The additive
 schema stores evaluator definitions plus heterogeneous raw per-response results.
 Eight local evaluators are registered: exact/contains, required-fact coverage,
 token F1, ROUGE-L, embedding semantic similarity, BERTScore, expected-source
 accuracy, and refusal correctness. A controlled runner generates each reviewed answer once, saves its
 exact contexts, and applies evaluators to that saved response. The first live
-three-question baseline completed successfully with 24 stored evaluator results;
-LLM-as-judge and RAGAS remain FP8 work.
+three-question baseline completed successfully with 24 stored evaluator results.
+The 25 questions are reviewed test cases available to experiments; only three
+unique questions were executed in this bounded proof run. A complete
+25-question baseline remains a deliberate later experiment, not an FP7 claim.
+
+FP8 and FP9 application support is now implemented and locally verified. Five
+advanced definitions join the eight baselines: a versioned structured
+LLM-as-judge rubric plus RAGAS Faithfulness, Response Relevancy, Context
+Precision, and Context Recall. Immutable evaluator attempts preserve raw
+provider output, configuration, usage, runtime, cost, skips, and failures, while
+a latest-attempt canonical row keeps browser reads simple. New controlled runs
+freeze dataset/settings/document-manifest provenance and can compare Chroma
+with genuine MySQL FULLTEXT retrieval or use reproducible category subsets.
+
+The Experiments browser now explains four independent evidence layers
+(baseline, advanced, human, and operations), shows every score's basis,
+calculation, scale, threshold status, and limitation, exposes attempt
+variability, and supports versioned evidence-backed human response reviews.
+Findings compares run coverage/configuration and summarizes each evaluator
+independently; it does not combine unlike metrics into a mystery grade.
+
+No paid advanced evaluation was executed during implementation. The advanced
+runner's dry-run and compatibility path are verified, but real RAGAS/judge
+scores and empirical FP9 conclusions require an explicitly authorized,
+cost-bounded run. See the detailed
+[FP8/FP9 implementation record](docs/fp8-fp9-implementation.md).
 
 ## Research Direction
 
@@ -56,9 +83,9 @@ It will compare the specific usefulness and limitations of normalized matching,
 semantic similarity, expected-source accuracy, refusal correctness,
 faithfulness/groundedness, answer relevance, latency, cost, and human review.
 
-The initial research dataset will contain at least 25 reviewed questions across
-the current Metro State categories, including answerable and unanswerable
-questions. A controlled experiment will compare a smaller or more focused
+Dataset version 1.0 contains 25 reviewed questions across the current Metro
+State categories, including answerable and unanswerable questions. A controlled
+experiment will compare a smaller or more focused
 document collection with the full collection to observe how added documents and
 similar distractors affect retrieval and metric behavior. See the
 [research plan](docs/research-plan.md) for the detailed questions, experiments,
@@ -89,7 +116,9 @@ requires a Gemini API key stored in the ignored `.env` file.
 
 ## Open the Frontend
 
-From the project root, run:
+MySQL and PHP are separate processes. Start the installed MySQL server first;
+opening the PHP application does not start MySQL automatically. Then, from the
+project root, run:
 
 ```powershell
 cd "C:\path\to\LLM RAG Evaluation Project"
@@ -105,11 +134,18 @@ http://127.0.0.1:8000/
 Expected result:
 
 - The RAG Evaluation Workspace page loads.
-- The dashboard shows live indexed-document and category counts.
-- The dashboard shows the number of document categories.
-- The page identifies the stack as PHP + MySQL + ChromaDB.
-- The Ask section accepts questions and displays a Gemini answer with sources.
-- The Documents section uploads, lists, replaces, and deletes supported documents.
+- Overview explains the Sources -> Dataset -> Experiments -> Findings lifecycle
+  and shows live corpus, category, reviewed-question, and evaluator counts.
+- Playground accepts questions and displays a Gemini answer with ranked sources.
+- Dataset shows the sampled gold test set, cited evidence, filters, and manual
+  review status. `Reviewed` means source-verified; it does not mean the question
+  has already been sent through an experiment.
+- Experiments shows each run's coverage against the 25-question dataset, saved
+  responses, generated/reference answers, evaluator signals, and retrieved
+  evidence. The newest available response opens automatically.
+- Sources uploads, lists, replaces, and deletes supported documents.
+- Findings shows live run/configuration comparisons, interpretation rules, and
+  the score contract and observed same-metric range for all 13 evaluators.
 
 To stop the PHP server, return to the terminal and press `Ctrl+C`.
 
@@ -177,7 +213,13 @@ that registration begins Monday, March 23, 2026. Chroma distance is shown with
 each result; lower distance indicates a closer vector match. The lexical score
 is used to rerank Chroma candidates when exact terms and phrases matter.
 
-Check the retained keyword baseline:
+Check genuine MySQL chunk retrieval:
+
+```powershell
+python rag\query.py "When does Fall 2026 registration begin?" --retrieval mysql --top-k 3
+```
+
+Check the retained filesystem keyword troubleshooting baseline:
 
 ```powershell
 python rag\query.py "When does Fall 2026 registration begin?" --retrieval keyword --top-k 3
@@ -213,10 +255,11 @@ Run the Python unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 25 tests covering TXT/PDF/DOCX loading, empty and
+The current suite contains 34 tests covering TXT/PDF/DOCX loading, empty and
 binary input rejection, metadata-preserving chunking, stable IDs, retrieval
-reranking, grounded prompts, refusal instructions, answer orchestration, and a
-frontend regression check for safe document-list element creation.
+reranking, grounded prompts, refusal instructions, answer orchestration, local
+evaluators, advanced evaluator mapping/applicability/cost/failure isolation,
+score contracts, and frontend evaluation-layer regressions.
 
 ## FP7 Evaluation Foundation
 
@@ -248,6 +291,69 @@ BERTScore uses `distilbert-base-uncased`. Both models are cached after their
 first load in a runner process. The current thresholds are descriptive research
 starting points, not universal pass/fail standards.
 
+### Dataset Review Versus Experiment Execution
+
+The evaluation dataset is a representative answer key, not a response history
+and not one question per source document. A reviewer or subject-matter expert
+checks each expected answer against its cited authoritative evidence. The three
+review states control test-case eligibility:
+
+- `reviewed`: source-verified and eligible for controlled runs;
+- `needs_revision`: the question, reference answer, or evidence needs correction;
+- `draft`: still being prepared and excluded from runs.
+
+An experiment run then selects some or all reviewed questions and generates one
+saved response per selected question under fixed settings. The verified FP7
+proof used `--limit 3`, so it created three responses and eight evaluator
+results per response. Reviewing 25 test cases and executing three questions are
+therefore separate, intentional facts.
+
+## FP8/FP9 Advanced Evaluation and Findings
+
+Apply current migrations and refresh all 13 versioned evaluator contracts:
+
+```powershell
+python rag\ingest.py --init-schema --json
+python rag\evaluation.py --seed --json
+```
+
+Always preview advanced work first. This command reads response 17 and reports
+applicable, reused, and skipped methods without calling an external model:
+
+```powershell
+python rag\run_advanced_evaluation.py --response-id 17 --dry-run --json
+```
+
+External advanced calls require the deliberate `--allow-paid` flag as well as
+application and estimated-cost caps. Configure evaluator provider/model and
+current per-million token prices in `.env`; zero price defaults mean "price not
+configured," not "free." The runner can preserve 1-10 attempts per method and
+reuses a completed active-version result unless `--force` is specified.
+
+The RAGAS integration uses its modern collections API and pins
+`ragas==0.4.3` with `langchain-community==0.4.1` for compatibility. RAGAS and
+the judge operate on the already-saved answer and ordered contexts; they never
+regenerate the RAG answer.
+
+Create new controlled runs with explicit retrieval and experiment metadata:
+
+```powershell
+python rag\run_evaluation.py --dataset-id 5 --limit 1 `
+  --retrieval mysql_keyword --top-k 3 `
+  --experiment-key retrieval-method-v1 `
+  --corpus-variant full-current --json
+```
+
+Use the actual dataset ID returned locally. New runs freeze their dataset,
+retrieval/generation settings, category subset, ordered document manifest and
+hash, and evaluator list. Existing FP7 runs are honestly labeled as partial
+legacy provenance.
+
+Open `#results` for the four-layer response inspector and response-review
+rubric. Open `#report` for the Findings workspace. Dataset review controls
+verify expected test data; the human-review form separately evaluates a saved
+generated response using the shown reference and contexts.
+
 ## Database Schema
 
 The initial MySQL schema is stored in:
@@ -265,11 +371,14 @@ It defines tables for:
 - evaluation runs
 - RAG responses
 - retrieved contexts
-- evaluation scores
+- evaluator definitions and latest canonical results
+- immutable evaluator result attempts
+- versioned human response reviews
 
-`rag/ingest.py --init-schema` imports this schema and safely applies the FP5 and
-FP6 ingestion columns to an earlier database. FP6 adds the original uploaded
-filename while preserving the server-controlled storage path separately.
+`rag/ingest.py --init-schema` imports the schema and applies ordered migrations.
+FP8/FP9 add run provenance, immutable attempts, human reviews, and the MySQL
+FULLTEXT index while preserving earlier data. Legacy runs are explicitly
+labeled as partial provenance rather than assigned invented historical values.
 
 ## Configuration
 
@@ -292,7 +401,8 @@ Current safe example values are stored in:
 - [Code structure and conventions](docs/code-structure.md)
 - [Recommended implementation approach](docs/implementation-approach.md)
 - [RAG evaluation research plan](docs/research-plan.md)
-- [Ten-evaluator strategy and FP8 resume plan](docs/evaluation-strategy.md)
+- [Evaluator strategy and controlled protocol](docs/evaluation-strategy.md)
+- [FP8/FP9 implementation record and reproduction guide](docs/fp8-fp9-implementation.md)
 
 ## Source Documents
 

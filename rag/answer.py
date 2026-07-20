@@ -15,7 +15,7 @@ from database import (
     save_grounded_response,
 )
 from llm import build_grounded_prompt, generate_with_gemini
-from query import SearchResult, semantic_search
+from query import SearchResult, mysql_keyword_search, semantic_search
 from settings import Settings, load_settings
 
 
@@ -44,15 +44,25 @@ def answer_question(
     generator: AnswerGenerator = generate_with_gemini,
     question_id: int | None = None,
     run_id: int | None = None,
+    retrieval_method: str = "chroma_vector",
+    categories: list[str] | None = None,
 ) -> AnswerResult:
     if not question.strip():
         raise ValueError("Question cannot be empty")
     if top_k <= 0:
         raise ValueError("top_k must be greater than zero")
+    if retrieval_method not in {"chroma_vector", "mysql_keyword"}:
+        raise ValueError(f"Unsupported retrieval method {retrieval_method!r}")
 
     settings = load_settings()
     started_at = time.perf_counter()
-    contexts = semantic_search(question, top_k)
+    contexts = (
+        semantic_search(question, top_k, categories)
+        if retrieval_method == "chroma_vector"
+        else mysql_keyword_search(question, top_k, categories)
+    )
+    if not contexts:
+        raise RuntimeError(f"{retrieval_method} returned no matching source chunks.")
     prompt = build_grounded_prompt(question, contexts)
     answer = generator(prompt, settings)
     latency_ms = round((time.perf_counter() - started_at) * 1000)
@@ -72,6 +82,7 @@ def answer_question(
                     top_k=top_k,
                     temperature=settings.llm_temperature,
                     top_p=settings.llm_top_p,
+                    retrieval_method=retrieval_method,
                 )
                 response_id = save_grounded_response(
                     connection,
@@ -82,6 +93,7 @@ def answer_question(
                     contexts=contexts,
                     question_id=question_id,
                     run_id=run_id,
+                    retrieval_method=retrieval_method,
                 )
         except Exception as error:
             persistence_error = str(error)
@@ -92,7 +104,7 @@ def answer_question(
         sources=contexts,
         provider=settings.llm_provider,
         model=settings.llm_chat_model,
-        retrieval_method="chroma_vector",
+        retrieval_method=retrieval_method,
         top_k=top_k,
         latency_ms=latency_ms,
         response_id=response_id,
@@ -100,8 +112,17 @@ def answer_question(
     )
 
 
-def dry_run(question: str, top_k: int) -> tuple[str, list[SearchResult]]:
-    contexts = semantic_search(question, top_k)
+def dry_run(
+    question: str,
+    top_k: int,
+    retrieval_method: str = "chroma_vector",
+    categories: list[str] | None = None,
+) -> tuple[str, list[SearchResult]]:
+    contexts = (
+        semantic_search(question, top_k, categories)
+        if retrieval_method == "chroma_vector"
+        else mysql_keyword_search(question, top_k, categories)
+    )
     return build_grounded_prompt(question, contexts), contexts
 
 
@@ -112,6 +133,15 @@ def main() -> None:
     )
     parser.add_argument("question")
     parser.add_argument("--top-k", type=int, default=settings.retrieval_top_k)
+    parser.add_argument(
+        "--retrieval",
+        choices=("chroma_vector", "mysql_keyword"),
+        default="chroma_vector",
+    )
+    parser.add_argument(
+        "--categories",
+        help="Optional comma-separated corpus category subset for a controlled variant.",
+    )
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--no-save", action="store_true")
     parser.add_argument(
@@ -126,7 +156,8 @@ def main() -> None:
 
     try:
         if args.dry_run:
-            prompt, contexts = dry_run(args.question, args.top_k)
+            categories = [value.strip() for value in (args.categories or "").split(",") if value.strip()]
+            prompt, contexts = dry_run(args.question, args.top_k, args.retrieval, categories)
             if args.json:
                 print(
                     json.dumps(
@@ -146,6 +177,8 @@ def main() -> None:
             args.question,
             top_k=args.top_k,
             save=not args.no_save,
+            retrieval_method=args.retrieval,
+            categories=[value.strip() for value in (args.categories or "").split(",") if value.strip()],
         )
     except Exception as error:
         print(f"Answer generation failed: {error}", file=sys.stderr)

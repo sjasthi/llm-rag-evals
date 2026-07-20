@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_document_chunks_document_index (document_id, chunk_index),
     UNIQUE KEY uq_document_chunks_chroma_id (chroma_id),
+    FULLTEXT KEY ft_document_chunks_text (chunk_text),
     CONSTRAINT fk_document_chunks_document
         FOREIGN KEY (document_id) REFERENCES documents (document_id)
         ON DELETE CASCADE
@@ -106,14 +107,25 @@ CREATE TABLE IF NOT EXISTS model_settings (
 CREATE TABLE IF NOT EXISTS evaluation_runs (
     run_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     setting_id BIGINT UNSIGNED NOT NULL,
+    dataset_id BIGINT UNSIGNED NULL,
+    baseline_run_id BIGINT UNSIGNED NULL,
     run_name VARCHAR(160) NOT NULL,
+    experiment_key VARCHAR(120) NULL,
+    corpus_variant_key VARCHAR(120) NOT NULL DEFAULT 'full_current',
+    run_configuration_json JSON NULL,
     status ENUM('planned', 'running', 'completed', 'failed') NOT NULL DEFAULT 'planned',
     started_at TIMESTAMP NULL,
     completed_at TIMESTAMP NULL,
     notes TEXT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_evaluation_runs_setting
-        FOREIGN KEY (setting_id) REFERENCES model_settings (setting_id)
+        FOREIGN KEY (setting_id) REFERENCES model_settings (setting_id),
+    CONSTRAINT fk_evaluation_runs_dataset
+        FOREIGN KEY (dataset_id) REFERENCES evaluation_datasets (dataset_id)
+        ON DELETE SET NULL,
+    CONSTRAINT fk_evaluation_runs_baseline
+        FOREIGN KEY (baseline_run_id) REFERENCES evaluation_runs (run_id)
+        ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS rag_responses (
@@ -203,10 +215,67 @@ CREATE TABLE IF NOT EXISTS evaluator_results (
     estimated_cost DECIMAL(12,8) NULL,
     error_message TEXT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_evaluator_results_response_evaluator (response_id, evaluator_id),
     CONSTRAINT fk_evaluator_results_response
         FOREIGN KEY (response_id) REFERENCES rag_responses (response_id)
         ON DELETE CASCADE,
     CONSTRAINT fk_evaluator_results_evaluator
         FOREIGN KEY (evaluator_id) REFERENCES evaluator_definitions (evaluator_id)
+);
+
+CREATE TABLE IF NOT EXISTS evaluator_result_attempts (
+    attempt_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    response_id BIGINT UNSIGNED NOT NULL,
+    evaluator_id BIGINT UNSIGNED NOT NULL,
+    attempt_number INT UNSIGNED NOT NULL,
+    status ENUM('completed', 'skipped', 'failed') NOT NULL DEFAULT 'completed',
+    raw_score DECIMAL(12,8) NULL,
+    normalized_score DECIMAL(12,8) NULL,
+    passed BOOLEAN NULL,
+    explanation TEXT NULL,
+    details_json JSON NULL,
+    configuration_json JSON NULL,
+    raw_provider_output MEDIUMTEXT NULL,
+    input_tokens INT UNSIGNED NULL,
+    output_tokens INT UNSIGNED NULL,
+    total_tokens INT UNSIGNED NULL,
+    runtime_ms INT UNSIGNED NULL,
+    estimated_cost DECIMAL(12,8) NULL,
+    error_message TEXT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_evaluator_attempt_number (response_id, evaluator_id, attempt_number),
+    KEY idx_evaluator_attempts_evaluator (evaluator_id),
+    CONSTRAINT fk_evaluator_attempts_response
+        FOREIGN KEY (response_id) REFERENCES rag_responses (response_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_evaluator_attempts_evaluator
+        FOREIGN KEY (evaluator_id) REFERENCES evaluator_definitions (evaluator_id)
+);
+
+CREATE TABLE IF NOT EXISTS human_reviews (
+    review_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    response_id BIGINT UNSIGNED NOT NULL,
+    reviewer_alias VARCHAR(120) NOT NULL,
+    rubric_version VARCHAR(40) NOT NULL DEFAULT '1.0',
+    correctness TINYINT UNSIGNED NULL,
+    completeness TINYINT UNSIGNED NULL,
+    faithfulness TINYINT UNSIGNED NULL,
+    relevance TINYINT UNSIGNED NULL,
+    refusal_correctness TINYINT UNSIGNED NULL,
+    overall_decision ENUM('acceptable', 'needs_revision', 'incorrect', 'not_applicable') NOT NULL,
+    failure_category VARCHAR(80) NULL,
+    notes TEXT NULL,
+    is_current BOOLEAN NOT NULL DEFAULT TRUE,
+    reviewed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_human_reviews_response_current (response_id, is_current),
+    CONSTRAINT fk_human_reviews_response
+        FOREIGN KEY (response_id) REFERENCES rag_responses (response_id)
+        ON DELETE CASCADE,
+    CONSTRAINT chk_human_review_correctness CHECK (correctness IS NULL OR correctness BETWEEN 1 AND 5),
+    CONSTRAINT chk_human_review_completeness CHECK (completeness IS NULL OR completeness BETWEEN 1 AND 5),
+    CONSTRAINT chk_human_review_faithfulness CHECK (faithfulness IS NULL OR faithfulness BETWEEN 1 AND 5),
+    CONSTRAINT chk_human_review_relevance CHECK (relevance IS NULL OR relevance BETWEEN 1 AND 5),
+    CONSTRAINT chk_human_review_refusal CHECK (refusal_correctness IS NULL OR refusal_correctness BETWEEN 1 AND 5)
 );

@@ -8,12 +8,14 @@ import json
 import re
 import time
 import unicodedata
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
 from database import database_connection
+from evaluation_store import persist_result
+from evaluator_catalog import ALL_DEFINITIONS, BASELINE_DEFINITIONS, definition_for
 from llm import REFUSAL_MESSAGE
 from settings import PROJECT_ROOT, load_settings
 
@@ -33,6 +35,9 @@ class EvaluationInput:
     accepted_answers: list[str]
     required_facts: list[str]
     is_answerable: bool
+    expected_evidence: str | None = None
+    retrieved_contexts: list[str] = field(default_factory=list)
+    review_status: str = "reviewed"
 
 
 @dataclass(frozen=True)
@@ -46,20 +51,23 @@ class EvaluationResult:
     runtime_ms: int
     status: str = "completed"
     error_message: str | None = None
+    configuration: dict[str, Any] = field(default_factory=dict)
+    estimated_cost: float | None = 0.0
 
 
 Evaluator = Callable[[EvaluationInput], tuple[float | None, bool | None, str, dict[str, Any]]]
 
 
-EVALUATOR_DEFINITIONS = (
-    ("exact_contains", "Exact or accepted-answer match", "lexical", "generation", "1.0", "Checks normalized equality or containment against reviewed accepted answers."),
-    ("required_fact_coverage", "Required fact coverage", "lexical", "generation", "1.0", "Measures how many manually reviewed required facts appear in the response."),
-    ("token_f1", "Token overlap F1", "lexical", "generation", "1.0", "Measures unigram precision and recall against the expected answer."),
-    ("rouge_l", "ROUGE-L F1", "lexical", "generation", "1.0", "Measures longest-common-subsequence precision, recall, and F1 against the expected answer."),
-    ("semantic_similarity", "Embedding semantic similarity", "semantic", "generation", "all-MiniLM-L6-v2", "Measures cosine similarity between expected and actual answer embeddings."),
-    ("bertscore", "BERTScore F1", "semantic", "generation", "distilbert-base-uncased", "Measures contextual token similarity between the expected and actual answer."),
-    ("expected_source_accuracy", "Expected source accuracy", "retrieval", "retrieval", "1.0", "Checks whether the reviewed source appears in the ranked retrieved contexts."),
-    ("refusal_correctness", "Refusal correctness", "supporting", "generation", "1.0", "Checks fixed refusal behavior using the reviewed answerability label."),
+EVALUATOR_DEFINITIONS = tuple(
+    (
+        definition["key"],
+        definition["name"],
+        definition["family"],
+        definition["dimension"],
+        definition["version"],
+        definition["description"],
+    )
+    for definition in BASELINE_DEFINITIONS
 )
 
 
@@ -182,13 +190,26 @@ LOCAL_EVALUATORS: dict[str, Evaluator] = {
 def run_evaluator(key: str, item: EvaluationInput) -> EvaluationResult:
     started = time.perf_counter()
     try:
+        configuration = definition_for(key)["configuration"]
+    except KeyError:
+        # Tests and future extensions may inject an evaluator before its
+        # definition is registered; execution failure must still be isolated.
+        configuration = {"implementation": "unregistered_runtime_evaluator"}
+    try:
         score, passed, explanation, details = LOCAL_EVALUATORS[key](item)
         runtime_ms = round((time.perf_counter() - started) * 1000)
         normalized = None if score is None else max(0.0, min(1.0, score))
-        return EvaluationResult(key, score, normalized, passed, explanation, details, runtime_ms)
+        status = "skipped" if score is None else "completed"
+        return EvaluationResult(
+            key, score, normalized, passed, explanation, details, runtime_ms,
+            status=status, configuration=configuration,
+        )
     except Exception as error:
         runtime_ms = round((time.perf_counter() - started) * 1000)
-        return EvaluationResult(key, None, None, None, "Evaluator failed; inspect the stored error.", {}, runtime_ms, "failed", str(error))
+        return EvaluationResult(
+            key, None, None, None, "Evaluator failed; inspect the stored error.", {},
+            runtime_ms, "failed", str(error), configuration=configuration,
+        )
 
 
 def load_seed(path: Path = DATASET_PATH) -> dict[str, Any]:
@@ -232,19 +253,27 @@ def seed_dataset() -> dict[str, int]:
                            VALUES (%s,%s,%s) ON DUPLICATE KEY UPDATE display_order=VALUES(display_order)""",
                         (dataset_id, question_id, order),
                     )
-                for key, name, family, dimension, version, description in EVALUATOR_DEFINITIONS:
+                for definition in ALL_DEFINITIONS:
                     cursor.execute(
                         """INSERT INTO evaluator_definitions
                            (evaluator_key, display_name, family, dimension, version, description, configuration_json, is_local, is_deterministic)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,TRUE,TRUE)
-                           ON DUPLICATE KEY UPDATE display_name=VALUES(display_name), description=VALUES(description), configuration_json=VALUES(configuration_json)""",
-                        (key, name, family, dimension, version, description, json.dumps({"implementation": "rag/evaluation.py"})),
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                           ON DUPLICATE KEY UPDATE display_name=VALUES(display_name), family=VALUES(family),
+                             dimension=VALUES(dimension), description=VALUES(description),
+                             configuration_json=VALUES(configuration_json), is_local=VALUES(is_local),
+                             is_deterministic=VALUES(is_deterministic), is_active=TRUE""",
+                        (
+                            definition["key"], definition["name"], definition["family"],
+                            definition["dimension"], definition["version"], definition["description"],
+                            json.dumps(definition["configuration"]), definition["is_local"],
+                            definition["is_deterministic"],
+                        ),
                     )
             connection.commit()
         except Exception:
             connection.rollback()
             raise
-    return {"dataset_id": dataset_id, "questions": len(seed["questions"]), "evaluators": len(EVALUATOR_DEFINITIONS)}
+    return {"dataset_id": dataset_id, "questions": len(seed["questions"]), "evaluators": len(ALL_DEFINITIONS)}
 
 
 def _json_list(value: Any) -> list[str]:
@@ -259,7 +288,8 @@ def load_evaluation_input(connection: Any, response_id: int) -> EvaluationInput:
         cursor.execute(
             """SELECT r.response_id, r.question_text, r.answer_text,
                       q.expected_answer, q.expected_source, q.accepted_answers,
-                      q.required_facts, q.is_answerable
+                      q.required_facts, q.is_answerable, q.expected_evidence,
+                      q.review_status
                FROM rag_responses r
                JOIN evaluation_questions q ON q.question_id = r.question_id
                WHERE r.response_id = %s""",
@@ -269,13 +299,15 @@ def load_evaluation_input(connection: Any, response_id: int) -> EvaluationInput:
         if not row:
             raise ValueError("Saved response is missing or is not linked to an evaluation question.")
         cursor.execute(
-            """SELECT d.source_path
+            """SELECT d.source_path, c.context_excerpt
                FROM retrieved_contexts c
                LEFT JOIN documents d ON d.document_id = c.document_id
                WHERE c.response_id = %s ORDER BY c.rank_position""",
             (response_id,),
         )
-        sources = [str(item["source_path"]) for item in cursor.fetchall() if item["source_path"]]
+        context_rows = cursor.fetchall()
+        sources = [str(item["source_path"]) for item in context_rows if item["source_path"]]
+        contexts = [str(item["context_excerpt"]) for item in context_rows if item["context_excerpt"]]
     return EvaluationInput(
         response_id=int(row["response_id"]),
         question=str(row["question_text"]),
@@ -286,6 +318,9 @@ def load_evaluation_input(connection: Any, response_id: int) -> EvaluationInput:
         accepted_answers=_json_list(row["accepted_answers"]),
         required_facts=_json_list(row["required_facts"]),
         is_answerable=bool(row["is_answerable"]),
+        expected_evidence=row["expected_evidence"],
+        retrieved_contexts=contexts,
+        review_status=str(row["review_status"]),
     )
 
 
@@ -302,25 +337,7 @@ def score_saved_response(response_id: int, evaluator_keys: list[str]) -> list[Ev
             connection.start_transaction()
             with connection.cursor() as cursor:
                 for result in results:
-                    cursor.execute(
-                        "SELECT evaluator_id FROM evaluator_definitions WHERE evaluator_key=%s AND is_active=TRUE ORDER BY evaluator_id DESC LIMIT 1",
-                        (result.evaluator_key,),
-                    )
-                    evaluator = cursor.fetchone()
-                    if not evaluator:
-                        raise ValueError(f"Evaluator definition {result.evaluator_key!r} is not seeded.")
-                    cursor.execute(
-                        """INSERT INTO evaluator_results
-                           (response_id, evaluator_id, status, raw_score, normalized_score, passed,
-                            explanation, details_json, runtime_ms, estimated_cost, error_message)
-                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s)
-                           ON DUPLICATE KEY UPDATE status=VALUES(status), raw_score=VALUES(raw_score),
-                             normalized_score=VALUES(normalized_score), passed=VALUES(passed),
-                             explanation=VALUES(explanation), details_json=VALUES(details_json),
-                             runtime_ms=VALUES(runtime_ms), estimated_cost=0, error_message=VALUES(error_message)""",
-                        (response_id, int(evaluator[0]), result.status, result.raw_score, result.normalized_score,
-                         result.passed, result.explanation, json.dumps(result.details), result.runtime_ms, result.error_message),
-                    )
+                    persist_result(connection, response_id=response_id, result=result)
             connection.commit()
         except Exception:
             connection.rollback()

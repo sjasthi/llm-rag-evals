@@ -23,8 +23,8 @@ that one metric or one RAG configuration is universally best.
    affect measured answer quality?
 5. How does the size and composition of the indexed document collection affect
    retrieval difficulty and metric results?
-6. What combination of metrics gives a defensible overall evaluation of this
-   Metro State RAG system?
+6. What portfolio of complementary metrics gives defensible evidence for a
+   particular decision without hiding disagreements in one overall score?
 
 ## Research Outputs
 
@@ -40,10 +40,14 @@ The final project should produce:
 - recommendations explaining which metrics are useful for particular purposes;
 - limitations and follow-up questions for larger organizational document sets.
 
-The confirmed research emphasis is approximately ten evaluator/metric types
-drawn from multiple method families, not ten questions and not a RAGAS-only
-integration. See `docs/evaluation-strategy.md` for the proposed evaluator set,
-controlled protocol, trade-off matrix, teaching examples, and FP7-FP10 sequence.
+The working research emphasis is representative evaluator types drawn from
+multiple method families, not ten questions, eight advanced models, or a
+RAGAS-only integration. The professor-provided reference lists eight broad
+options. This project uses the first four as baseline families, adds an
+LLM-as-judge and four selected RAGAS dimensions, calibrates them with sampled
+human review, and documents production A/B testing as out of scope. See
+`docs/evaluation-strategy.md` for the evaluator set, controlled protocol,
+score contracts, trade-offs, teaching examples, and FP7-FP10 sequence.
 
 ## Evaluation Dataset Design
 
@@ -75,10 +79,11 @@ Professor-provided evaluation reference:
 
 This reference separates retrieval quality from generation quality and compares
 exact/string matching, BLEU/ROUGE/METEOR, semantic similarity, BERTScore,
-LLM-as-judge, RAGAS, human evaluation, and production A/B testing. FP7 should
-implement approximately ten evaluator/metric types against the same stored
-responses, record cost/speed/determinism trade-offs, and use human-reviewed
-expected answers/sources to interpret metric agreement and disagreement.
+LLM-as-judge, RAGAS, human evaluation, and production A/B testing. These are
+method options rather than eight required advanced models. The project applies
+representative methods against the same stored responses, records
+cost/speed/determinism trade-offs, and uses human-reviewed expected
+answers/sources to interpret metric agreement and disagreement.
 
 RAGAS is one evaluator framework within the comparison rather than the entire
 research scope. Human review is the calibration baseline. Production A/B
@@ -103,19 +108,37 @@ The research should compare metric behavior rather than combining all scores
 into one unexplained number. If a composite score is added, its weights and
 purpose must be documented.
 
+Every score must have a documented contract: exact comparison target,
+calculation and scale, configured threshold, whether the threshold is
+calibrated or project-defined, the interpretation of high/low values, and what
+the score cannot prove. Current FP7 cutoffs are descriptive review thresholds,
+not universal correctness boundaries. FP8/FP9 now expose those rules and
+support sampled human judgments; threshold calibration still requires actual
+review evidence before threshold-based claims.
+
 ## Initial Experiment Sequence
 
 ### Experiment 1: Metric Behavior on a Fixed Baseline
 
 Hold the current RAG configuration fixed and run all reviewed questions. Apply
-the initial metrics to the same stored responses. Inspect cases where exact
-match, semantic similarity, source accuracy, and human judgment disagree.
+the local and advanced metrics to the same stored responses. Inspect cases
+where required-fact coverage, lexical/semantic similarity, source accuracy,
+RAGAS dimensions, LLM judgment, and human judgment disagree. Start by applying
+the advanced evaluators to the three saved Run 3 responses without regenerating
+their answers, then expand only after the cost-bounded proof is stable.
+
+On a stratified subset, repeat the LLM judge and preserve every attempt. Report
+score range/variance and decision agreement so judged results are not treated
+as deterministic. Keep evaluator failures and skipped/not-applicable results
+separate from answer-quality scores.
 
 ### Experiment 2: Retrieval Method or Top-K
 
-Compare the keyword baseline and ChromaDB semantic retrieval, or compare top-k
-values such as 3, 5, and 8 while keeping other settings fixed. Separate source
-retrieval results from answer-generation results.
+Compare genuine MySQL FULLTEXT/lexical retrieval and ChromaDB semantic
+retrieval, or compare top-k values such as 3, 5, and 8 while keeping other
+settings fixed. Separate source retrieval results from answer-generation
+results. The retained filesystem keyword command is a troubleshooting baseline,
+not the database comparison condition.
 
 ### Experiment 3: Corpus Size and Composition
 
@@ -233,14 +256,31 @@ Implemented FP7 evidence:
 
 ### FP8: Advanced Metrics and Research Experiments
 
+Implementation status: evaluator contracts, judge/RAGAS adapters, immutable
+attempts, applicability/failure handling, cost-bounded runner, human-review
+schema, reproducible run metadata, MySQL retrieval, and category corpus variants
+were completed and verified July 14, 2026. No paid advanced scores were created;
+empirical execution is still required.
+
 - Add a versioned LLM-as-judge rubric plus RAGAS Faithfulness, Response
   Relevancy, Context Precision, and Context Recall.
 - Determine what judged/RAGAS metrics add beyond local baselines and where
   their cost, variability, or evaluator bias changes their usefulness.
+- Store judge model/prompt/configuration, raw output, usage, runtime, cost,
+  applicability, and errors; preserve repeated attempts.
+- Add a sampled human response-review rubric separate from Dataset review.
+- Label FP7 cutoffs as project-defined and test them against reviewed cases.
+- Explain each score's basis, calculation, scale, threshold, and limitation in
+  the Experiments UI.
 - Run controlled retrieval/top-k and corpus-size/composition experiments.
 - Analyze disagreements and label failure cases.
 
 ### FP9: Results, Interpretation, and System Testing
+
+Implementation status: the four-layer Experiments drill-down, score-contract
+explanations, human-review form, disagreement prompts, run comparison, Findings
+rules, and full evaluator catalog were completed and verified July 14, 2026.
+Preliminary findings await matched run and review evidence.
 
 - Build dashboard comparisons and drill-down views.
 - Explain each metric in plain language, including limitations.

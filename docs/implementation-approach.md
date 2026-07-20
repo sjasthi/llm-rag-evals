@@ -107,11 +107,13 @@ MySQL.
 The instructor also noted to use both MySQL and ChromaDB as two options for
 comparison. The practical interpretation is:
 
-- MySQL remains the source of structured records and can support simple keyword
-  or SQL-based retrieval baselines.
+- MySQL remains the source of structured records and now supports genuine
+  `document_chunks` FULLTEXT retrieval, lexical reranking, and a deterministic
+  database fallback for short/date-heavy queries.
 - ChromaDB is the vector database for embedding-based semantic retrieval.
-- Evaluation results should compare the retrieval/answer quality of those
-  approaches when the implementation reaches FP7/FP8.
+- New controlled runs record `mysql_keyword` or `chroma_vector`, top-k, dataset,
+  category/corpus subset, and a document-manifest hash so those approaches can
+  be compared without confusing the retrieval path.
 
 ## API Keys and Secrets
 
@@ -204,12 +206,15 @@ a page reload, while bundled source documents remain protected.
 The test set is central to the project. Evaluation results are not meaningful
 without stable questions and expected answers.
 
-The dataset size and evaluator count are separate requirements. The working
-dataset target remains at least 25 reviewed questions, while the professor's
-confirmed research direction is approximately ten evaluator types applied to
-the same saved responses.
+The dataset size and evaluator count are separate concerns. The working dataset
+target remains at least 25 reviewed questions, while the evaluator study uses
+representative baseline and advanced methods against the same saved responses.
+The professor's reference lists eight broad options, not eight required
+advanced models.
 
 ### Phase 4: Add Evaluation Management to the PHP Application
+
+Implementation status: completed through the FP9 evidence dashboard.
 
 Implement three primary areas:
 
@@ -218,6 +223,11 @@ Implement three primary areas:
 - Results: compare metrics and inspect individual responses and contexts.
 
 ### Phase 5: Add Evaluation Incrementally
+
+Implementation status: all definitions, execution paths, storage, score
+contracts, and guarded advanced-run support are complete. Paid advanced
+measurements and comparative conclusions are pending deliberate experiment
+execution.
 
 Implement evaluator families in phases. Start with inexpensive local methods:
 
@@ -239,6 +249,12 @@ Apply multiple metrics to the same stored responses. Record where metrics agree
 or disagree, and label whether each failure originated in parsing, retrieval,
 generation, expected data, or the metric itself.
 
+For every stored score, preserve and expose its comparison target, formula or
+rubric, scale, threshold and threshold provenance, interpretation, and
+limitation. Current local cutoffs are project-defined review thresholds until
+they are calibrated against sampled human judgments; below-threshold does not
+automatically mean an answer is incorrect.
+
 See `docs/evaluation-strategy.md` for the authoritative evaluator definitions,
 inputs, limitations, controlled protocol, and teaching requirements.
 
@@ -255,12 +271,18 @@ Keep most settings fixed and vary one parameter at a time:
 
 For each configuration, store:
 
-- Average answer score.
-- Average source/retrieval score.
-- Average faithfulness score when available.
-- Average latency.
-- Estimated API cost.
+- Each evaluator's per-question values and its own same-metric summary.
+- Expected-source hit/rank and other retrieval measures separately from
+  generation measures.
+- Faithfulness, relevance, context precision, and context recall separately
+  when applicable.
+- Response and evaluator latency.
+- Recorded token usage and estimated API cost.
 - Per-question failures.
+
+Do not average unlike evaluator families into an "answer score." A comparison
+can say that one configuration improved a named metric while another metric was
+flat or worse; that trade-off is part of the finding.
 
 Avoid running every possible combination at first. A full grid can create many
 paid API calls. Begin with a small question subset, then run the strongest
@@ -290,5 +312,7 @@ topics, document types, difficulty, answerability, or known failure modes.
 
 PHP remains the main web application and Python handles parsing, ChromaDB,
 retrieval, generation, and advanced evaluation. MySQL stores structured app
-data and results, while ChromaDB stores chunks and embeddings. FP5 verified this
-architecture end to end through the PHP Ask page.
+data, authoritative chunk text, immutable attempts, human reviews, and results,
+while ChromaDB stores chunks and embeddings. FP5 verified the Ask path; FP8/FP9
+verified both retrieval implementations, advanced dry-run planning, and the
+multi-layer browser/API. See `docs/fp8-fp9-implementation.md`.

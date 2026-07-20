@@ -222,6 +222,13 @@ The system should support configurable retrieval settings, such as:
 
 The system shall return the most relevant document chunks to the answer generation step.
 
+FP8 implementation status: `chroma_vector` uses the persisted local Chroma
+collection, while `mysql_keyword` uses an authoritative MySQL FULLTEXT index
+with lexical reranking and a database fallback for short/date-heavy queries.
+Both paths support top-k and reproducible category subsets and save the actual
+retrieval method with each response/run. The older filesystem keyword search
+remains only as a command-line troubleshooting baseline.
+
 ---
 
 ## 6.4 Question Answering
@@ -280,18 +287,26 @@ exact/contains, required-fact coverage, token F1, ROUGE-L, embedding semantic
 similarity, BERTScore, expected-source accuracy, and refusal correctness. Each
 result is attached to one saved response and stores its raw/normalized score,
 explanation, structured details, runtime, cost placeholder, status, and error.
-LLM-as-judge and RAGAS evaluators remain the FP8 extension.
+
+FP8 implementation status (July 14, 2026): five advanced definitions are live:
+a versioned structured LLM-as-judge rubric plus RAGAS Faithfulness, Response
+Relevancy, Context Precision, and Context Recall. The system preserves immutable
+attempts, applicability/skips/failures, model and prompt configuration, raw
+provider output, usage, runtime, and estimated cost. A guarded runner requires
+dry-run review, explicit paid-call authorization, and application/cost limits.
+No real advanced result is claimed until that guarded external run occurs.
 
 The system shall support multiple evaluation methods for comparing actual generated answers against expected answers and retrieved context.
 
 The same stored responses should be scored by multiple methods so metric results can be compared directly. The system shall preserve per-question scores and should identify cases where metrics disagree. Metric documentation shall explain what each method measures, its intended use, and its limitations.
 
-The project shall research and compare approximately ten evaluator/metric types
-across lexical, token-overlap, semantic, contextual-embedding,
-source/retrieval, LLM-as-judge, and RAGAS method families. RAGAS shall be
-treated as one framework within the comparison rather than the complete
-evaluation strategy. Every applicable evaluator shall operate on the same
-stored response and retrieved contexts for a controlled comparison.
+The project shall research representative evaluator types across lexical,
+token-overlap, semantic, contextual-embedding, source/retrieval,
+LLM-as-judge, and RAGAS method families. The professor-provided reference's
+eight options are broad approaches, not eight required advanced models. RAGAS
+shall be treated as one framework within the comparison rather than the
+complete evaluation strategy. Every applicable evaluator shall operate on the
+same stored response and retrieved contexts for a controlled comparison.
 
 For each evaluator, the system or final report shall record its required
 inputs, retrieval/generation dimension, raw and normalized result where
@@ -300,6 +315,27 @@ runtime, estimated cost, error status, strengths, limitations, and recommended
 use case. Human review shall be used to calibrate and interpret automated
 scores. See `docs/evaluation-strategy.md` for the working evaluator set and
 experiment protocol.
+
+Metrics shall not be described as voting on or collectively generating an
+answer. The RAG system generates and stores one answer and context set; each
+metric independently measures a selected property of that evidence. The system
+shall present a dimensional metric profile rather than an unexplained average
+of unlike measurements.
+
+Each displayed score shall identify its comparison target, plain-language
+calculation, scale, direction, threshold, threshold provenance, interpretation,
+and primary limitation. Project-defined descriptive cutoffs shall be labeled as
+review thresholds and shall not be presented as proof of correctness. The
+application shall distinguish completed, not-applicable/skipped, failed, and
+numeric-zero results.
+
+FP8 adds a versioned LLM-as-judge rubric and RAGAS Faithfulness, Response
+Relevancy, Context Precision, and Context Recall. The system stores exact
+judge/model/prompt/library versions, applicability, raw output, token/API usage,
+runtime, estimated cost, and errors. Repeated judge attempts shall be preserved
+for variability analysis rather than overwritten. Human response review shall
+be stored separately from the review state of dataset questions. These
+requirements are implemented; empirical calibration remains experiment work.
 
 Possible evaluation methods include:
 
@@ -392,18 +428,34 @@ Measures whether the generated answer includes information not supported by the 
 
 The system shall include a dashboard for viewing evaluation results.
 
+FP9 implementation status (July 14, 2026): Experiments provides four-layer
+response inspection, score contracts, attempt variability, applicability and
+failure states, exact contexts, expected-source cues, disagreement prompts, and
+versioned response review. Findings provides interpretation rules,
+configuration/coverage comparisons, and a live 13-evaluator catalog. It does
+not calculate an aggregate across unrelated metrics. Research conclusions stay
+pending until matched runs and human reviews exist.
+
 The dashboard should show:
 
 * Total number of test questions
-* Average accuracy score
-* Average relevance score
-* Average faithfulness score
-* Average context precision score
-* Average context recall score
-* Pass/fail results
+* Executed responses compared with dataset size
+* Baseline, advanced, human, and operational evaluator coverage
+* Per-metric summaries only among compatible results
+* Above/below review-threshold results with threshold provenance
+* Not-applicable/skipped and failed counts separate from numeric scores
 * Evaluation method used
 * Model used
 * Retrieval settings used
+* Dataset version and corpus variant
+* Runtime and estimated cost when available
+
+The dashboard shall allow response-level inspection of the question, generated
+answer, reviewed reference, ordered retrieved contexts, score basis,
+calculation details, threshold interpretation, evaluator version, and
+limitation. It shall provide purpose-based guidance for choosing metrics and
+shall expose disagreement cases instead of ranking evaluators by one universal
+score.
 
 The dashboard should allow comparison between different RAG configurations.
 
@@ -456,6 +508,13 @@ The application should include the following pages:
 * About / project information page
 
 The interface should be simple, clean, and easy to use.
+
+The Experiments view shall avoid unexplained empty panels, identify partial runs
+clearly (for example, `3 of 25 questions executed`), and group evaluator cards
+by baseline/local, advanced, human calibration, and operations. Dataset review
+controls shall explicitly explain that they verify the quality of the question,
+reference answer, and evidence; separate response-review controls shall support
+sampled human calibration with the reference and source evidence visible.
 
 Bootstrap should be used for layout, forms, buttons, tables, cards, and responsive design.
 
@@ -576,6 +635,10 @@ The project will be considered successful if:
 * At least 25 reviewed questions cover the current categories and answerability cases.
 * TXT, text-based PDF, and DOCX documents can enter the common ingestion pipeline through the browser workflow.
 * The dashboard or report explains metric usefulness, metric disagreement, failure cases, and configuration results.
+* Every displayed evaluator score explains what it is based on, how it was
+  calculated, what its threshold means, and what it cannot prove.
+* Advanced evaluator attempts, versions, applicability, usage, runtime, cost,
+  and failures are auditable without regenerating the saved RAG answer.
 * A controlled collection-size or collection-composition experiment is reproducible and its limits are documented.
 * The application provides a useful starting point for future developers.
 
@@ -679,18 +742,25 @@ The following items are out of scope for the initial version:
 
 ---
 
-## 12. Open Questions
+## 12. Decisions and Remaining Questions
 
-The following questions should be clarified with the professor:
+Resolved implementation decisions:
+
+* Use representative evaluator families rather than eight advanced models.
+* Integrate a structured LLM judge and four RAGAS dimensions directly while
+  preserving the FP7 baselines.
+* Use tables/cards and source-level drill-down first; add charts only when
+  comparable complete runs make a relationship clearer.
+* Text-based PDFs are supported; OCR remains outside the current scope.
+
+Questions that can still be clarified with the professor:
 
 1. Should the project port more from RagWorks or Student Compass?
 2. Should the final app require user login, or can it be a simple admin/user interface without authentication?
-3. Which Metrostate documents should be used first?
-4. Which evaluation frameworks beyond the initial baseline metrics are required versus optional?
-5. Should RAGAS or DeepEval be integrated directly, or should the project implement selected comparable metrics?
-6. What is the minimum expected dashboard/report for the final submission?
-7. Are charts required, or are tables and written summaries enough?
-8. Is scanned-PDF OCR required, or are text-based PDFs sufficient?
+3. Does the professor require a specific number of complete advanced-evaluator
+   cases, repeated judge attempts, or independent human reviewers?
+4. Is the current evidence-first Findings workspace sufficient, or is one
+   specific chart required for the final presentation?
 
 ---
 

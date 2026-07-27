@@ -166,14 +166,23 @@ The system shall store document metadata in MySQL, including:
 The system shall store the original display filename separately from the
 server-controlled runtime storage path.
 
-The system shall allow admin users to view uploaded documents.
+The system shall allow users to view and organize all active indexed documents
+without database or command-line access. The browser shall provide search,
+category/type filters, sorting, category grouping, and live document/chunk counts.
 
-The system shall allow admin users to delete or replace uploaded documents.
+The system shall allow users to delete or replace any active indexed document
+and to clear the full active index with explicit confirmation.
 
-FP6 implements live document/category counts plus replacement and confirmed
-deletion for browser-managed uploads. Deletion removes the stored file, MySQL
-document/chunks, and matching ChromaDB vectors. The bundled Metro State source
-documents are intentionally protected from browser replacement or deletion.
+Current implementation adds live document/category/chunk counts, same-name
+replacement with an explicit Replace/Cancel conflict prompt, and confirmed
+deletion for every active source. Replacement is
+staged as add-new then delete-old so a failed new ingestion does not discard the
+working version. Deletion removes the MySQL document/chunks and matching
+ChromaDB vectors and verifies that no selected-source vectors remain; uploaded
+files are also removed. Bundled seed files remain on
+disk only as recovery material after they are removed from the active index.
+Add, delete, and replace operations embed or remove only the affected source;
+unchanged documents are not re-embedded.
 
 The system shall prepare uploaded documents for RAG processing.
 
@@ -247,7 +256,7 @@ The system should avoid answering questions that are not supported by the retrie
 
 ---
 
-## 6.5 Evaluation Test Set
+## 6.5 Gold Standard Test Set
 
 FP7 implementation status: dataset version 1.0 contains 25 reviewed questions
 with expected evidence, accepted answer variants, required facts, category,
@@ -294,7 +303,9 @@ Relevancy, Context Precision, and Context Recall. The system preserves immutable
 attempts, applicability/skips/failures, model and prompt configuration, raw
 provider output, usage, runtime, and estimated cost. A guarded runner requires
 dry-run review, explicit paid-call authorization, and application/cost limits.
-No real advanced result is claimed until that guarded external run occurs.
+The bounded Response 19 proof now has a completed LLM judge plus all four RAGAS
+metrics. Earlier adapter, dependency, and free-tier quota failures remain in the
+immutable attempt history while the latest canonical results are completed.
 
 The system shall support multiple evaluation methods for comparing actual generated answers against expected answers and retrieved context.
 
@@ -321,6 +332,29 @@ answer. The RAG system generates and stores one answer and context set; each
 metric independently measures a selected property of that evidence. The system
 shall present a dimensional metric profile rather than an unexplained average
 of unlike measurements.
+
+The browser shall label which evaluators require gold-standard annotations.
+The eight local metrics, LLM judge, RAGAS Context Precision, and RAGAS Context
+Recall use at least one reviewed expected answer/source/fact/evidence or
+answerability field. RAGAS Faithfulness and Response Relevancy do not require a
+gold answer. All 13 metrics operate after retrieval/generation and none is used
+to find or generate the answer.
+
+The browser shall expose a bounded New test run workflow for reviewed questions
+and a separate Score saved answers workflow for every saved test. Both shall
+preflight calls before execution. New tests shall accept an approved model,
+retrieval method, top-k, temperature, top-p, and question count. Saved-answer
+scoring shall distinguish the provider-free local eight from the five
+model-backed methods, target the exact selected answer for all-13 scoring, reuse
+completed active-version results unless replacement is requested, and enforce
+response/application/cost limits. Primary labels shall use user-facing question
+numbers rather than database response IDs. Each saved answer shall expose a
+direct Evaluate action that selects it as the exact all-13 target before
+preflight. Each metric shall display the selected answer's score, its current
+test mean, and its mean across all completed stored tests. A cumulative
+13-metric score remains a potential research
+target only; it shall not be displayed until weighting, missing-value behavior,
+and human calibration are justified.
 
 Each displayed score shall identify its comparison target, plain-language
 calculation, scale, direction, threshold, threshold provenance, interpretation,
@@ -428,19 +462,25 @@ Measures whether the generated answer includes information not supported by the 
 
 The system shall include a dashboard for viewing evaluation results.
 
-FP9 implementation status (July 14, 2026): Experiments provides four-layer
-response inspection, score contracts, attempt variability, applicability and
-failure states, exact contexts, expected-source cues, disagreement prompts, and
-versioned response review. Findings provides interpretation rules,
-configuration/coverage comparisons, and a live 13-evaluator catalog. It does
-not calculate an aggregate across unrelated metrics. Research conclusions stay
-pending until matched runs and human reviews exist.
+FP9/FP10 implementation status (updated July 21, 2026): the user-facing
+**Evaluation** view creates bounded tests, scores exact saved answers, and
+provides response inspection, score contracts, attempt variability,
+applicability/failure states, exact contexts, expected-source cues,
+disagreement prompts, and versioned response review. Each metric card shows the
+selected answer's value beside that evaluator's cumulative average over
+completed tests. The secondary **Compare Runs** view provides interpretation
+rules, configuration/coverage evidence, run-scoped descriptive summaries,
+same-question/evaluator baseline deltas, and the live 13-evaluator catalog. It
+does not calculate an aggregate across unrelated metrics or a cross-run
+leaderboard from unmatched rows. Research conclusions stay pending until
+matched runs and human reviews exist.
 
 The dashboard should show:
 
 * Total number of test questions
 * Executed responses compared with dataset size
-* Baseline, advanced, human, and operational evaluator coverage
+* Local-metric, LLM-judge, and RAGAS coverage, with Human review shown
+  separately as supporting evidence
 * Per-metric summaries only among compatible results
 * Above/below review-threshold results with threshold provenance
 * Not-applicable/skipped and failed counts separate from numeric scores
@@ -495,26 +535,29 @@ Reports may include tables, charts, or summary text.
 
 The front end shall be built using HTML, CSS, JavaScript, jQuery, and Bootstrap.
 
-The application should include the following pages:
+The implemented primary navigation shall include:
 
-* Home page
-* Document upload page
-* Document list page
-* Chat / question page
-* Evaluation test set page
-* Evaluation results page
-* Dashboard page
-* Report page
-* About / project information page
+* Overview
+* Chat
+* Documents
+* Gold Standard
+* Evaluation
+
+Compare Runs shall remain available as a secondary analysis view reached from
+Evaluation. Upload/list actions are consolidated under Documents, and answer
+inspection plus metric results are consolidated under Evaluation so a
+frontend-only user does not have to infer the relationship between separate
+technical pages.
 
 The interface should be simple, clean, and easy to use.
 
-The Experiments view shall avoid unexplained empty panels, identify partial runs
-clearly (for example, `3 of 25 questions executed`), and group evaluator cards
-by baseline/local, advanced, human calibration, and operations. Dataset review
-controls shall explicitly explain that they verify the quality of the question,
-reference answer, and evidence; separate response-review controls shall support
-sampled human calibration with the reference and source evidence visible.
+The Evaluation view shall avoid unexplained empty panels, identify partial tests
+clearly (for example, `3 of 25 questions answered`), and group evaluator cards
+as Local metrics, LLM judge, and RAGAS, with Human review identified as
+supporting evidence. Gold Standard review controls shall explicitly explain
+that they verify the quality of the question, reference answer, and evidence;
+separate response-review controls shall support sampled human calibration with
+the reference and source evidence visible.
 
 Bootstrap should be used for layout, forms, buttons, tables, cards, and responsive design.
 
@@ -752,6 +795,22 @@ Resolved implementation decisions:
 * Use tables/cards and source-level drill-down first; add charts only when
   comparable complete runs make a relationship clearer.
 * Text-based PDFs are supported; OCR remains outside the current scope.
+* Rename the reviewed answer-key workspace to `Gold Standard` and consolidate
+  saved test creation, answer inspection, and metric results under `Evaluation`.
+* Treat the browser as the user's complete operating surface: model selection,
+  source administration, evaluator preflight/execution, and run inspection do
+  not require direct code or database access.
+* Keep ordinary Chat usable with recommended defaults while exposing approved
+  model/retrieval/generation options for future deployments and research use.
+* Determine recommended settings through controlled gold-standard experiments,
+  changing one variable at a time and comparing the same metrics/questions,
+  rather than asking ordinary users to guess the best values.
+* Treat chunk size, overlap, and embedding model as index-variant settings that
+  require re-chunking/re-embedding; do not present them as safe per-answer
+  controls against one shared active index.
+* Preserve the guarded preflight before all-13 execution even when the user
+  starts from a per-answer Evaluate button, because up to five methods may call
+  an external evaluator provider.
 
 Questions that can still be clarified with the professor:
 
@@ -759,8 +818,10 @@ Questions that can still be clarified with the professor:
 2. Should the final app require user login, or can it be a simple admin/user interface without authentication?
 3. Does the professor require a specific number of complete advanced-evaluator
    cases, repeated judge attempts, or independent human reviewers?
-4. Is the current evidence-first Findings workspace sufficient, or is one
-   specific chart required for the final presentation?
+4. What weighting and human-calibration evidence would be required before an
+   optional multidimensional composite score could be shown responsibly?
+5. Should full parameter-grid execution use a background job queue for the
+   final submission, or is the current bounded browser execution sufficient?
 
 ---
 

@@ -241,8 +241,9 @@ authorized cost-bounded provider run.
   review instead of treating a cutoff as truth.
 - Implement genuine MySQL chunk retrieval before comparing it with ChromaDB;
   then run one-variable-at-a-time top-k and corpus-composition comparisons.
-- Present baseline, advanced, human, and operational evidence as separate UI
-  groups with a purpose-based evaluator guide and no unexplained average.
+- Present automatic evidence as clearly named Local, LLM-judge, and RAGAS UI
+  groups; label Human review as supporting evidence and operational fields as
+  metadata, with a purpose-based evaluator guide and no unexplained average.
 
 ### FP9: Research Dashboard, Interpretation, and UX
 
@@ -260,6 +261,12 @@ and reviewer evidence.
   pipeline is stable.
 
 ### FP10: Validation and Teaching Deliverables
+
+Implementation status (July 20, 2026): reproducibility/cost hardening,
+question-matched Findings, accessibility, provider-free validation, CI, and the
+demo/checkoff materials are complete. Repeat paid runs, human calibration,
+empirical recommendations, final presentation/report delivery, and release
+tagging remain pending.
 
 - Repeat key runs for reproducibility and document environment/version details.
 - Finalize findings, recommendations by use case/stakeholder, and limitations.
@@ -282,11 +289,13 @@ and reviewer evidence.
 
 ## Immediate Resume Point
 
-FP8/FP9 support is implemented. Resume with an authorized dry-run-reviewed
-advanced proof on one saved Run 3 response. Inspect its raw judge/RAGAS output,
-runtime, applicability, and usage before expanding. Then collect a human review
+FP8/FP9 support and FP10 provider-free hardening are implemented. Resume only
+after recording current provider pricing, an approved monetary cap, the exact
+response/application count, and whether unknown cost is permitted. First run a
+dry-run-reviewed one-response baseline proof, then an advanced proof against
+that saved response. Inspect raw judge/RAGAS output, runtime, applicability,
+usage, and immutable provenance before expanding. Then collect a human review
 and run matched one-variable retrieval or corpus comparisons. Do not regenerate
 answers merely to add an evaluator, do not treat a project threshold as truth,
 and do not write comparative findings until the corresponding stored evidence
-exists. The exact implementation and command sequence are documented in
-`docs/fp8-fp9-implementation.md`.
+exists. See `docs/fp8-fp9-implementation.md` and `docs/fp10-hardening.md`.

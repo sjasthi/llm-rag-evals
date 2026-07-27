@@ -38,3 +38,30 @@ def replace_document_chunks(
     collection.delete(where={"source_path": source_path})
     if ids:
         collection.upsert(ids=list(ids), documents=list(documents), metadatas=list(metadatas))
+
+
+def delete_source_chunks(collection: Collection, source_path: str) -> int:
+    """Delete one document's vectors and fail if any stale vectors remain."""
+    indexed_ids = list(collection.get(where={"source_path": source_path}, include=[]).get("ids", []))
+    if indexed_ids:
+        collection.delete(ids=indexed_ids)
+    remaining_ids = list(collection.get(where={"source_path": source_path}, include=[]).get("ids", []))
+    if remaining_ids:
+        raise RuntimeError(
+            f"Vector cleanup verification failed for {source_path}: "
+            f"{len(remaining_ids)} old chunks remain."
+        )
+    return len(indexed_ids)
+
+
+def delete_all_chunks(collection: Collection) -> int:
+    """Delete every active vector and verify that the collection is empty."""
+    indexed_ids = list(collection.get(include=[]).get("ids", []))
+    if indexed_ids:
+        collection.delete(ids=indexed_ids)
+    remaining_ids = list(collection.get(include=[]).get("ids", []))
+    if remaining_ids:
+        raise RuntimeError(
+            f"Vector cleanup verification failed: {len(remaining_ids)} chunks remain."
+        )
+    return len(indexed_ids)

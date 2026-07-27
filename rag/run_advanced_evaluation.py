@@ -54,6 +54,7 @@ def build_preflight(
     applications: list[dict[str, Any]] = []
     reuse_count = 0
     estimated_cost = 0.0
+    unknown_cost_applications = 0
     for response_id in response_ids:
         item = load_evaluation_input(connection, response_id)
         for evaluator_key in evaluator_keys:
@@ -71,7 +72,11 @@ def build_preflight(
             action = "skip" if reason else "run"
             repeat_count = 1 if reason else attempts
             if action == "run":
-                estimated_cost += estimated_application_cost(settings, evaluator_key) * repeat_count
+                application_cost = estimated_application_cost(settings, evaluator_key)
+                if application_cost is None:
+                    unknown_cost_applications += repeat_count
+                else:
+                    estimated_cost += application_cost * repeat_count
             applications.append({
                 "response_id": response_id,
                 "evaluator": evaluator_key,
@@ -96,11 +101,15 @@ def build_preflight(
         "application_count": run_applications,
         "paid_application_count": paid_applications,
         "reused_count": reuse_count,
-        "estimated_cost": round(estimated_cost, 8),
+        "estimated_cost": (
+            None if unknown_cost_applications else round(estimated_cost, 8)
+        ),
+        "unknown_cost_application_count": unknown_cost_applications,
+        "cost_status": "unknown" if unknown_cost_applications else "estimated",
         "cost_note": (
             "Estimate uses configured per-million token rates and conservative token/call assumptions."
-            if settings.evaluator_input_cost_per_million or settings.evaluator_output_cost_per_million
-            else "Provider pricing is not configured, so estimated cost is unavailable (shown as 0)."
+            if not unknown_cost_applications
+            else "Provider pricing is not configured, so paid-call cost is unknown."
         ),
     }
 
@@ -110,9 +119,19 @@ def execute_plan(
     preflight: dict[str, Any],
     *,
     allow_paid: bool,
+    allow_unknown_cost: bool = False,
 ) -> list[dict[str, Any]]:
     if preflight["paid_application_count"] and not allow_paid:
         raise ValueError("Advanced model-backed execution requires --allow-paid.")
+    if (
+        preflight["paid_application_count"]
+        and preflight["estimated_cost"] is None
+        and not allow_unknown_cost
+    ):
+        raise ValueError(
+            "Advanced execution cost is unknown. Configure evaluator pricing or "
+            "pass --allow-unknown-cost deliberately."
+        )
 
     outcomes: list[dict[str, Any]] = []
     with AdvancedEvaluatorEngine(settings) as engine:
@@ -174,6 +193,11 @@ def main() -> None:
     parser.add_argument("--max-applications", type=int, default=5)
     parser.add_argument("--max-estimated-cost", type=float, default=1.0)
     parser.add_argument("--allow-paid", action="store_true")
+    parser.add_argument(
+        "--allow-unknown-cost",
+        action="store_true",
+        help="Permit paid calls when provider pricing has not been configured.",
+    )
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -216,7 +240,10 @@ def main() -> None:
             f"Plan has {preflight['application_count']} applications; "
             f"raise --max-applications deliberately to continue."
         )
-    if preflight["estimated_cost"] > args.max_estimated_cost:
+    if (
+        preflight["estimated_cost"] is not None
+        and preflight["estimated_cost"] > args.max_estimated_cost
+    ):
         parser.error(
             f"Estimated cost {preflight['estimated_cost']:.6f} exceeds "
             f"--max-estimated-cost {args.max_estimated_cost:.6f}."
@@ -225,7 +252,10 @@ def main() -> None:
     payload: dict[str, Any] = {"preflight": preflight, "dry_run": args.dry_run}
     if not args.dry_run:
         payload["outcomes"] = execute_plan(
-            settings, preflight, allow_paid=args.allow_paid
+            settings,
+            preflight,
+            allow_paid=args.allow_paid,
+            allow_unknown_cost=args.allow_unknown_cost,
         )
     print(json.dumps(payload, indent=2) if args.json else json.dumps(payload, indent=2))
 

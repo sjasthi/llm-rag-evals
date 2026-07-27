@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from google import genai
 from google.genai import types
@@ -15,6 +16,39 @@ REFUSAL_MESSAGE = (
     "I don't have enough information in the provided Metro State documents "
     "to answer that question."
 )
+
+
+@dataclass(frozen=True)
+class GenerationExecution:
+    answer: str
+    input_tokens: int | None
+    output_tokens: int | None
+    total_tokens: int | None
+
+
+def estimate_generation_cost(
+    input_tokens: int | None,
+    output_tokens: int | None,
+    settings: Settings,
+) -> float | None:
+    if input_tokens is None and output_tokens is None:
+        return None
+    if not (settings.llm_input_cost_per_million or settings.llm_output_cost_per_million):
+        return None
+    input_cost = (input_tokens or 0) * settings.llm_input_cost_per_million / 1_000_000
+    output_cost = (output_tokens or 0) * settings.llm_output_cost_per_million / 1_000_000
+    return round(input_cost + output_cost, 8)
+
+
+def estimated_generation_application_cost(settings: Settings) -> float | None:
+    """Conservative preflight estimate for one grounded answer call."""
+    if not (settings.llm_input_cost_per_million or settings.llm_output_cost_per_million):
+        return None
+    return round(
+        6_000 * settings.llm_input_cost_per_million / 1_000_000
+        + 512 * settings.llm_output_cost_per_million / 1_000_000,
+        8,
+    )
 
 SYSTEM_INSTRUCTION = f"""
 You are a Metro State student-information assistant.
@@ -55,7 +89,7 @@ def build_grounded_prompt(question: str, contexts: Sequence[SearchResult]) -> st
     )
 
 
-def generate_with_gemini(prompt: str, settings: Settings) -> str:
+def generate_with_gemini(prompt: str, settings: Settings) -> GenerationExecution:
     if settings.llm_provider != "gemini":
         raise ValueError(
             f"Unsupported LLM_PROVIDER {settings.llm_provider!r}; FP5 currently supports 'gemini'."
@@ -83,4 +117,10 @@ def generate_with_gemini(prompt: str, settings: Settings) -> str:
     answer = (response.text or "").strip()
     if not answer:
         raise RuntimeError("Gemini returned an empty answer")
-    return answer
+    usage = response.usage_metadata
+    return GenerationExecution(
+        answer=answer,
+        input_tokens=getattr(usage, "prompt_token_count", None),
+        output_tokens=getattr(usage, "candidates_token_count", None),
+        total_tokens=getattr(usage, "total_token_count", None),
+    )

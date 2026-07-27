@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import hashlib
+import json
 from pathlib import Path
 import re
 from typing import Any, Iterator, Sequence
@@ -82,6 +84,61 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                     cursor.execute(
                         f"ALTER TABLE evaluation_runs ADD COLUMN {column_name} {definition}"
                     )
+
+            provenance_columns = {
+                "rag_responses": (
+                    ("evaluation_snapshot_json", "JSON NULL AFTER estimated_cost"),
+                    (
+                        "snapshot_provenance",
+                        "VARCHAR(32) NOT NULL DEFAULT 'missing' AFTER evaluation_snapshot_json",
+                    ),
+                    ("code_version", "VARCHAR(160) NULL AFTER snapshot_provenance"),
+                    ("input_tokens", "INT UNSIGNED NULL AFTER code_version"),
+                    ("output_tokens", "INT UNSIGNED NULL AFTER input_tokens"),
+                    ("total_tokens", "INT UNSIGNED NULL AFTER output_tokens"),
+                    (
+                        "generation_cost_status",
+                        "VARCHAR(32) NOT NULL DEFAULT 'unavailable' AFTER total_tokens",
+                    ),
+                    ("generation_metadata_json", "JSON NULL AFTER generation_cost_status"),
+                ),
+                "retrieved_contexts": (
+                    ("source_path_snapshot", "VARCHAR(500) NULL AFTER chunk_id"),
+                    ("category_snapshot", "VARCHAR(100) NULL AFTER source_path_snapshot"),
+                    ("chunk_index_snapshot", "INT UNSIGNED NULL AFTER category_snapshot"),
+                    ("document_hash_snapshot", "CHAR(64) NULL AFTER chunk_index_snapshot"),
+                    ("chunk_hash_snapshot", "CHAR(64) NULL AFTER document_hash_snapshot"),
+                    ("semantic_distance", "DECIMAL(12,8) NULL AFTER similarity_score"),
+                    ("lexical_score", "DECIMAL(12,8) NULL AFTER semantic_distance"),
+                    ("retrieval_score", "DECIMAL(12,8) NULL AFTER lexical_score"),
+                    ("retrieval_metadata_json", "JSON NULL AFTER retrieval_score"),
+                ),
+            }
+            for table_name, columns in provenance_columns.items():
+                for column_name, definition in columns:
+                    cursor.execute(
+                        """SELECT COUNT(*) FROM information_schema.columns
+                           WHERE table_schema=%s AND table_name=%s AND column_name=%s""",
+                        (settings.db_name, table_name, column_name),
+                    )
+                    row = cursor.fetchone()
+                    if not row or int(row[0]) == 0:
+                        cursor.execute(
+                            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+                        )
+
+            cursor.execute(
+                """SELECT COUNT(*) FROM information_schema.statistics
+                   WHERE table_schema=%s AND table_name='rag_responses'
+                     AND index_name='uq_rag_responses_run_question'""",
+                (settings.db_name,),
+            )
+            unique_run_question = cursor.fetchone()
+            if not unique_run_question or int(unique_run_question[0]) == 0:
+                cursor.execute(
+                    """ALTER TABLE rag_responses
+                       ADD UNIQUE KEY uq_rag_responses_run_question (run_id, question_id)"""
+                )
         connection.commit()
 
         if MIGRATIONS_PATH.is_dir():
@@ -247,6 +304,19 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                     FOREIGN KEY (setting_id) REFERENCES model_settings (setting_id)
                     ON DELETE SET NULL
                     """
+                )
+
+            cursor.execute(
+                """SELECT numeric_scale FROM information_schema.columns
+                   WHERE table_schema=%s AND table_name='rag_responses'
+                     AND column_name='estimated_cost'""",
+                (settings.db_name,),
+            )
+            cost_scale = cursor.fetchone()
+            if cost_scale and int(cost_scale[0] or 0) < 8:
+                cursor.execute(
+                    """ALTER TABLE rag_responses
+                       MODIFY COLUMN estimated_cost DECIMAL(12,8) NULL"""
                 )
 
             cursor.execute(
@@ -461,11 +531,10 @@ def database_counts(connection: MySQLConnection) -> dict[str, int]:
     return counts
 
 
-def delete_uploaded_document(connection: MySQLConnection, source_path: str) -> int:
-    """Delete one browser-managed document and its cascading chunk rows."""
-    if not source_path.startswith("storage/uploads/"):
-        raise ValueError("Only browser-uploaded documents can be deleted.")
-
+def delete_indexed_document(connection: MySQLConnection, source_path: str) -> int:
+    """Delete one active index record and its cascading live chunk rows."""
+    if not source_path.strip():
+        raise ValueError("A source path is required.")
     try:
         connection.start_transaction()
         with connection.cursor() as cursor:
@@ -475,7 +544,21 @@ def delete_uploaded_document(connection: MySQLConnection, source_path: str) -> i
             )
             deleted = int(cursor.rowcount)
         if deleted != 1:
-            raise ValueError("Uploaded document was not found.")
+            raise ValueError("Indexed document was not found.")
+        connection.commit()
+        return deleted
+    except Exception:
+        connection.rollback()
+        raise
+
+
+def delete_all_indexed_documents(connection: MySQLConnection) -> int:
+    """Remove every active document/chunk row while retaining response snapshots."""
+    try:
+        connection.start_transaction()
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM documents")
+            deleted = int(cursor.rowcount)
         connection.commit()
         return deleted
     except Exception:
@@ -569,6 +652,15 @@ def save_grounded_response(
     question_id: int | None = None,
     run_id: int | None = None,
     retrieval_method: str = "chroma_vector",
+    evaluation_snapshot: dict[str, Any] | None = None,
+    snapshot_provenance: str = "not_applicable",
+    code_version: str | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    total_tokens: int | None = None,
+    estimated_cost: float | None = None,
+    generation_cost_status: str = "unavailable",
+    generation_metadata: dict[str, Any] | None = None,
 ) -> int:
     """Store one CLI answer and the exact retrieved contexts used to produce it."""
     try:
@@ -577,29 +669,63 @@ def save_grounded_response(
             cursor.execute(
                 """
                 INSERT INTO rag_responses (
-                    run_id, setting_id, question_id, question_text, answer_text, retrieval_method, latency_ms
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    run_id, setting_id, question_id, question_text, answer_text,
+                    retrieval_method, latency_ms, estimated_cost,
+                    evaluation_snapshot_json, snapshot_provenance, code_version,
+                    input_tokens, output_tokens, total_tokens,
+                    generation_cost_status, generation_metadata_json
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (run_id, setting_id, question_id, question, answer, retrieval_method, latency_ms),
+                (
+                    run_id,
+                    setting_id,
+                    question_id,
+                    question,
+                    answer,
+                    retrieval_method,
+                    latency_ms,
+                    estimated_cost,
+                    json.dumps(evaluation_snapshot) if evaluation_snapshot is not None else None,
+                    snapshot_provenance,
+                    code_version,
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
+                    generation_cost_status,
+                    json.dumps(generation_metadata or {}),
+                ),
             )
             response_id = int(cursor.lastrowid)
 
             for context in contexts:
                 distance = context.distance
                 similarity = None if distance is None else 1.0 / (1.0 + max(0.0, distance))
+                retrieval_metadata = getattr(context, "retrieval_metadata", {}) or {}
                 cursor.execute(
                     """
                     INSERT INTO retrieved_contexts (
-                        response_id, document_id, chunk_id, rank_position,
-                        similarity_score, context_excerpt
-                    ) VALUES (%s, %s, %s, %s, %s, %s)
+                        response_id, document_id, chunk_id, source_path_snapshot,
+                        category_snapshot, chunk_index_snapshot, document_hash_snapshot,
+                        chunk_hash_snapshot, rank_position, similarity_score,
+                        semantic_distance, lexical_score, retrieval_score,
+                        retrieval_metadata_json, context_excerpt
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         response_id,
                         context.document_id,
                         context.chunk_id,
+                        context.source_path,
+                        context.category,
+                        context.chunk_index,
+                        getattr(context, "source_hash", None),
+                        hashlib.sha256(context.text.encode("utf-8")).hexdigest(),
                         context.rank,
                         similarity,
+                        distance,
+                        context.keyword_score,
+                        getattr(context, "retrieval_score", None),
+                        json.dumps(retrieval_metadata),
                         context.text,
                     ),
                 )

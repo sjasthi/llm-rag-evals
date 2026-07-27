@@ -6,7 +6,7 @@ import argparse
 import json
 import re
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +33,41 @@ class SearchResult:
     keyword_score: float | None
     document_id: int | None = None
     chunk_id: int | None = None
+    source_hash: str | None = None
+    retrieval_score: float | None = None
+    retrieval_metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def retrieval_provenance(retrieval_method: str) -> dict[str, Any]:
+    """Describe the exact ranking policy represented by a retrieval label."""
+    if retrieval_method == "chroma_vector":
+        return {
+            "version": "chroma-hybrid-v1",
+            "label": "Chroma semantic candidates + lexical reranking",
+            "candidate_minimum": SEMANTIC_CANDIDATE_MINIMUM,
+            "candidate_top_k_multiplier": 5,
+            "lexical_rerank_weight": LEXICAL_RERANK_WEIGHT,
+            "final_score": "semantic_distance - lexical_rerank_weight * lexical_score",
+            "score_direction": "lower_is_better",
+        }
+    if retrieval_method == "mysql_keyword":
+        return {
+            "version": "mysql-fulltext-lexical-v1",
+            "label": "MySQL FULLTEXT natural-language candidates + lexical reranking",
+            "candidate_minimum": 50,
+            "candidate_top_k_multiplier": 10,
+            "fallback": "all ingested MySQL chunks when FULLTEXT returns no rows",
+            "final_score": "fulltext_score + lexical_score",
+            "score_direction": "higher_is_better",
+        }
+    if retrieval_method == "keyword":
+        return {
+            "version": "filesystem-lexical-v1",
+            "label": "Filesystem lexical troubleshooting baseline",
+            "final_score": "lexical_score",
+            "score_direction": "higher_is_better",
+        }
+    raise ValueError(f"Unsupported retrieval method {retrieval_method!r}")
 
 
 def lexical_score(question: str, text: str) -> int:
@@ -70,6 +105,12 @@ def keyword_search(
             text=chunk.text,
             distance=None,
             keyword_score=score,
+            source_hash=chunk.source_hash,
+            retrieval_score=float(score),
+            retrieval_metadata={
+                **retrieval_provenance("keyword"),
+                "lexical_score": score,
+            },
         )
         for rank, (score, chunk) in enumerate(matches, start=1)
     ]
@@ -98,7 +139,7 @@ def mysql_keyword_search(
         with connection.cursor(dictionary=True) as cursor:
             cursor.execute(
                 f"""SELECT c.chunk_id, c.document_id, c.chunk_index, c.chunk_text,
-                          d.source_path, d.category,
+                          d.source_path, d.category, d.source_hash,
                           MATCH(c.chunk_text) AGAINST (%s IN NATURAL LANGUAGE MODE) AS fulltext_score
                    FROM document_chunks c
                    JOIN documents d ON d.document_id=c.document_id
@@ -116,7 +157,7 @@ def mysql_keyword_search(
                 # chunks and applies the documented deterministic lexical rule.
                 cursor.execute(
                     f"""SELECT c.chunk_id, c.document_id, c.chunk_index, c.chunk_text,
-                              d.source_path, d.category, 0 AS fulltext_score
+                              d.source_path, d.category, d.source_hash, 0 AS fulltext_score
                        FROM document_chunks c
                        JOIN documents d ON d.document_id=c.document_id
                        WHERE d.status='ingested'
@@ -142,9 +183,16 @@ def mysql_keyword_search(
             chunk_index=int(row["chunk_index"]),
             text=str(row["chunk_text"]),
             distance=None,
-            keyword_score=combined,
+            keyword_score=float(_lexical),
             document_id=int(row["document_id"]),
             chunk_id=int(row["chunk_id"]),
+            source_hash=str(row["source_hash"]) if row.get("source_hash") else None,
+            retrieval_score=combined,
+            retrieval_metadata={
+                **retrieval_provenance("mysql_keyword"),
+                "fulltext_score": float(row.get("fulltext_score") or 0.0),
+                "lexical_score": int(_lexical),
+            },
         )
         for rank, (combined, _lexical, row) in enumerate(candidates[:top_k], start=1)
     ]
@@ -192,6 +240,11 @@ def semantic_search(
                 keyword_score=lexical_score(question, text or ""),
                 document_id=_optional_int(metadata.get("document_id")),
                 chunk_id=_optional_int(metadata.get("chunk_id")),
+                source_hash=(
+                    str(metadata.get("source_hash"))
+                    if metadata.get("source_hash")
+                    else None
+                ),
             )
         )
     reranked = sorted(
@@ -201,10 +254,25 @@ def semantic_search(
             - LEXICAL_RERANK_WEIGHT * (match.keyword_score or 0)
         ),
     )[:top_k]
-    return [
-        SearchResult(**{**asdict(match), "rank": rank})
-        for rank, match in enumerate(reranked, start=1)
-    ]
+    output: list[SearchResult] = []
+    for rank, match in enumerate(reranked, start=1):
+        lexical = float(match.keyword_score or 0)
+        final_score = float(match.distance or 0.0) - LEXICAL_RERANK_WEIGHT * lexical
+        output.append(
+            SearchResult(
+                **{
+                    **asdict(match),
+                    "rank": rank,
+                    "retrieval_score": final_score,
+                    "retrieval_metadata": {
+                        **retrieval_provenance("chroma_vector"),
+                        "semantic_distance": match.distance,
+                        "lexical_score": lexical,
+                    },
+                }
+            )
+        )
+    return output
 
 
 def _optional_int(value: Any) -> int | None:

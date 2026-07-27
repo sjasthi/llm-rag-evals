@@ -19,7 +19,7 @@ function jsonResponse(int $status, array $payload): never
     exit;
 }
 
-function requestQuestion(): string
+function requestPayload(): array
 {
     $contentType = strtolower((string) ($_SERVER['CONTENT_TYPE'] ?? ''));
 
@@ -30,11 +30,18 @@ function requestQuestion(): string
         } catch (JsonException) {
             jsonResponse(400, ['ok' => false, 'error' => 'Request body must contain valid JSON.']);
         }
-        $question = is_array($payload) ? ($payload['question'] ?? '') : '';
-    } else {
-        $question = $_POST['question'] ?? '';
+        if (!is_array($payload)) {
+            jsonResponse(400, ['ok' => false, 'error' => 'Request body must contain a JSON object.']);
+        }
+        return $payload;
     }
 
+    return $_POST;
+}
+
+function requestQuestion(array $payload): string
+{
+    $question = $payload['question'] ?? '';
     if (!is_string($question)) {
         jsonResponse(400, ['ok' => false, 'error' => 'Question must be text.']);
     }
@@ -50,7 +57,54 @@ function requestQuestion(): string
     return $question;
 }
 
-function runAnswerCommand(string $question): array
+function requestConfiguration(array $payload): array
+{
+    $defaultModel = (string) envValue('LLM_CHAT_MODEL', 'gemini-2.5-flash');
+    $allowedModels = array_values(array_unique(array_filter(array_map(
+        'trim',
+        explode(',', (string) envValue('LLM_CHAT_MODELS', $defaultModel . ',gemini-2.5-flash-lite'))
+    ))));
+    if (!in_array($defaultModel, $allowedModels, true)) {
+        array_unshift($allowedModels, $defaultModel);
+    }
+    $model = $payload['model'] ?? $defaultModel;
+    if (!is_string($model) || !in_array($model, $allowedModels, true)) {
+        jsonResponse(422, ['ok' => false, 'error' => 'Choose a model offered by this deployment.']);
+    }
+
+    $retrievalMethod = $payload['retrieval_method'] ?? 'chroma_vector';
+    if (!is_string($retrievalMethod) || !in_array($retrievalMethod, ['chroma_vector', 'mysql_keyword'], true)) {
+        jsonResponse(422, ['ok' => false, 'error' => 'Choose vector or keyword retrieval.']);
+    }
+
+    $topK = filter_var(
+        $payload['top_k'] ?? envValue('RETRIEVAL_TOP_K', '3'),
+        FILTER_VALIDATE_INT,
+        ['options' => ['min_range' => 1, 'max_range' => 10]]
+    );
+    if ($topK === false) {
+        jsonResponse(422, ['ok' => false, 'error' => 'Top-k must be an integer from 1 to 10.']);
+    }
+
+    $temperatureValue = $payload['temperature'] ?? envValue('LLM_TEMPERATURE', '0.0');
+    $topPValue = $payload['top_p'] ?? envValue('LLM_TOP_P', '0.9');
+    if (!is_numeric($temperatureValue) || (float) $temperatureValue < 0.0 || (float) $temperatureValue > 1.0) {
+        jsonResponse(422, ['ok' => false, 'error' => 'Temperature must be between 0.0 and 1.0.']);
+    }
+    if (!is_numeric($topPValue) || (float) $topPValue < 0.0 || (float) $topPValue > 1.0) {
+        jsonResponse(422, ['ok' => false, 'error' => 'Top-p must be between 0.0 and 1.0.']);
+    }
+
+    return [
+        'model' => $model,
+        'retrieval_method' => $retrievalMethod,
+        'top_k' => (int) $topK,
+        'temperature' => (float) $temperatureValue,
+        'top_p' => (float) $topPValue,
+    ];
+}
+
+function runAnswerCommand(string $question, array $configuration, bool $previewOnly): array
 {
     $root = projectRoot();
     $python = envValue('PYTHON_BIN', $root . '/.venv/Scripts/python.exe');
@@ -61,23 +115,32 @@ function runAnswerCommand(string $question): array
         );
     }
 
-    $topK = filter_var(
-        envValue('RETRIEVAL_TOP_K', '3'),
-        FILTER_VALIDATE_INT,
-        ['options' => ['min_range' => 1, 'max_range' => 10]]
-    );
-    if ($topK === false) {
-        throw new RuntimeException('RETRIEVAL_TOP_K must be an integer from 1 to 10.');
-    }
-
     $command = [
         $python,
         $root . '/rag/answer.py',
         $question,
+        '--model',
+        (string) $configuration['model'],
         '--top-k',
-        (string) $topK,
+        (string) $configuration['top_k'],
+        '--retrieval',
+        (string) $configuration['retrieval_method'],
+        '--temperature',
+        (string) $configuration['temperature'],
+        '--top-p',
+        (string) $configuration['top_p'],
         '--json',
     ];
+    if ($previewOnly) {
+        $command[] = '--dry-run';
+    } else {
+        $command[] = '--allow-paid';
+        $command[] = '--max-estimated-cost';
+        $command[] = (string) envValue('MAX_GENERATION_COST', '0.25');
+        if (filter_var(envValue('ALLOW_UNKNOWN_GENERATION_COST', '0'), FILTER_VALIDATE_BOOLEAN)) {
+            $command[] = '--allow-unknown-cost';
+        }
+    }
     $descriptors = [
         0 => ['pipe', 'r'],
         1 => ['pipe', 'w'],
@@ -145,7 +208,10 @@ function runAnswerCommand(string $question): array
         throw new RuntimeException('The RAG answer process returned invalid JSON.', 0, $error);
     }
 
-    if (!is_array($result) || !isset($result['answer'], $result['sources'])) {
+    $hasRequiredFields = is_array($result) && ($previewOnly
+        ? isset($result['question'], $result['sources'])
+        : isset($result['answer'], $result['sources']));
+    if (!$hasRequiredFields) {
         throw new RuntimeException('The RAG answer response was incomplete.');
     }
 
@@ -157,10 +223,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
     jsonResponse(405, ['ok' => false, 'error' => 'Use POST to submit a question.']);
 }
 
-$question = requestQuestion();
+$payload = requestPayload();
+$question = requestQuestion($payload);
+$configuration = requestConfiguration($payload);
+$action = $payload['action'] ?? 'answer';
+if (!is_string($action) || !in_array($action, ['answer', 'preview'], true)) {
+    jsonResponse(422, ['ok' => false, 'error' => 'Unsupported chat action.']);
+}
+$previewOnly = $action === 'preview';
+
+if (!$previewOnly && !filter_var(envValue('ALLOW_PAID_GENERATION', '0'), FILTER_VALIDATE_BOOLEAN)) {
+    jsonResponse(503, [
+        'ok' => false,
+        'error' => 'Paid answer generation is paused. Enable it deliberately in the local environment after reviewing provider pricing.',
+    ]);
+}
 
 try {
-    $result = runAnswerCommand($question);
+    $result = runAnswerCommand($question, $configuration, $previewOnly);
     jsonResponse(200, ['ok' => true, 'data' => $result]);
 } catch (Throwable $error) {
     error_log('Ask endpoint failure: ' . $error->getMessage());

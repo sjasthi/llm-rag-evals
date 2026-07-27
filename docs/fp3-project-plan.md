@@ -46,11 +46,24 @@ schema, full run provenance, genuine MySQL retrieval, and corpus variants are
 implemented. A paid advanced proof and matched experiments remain evidence
 collection, not missing application code.
 
-FP9 implementation status: completed and verified July 14, 2026. Experiments
-and Findings now expose four evidence layers, score contracts, attempt
-variability, disagreement prompts, response review, configuration/coverage
-comparison, and all 13 evaluator definitions. Preliminary findings remain
-pending real advanced, human, and matched-run data.
+FP9 implementation status: completed and verified July 14, 2026. Evaluation and
+Compare Runs expose score contracts, attempt variability, disagreement prompts,
+response review, configuration/coverage comparison, and all 13 evaluator
+definitions. The final clarity pass presents Local metrics, the LLM judge, and
+RAGAS directly and labels Human review as supporting evidence. Comparative
+findings remain pending matched and human-review data.
+
+FP10 hardening status: completed and provider-free verified July 20, 2026.
+Controlled responses/runs now preserve immutable reviewed inputs, exact context
+identity and ranking evidence, code/runtime/dependency fingerprints, and honest
+generation usage/cost status. Paid paths require explicit bounded opt-in;
+Compare Runs only compares matched question/evaluator pairs; accessibility, CI,
+reproduction documentation, and the combined FP8-FP10 demo/signoffs are present.
+One bounded paid proof produced a completed LLM-judge result; authorized
+follow-up retries completed all four RAGAS metrics after correcting the adapter
+and provider-extra dependency. Human calibration, matched experiments, final
+empirical recommendations, presentation delivery, and release tagging remain
+pending evidence/delivery work rather than completed claims.
 
 ## Revised Research Direction After FP5 Review
 
@@ -84,8 +97,9 @@ Status: implemented, verified, committed, and pushed on July 6, 2026.
 - Format-specific extraction produces normalized text for one shared ingestion path.
 - MySQL stores original filename, type, status, errors, and chunk counts.
 - ChromaDB replacement removes the earlier vectors for the same source path.
-- The browser lists indexed documents, updates document/category counts live,
-  and supports same-format replacement and deletion for uploads.
+- The browser lists and organizes indexed documents, updates
+  document/category/chunk counts live, and supports staged same-name
+  replacement, deletion of any active source, and confirmed Delete All.
 - Parser and FP5 regression tests pass before the milestone is committed.
 - FP7 begins with the manually reviewed 25+ question research dataset.
 

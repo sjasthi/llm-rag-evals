@@ -114,17 +114,26 @@ try {
         $responseId = filter_input(INPUT_GET, 'response_id', FILTER_VALIDATE_INT);
         if ($responseId) {
             $statement = $database->prepare(
-                "SELECT r.response_id, r.question_text, r.answer_text, r.retrieval_method,
+                "SELECT r.response_id, r.question_id, r.question_text, r.answer_text, r.retrieval_method,
                         r.latency_ms, r.estimated_cost AS answer_estimated_cost, r.created_at,
+                        r.evaluation_snapshot_json, r.snapshot_provenance, r.code_version,
+                        r.input_tokens, r.output_tokens, r.total_tokens,
+                        r.generation_cost_status, r.generation_metadata_json,
                         q.expected_answer, q.expected_source, q.expected_evidence,
                         q.required_facts, q.category, q.difficulty, q.is_answerable,
                         q.review_status AS dataset_review_status,
                         run.run_id, run.run_name, run.experiment_key,
                         run.corpus_variant_key, run.run_configuration_json,
-                        settings.chat_model, settings.embedding_model, settings.top_k
+                        membership.display_order AS dataset_question_number,
+                        settings.chat_model, settings.embedding_model, settings.top_k,
+                        settings.temperature, settings.top_p,
+                        settings.chunk_size, settings.chunk_overlap
                  FROM rag_responses r
                  LEFT JOIN evaluation_questions q ON q.question_id = r.question_id
                  LEFT JOIN evaluation_runs run ON run.run_id = r.run_id
+                 LEFT JOIN evaluation_question_memberships membership
+                   ON membership.dataset_id = run.dataset_id
+                  AND membership.question_id = r.question_id
                  LEFT JOIN model_settings settings ON settings.setting_id = r.setting_id
                  WHERE r.response_id = ?"
             );
@@ -133,12 +142,32 @@ try {
             if (!$response) {
                 evaluationResponse(404, ['ok' => false, 'error' => 'Saved response was not found.']);
             }
-            $response['required_facts'] = decodedObject($response['required_facts']);
+            $snapshot = decodedObject($response['evaluation_snapshot_json']);
+            foreach ([
+                'expected_answer', 'expected_source', 'expected_evidence', 'required_facts',
+                'category', 'difficulty', 'is_answerable', 'review_status',
+            ] as $field) {
+                if (array_key_exists($field, $snapshot)) {
+                    $target = $field === 'review_status' ? 'dataset_review_status' : $field;
+                    $response[$target] = $snapshot[$field];
+                }
+            }
+            $response['evaluation_snapshot_json'] = $snapshot;
+            $response['generation_metadata_json'] = decodedObject($response['generation_metadata_json']);
+            $response['required_facts'] = is_array($response['required_facts'])
+                ? $response['required_facts']
+                : decodedObject($response['required_facts']);
             $response['run_configuration_json'] = decodedObject($response['run_configuration_json']);
 
             $statement = $database->prepare(
-                "SELECT c.rank_position, c.similarity_score, c.context_excerpt,
-                        d.source_path, d.category, c.document_id, c.chunk_id
+                "SELECT c.rank_position, c.similarity_score, c.semantic_distance,
+                        c.lexical_score, c.retrieval_score, c.retrieval_metadata_json,
+                        c.context_excerpt,
+                        COALESCE(c.source_path_snapshot, d.source_path) AS source_path,
+                        COALESCE(c.category_snapshot, d.category) AS category,
+                        c.chunk_index_snapshot AS chunk_index,
+                        c.document_hash_snapshot, c.chunk_hash_snapshot,
+                        c.document_id, c.chunk_id
                  FROM retrieved_contexts c
                  LEFT JOIN documents d ON d.document_id=c.document_id
                  WHERE c.response_id=? ORDER BY c.rank_position"
@@ -146,6 +175,7 @@ try {
             $statement->execute([$responseId]);
             $contexts = $statement->fetchAll();
             foreach ($contexts as &$context) {
+                $context['retrieval_metadata_json'] = decodedObject($context['retrieval_metadata_json']);
                 $context['is_expected_source'] = $response['expected_source'] !== null
                     && strcasecmp((string) $context['source_path'], (string) $response['expected_source']) === 0;
             }
@@ -157,6 +187,8 @@ try {
                         er.status, er.raw_score, er.normalized_score, er.passed,
                         er.explanation, er.details_json, er.runtime_ms,
                         er.estimated_cost, er.error_message, er.updated_at,
+                        MAX(global_scores.all_runs_mean) AS all_runs_mean,
+                        MAX(global_scores.all_runs_completed_count) AS all_runs_completed_count,
                         COUNT(attempt.attempt_id) AS attempt_count,
                         AVG(CASE WHEN attempt.status='completed' THEN attempt.normalized_score END) AS attempt_mean,
                         MIN(CASE WHEN attempt.status='completed' THEN attempt.normalized_score END) AS attempt_min,
@@ -164,6 +196,18 @@ try {
                         STDDEV_POP(CASE WHEN attempt.status='completed' THEN attempt.normalized_score END) AS attempt_stddev
                  FROM evaluator_results er
                  JOIN evaluator_definitions e ON e.evaluator_id=er.evaluator_id
+                 LEFT JOIN (
+                    SELECT global_result.evaluator_id,
+                           AVG(global_result.normalized_score) AS all_runs_mean,
+                           COUNT(*) AS all_runs_completed_count
+                    FROM evaluator_results global_result
+                    JOIN rag_responses global_response
+                      ON global_response.response_id=global_result.response_id
+                    JOIN evaluation_runs global_run
+                      ON global_run.run_id=global_response.run_id
+                    WHERE global_result.status='completed' AND global_run.status='completed'
+                    GROUP BY global_result.evaluator_id
+                 ) global_scores ON global_scores.evaluator_id=er.evaluator_id
                  LEFT JOIN evaluator_result_attempts attempt
                    ON attempt.response_id=er.response_id AND attempt.evaluator_id=er.evaluator_id
                  WHERE er.response_id=?
@@ -255,14 +299,22 @@ try {
                     run.dataset_id, run.baseline_run_id, run.experiment_key,
                     run.corpus_variant_key, run.run_configuration_json,
                     settings.retrieval_method, settings.chat_model, settings.embedding_model,
-                    settings.top_k, COALESCE(response_summary.response_count, 0) AS response_count,
-                    COALESCE(result_summary.result_count, 0) AS result_count,
-                    COALESCE(result_summary.evaluator_error_count, 0) AS evaluator_error_count,
+                     settings.top_k, settings.temperature, settings.top_p,
+                     COALESCE(response_summary.response_count, 0) AS response_count,
+                     COALESCE(result_summary.result_count, 0) AS result_count,
+                     COALESCE(result_summary.completed_result_count, 0) AS completed_result_count,
+                     COALESCE(result_summary.evaluator_error_count, 0) AS evaluator_error_count,
                     COALESCE(result_summary.evaluator_skipped_count, 0) AS evaluator_skipped_count,
                     COALESCE(response_summary.answer_runtime_ms, 0) AS answer_runtime_ms,
+                    response_summary.answer_total_tokens,
+                    response_summary.answer_estimated_cost,
+                    COALESCE(response_summary.generation_priced_count, 0) AS generation_priced_count,
+                    COALESCE(response_summary.generation_unpriced_count, 0) AS generation_unpriced_count,
                     COALESCE(attempt_summary.evaluator_attempt_count, 0) AS evaluator_attempt_count,
                     COALESCE(attempt_summary.evaluator_runtime_ms, 0) AS evaluator_runtime_ms,
-                    COALESCE(attempt_summary.evaluator_estimated_cost, 0) AS evaluator_estimated_cost,
+                    attempt_summary.evaluator_estimated_cost,
+                    COALESCE(attempt_summary.evaluator_priced_count, 0) AS evaluator_priced_count,
+                    COALESCE(attempt_summary.evaluator_unpriced_count, 0) AS evaluator_unpriced_count,
                     (SELECT COUNT(*) FROM evaluation_question_memberships membership
                      WHERE membership.dataset_id=run.dataset_id) AS dataset_question_count,
                     (SELECT COUNT(*) FROM human_reviews review
@@ -272,12 +324,17 @@ try {
              JOIN model_settings settings ON settings.setting_id=run.setting_id
              LEFT JOIN (
                  SELECT run_id, COUNT(*) AS response_count,
-                        SUM(COALESCE(latency_ms, 0)) AS answer_runtime_ms
+                        SUM(COALESCE(latency_ms, 0)) AS answer_runtime_ms,
+                        SUM(total_tokens) AS answer_total_tokens,
+                        SUM(estimated_cost) AS answer_estimated_cost,
+                        SUM(generation_cost_status='recorded') AS generation_priced_count,
+                        SUM(generation_cost_status<>'recorded') AS generation_unpriced_count
                  FROM rag_responses GROUP BY run_id
              ) response_summary ON response_summary.run_id=run.run_id
              LEFT JOIN (
                  SELECT response.run_id, COUNT(result.result_id) AS result_count,
-                        SUM(result.status='failed') AS evaluator_error_count,
+                        SUM(result.status='completed') AS completed_result_count,
+                         SUM(result.status='failed') AS evaluator_error_count,
                         SUM(result.status='skipped') AS evaluator_skipped_count
                  FROM rag_responses response
                  JOIN evaluator_results result ON result.response_id=response.response_id
@@ -286,50 +343,80 @@ try {
              LEFT JOIN (
                  SELECT response.run_id, COUNT(attempt.attempt_id) AS evaluator_attempt_count,
                         SUM(COALESCE(attempt.runtime_ms, 0)) AS evaluator_runtime_ms,
-                        SUM(COALESCE(attempt.estimated_cost, 0)) AS evaluator_estimated_cost
+                        SUM(CASE WHEN attempt_definition.is_local=FALSE THEN attempt.estimated_cost END) AS evaluator_estimated_cost,
+                        SUM(attempt_definition.is_local=FALSE AND attempt.status<>'skipped' AND attempt.estimated_cost IS NOT NULL) AS evaluator_priced_count,
+                        SUM(attempt_definition.is_local=FALSE AND attempt.status<>'skipped' AND attempt.estimated_cost IS NULL) AS evaluator_unpriced_count
                  FROM rag_responses response
                  JOIN evaluator_result_attempts attempt ON attempt.response_id=response.response_id
+                 JOIN evaluator_definitions attempt_definition ON attempt_definition.evaluator_id=attempt.evaluator_id
                  GROUP BY response.run_id
              ) attempt_summary ON attempt_summary.run_id=run.run_id
              ORDER BY run.run_id DESC LIMIT 25"
         )->fetchAll(), ['run_configuration_json']);
 
         $responses = $database->query(
-            "SELECT response.response_id, response.run_id, response.question_text,
-                    response.latency_ms, response.created_at,
-                    COUNT(result.result_id) AS result_count,
-                    SUM(JSON_UNQUOTE(JSON_EXTRACT(definition.configuration_json, '$.layer'))='baseline') AS baseline_result_count,
-                    SUM(JSON_UNQUOTE(JSON_EXTRACT(definition.configuration_json, '$.layer'))='advanced') AS advanced_result_count,
-                    SUM(result.status='failed') AS failed_result_count,
-                    SUM(result.status='skipped') AS skipped_result_count,
+            "SELECT response.response_id, response.run_id, response.question_id,
+                     response.question_text, MAX(membership.display_order) AS dataset_question_number,
+                     response.latency_ms, response.created_at,
+                     COUNT(result.result_id) AS result_count,
+                     COALESCE(SUM(result.status='completed'), 0) AS completed_result_count,
+                     SUM(JSON_UNQUOTE(JSON_EXTRACT(definition.configuration_json, '$.layer'))='baseline') AS baseline_result_count,
+                     SUM(JSON_UNQUOTE(JSON_EXTRACT(definition.configuration_json, '$.layer'))='advanced') AS advanced_result_count,
+                     COALESCE(SUM(result.status='failed'), 0) AS failed_result_count,
+                     COALESCE(SUM(result.status='skipped'), 0) AS skipped_result_count,
+                     COALESCE(SUM(definition.is_local=TRUE AND result.status='completed'), 0) AS local_completed_count,
+                     COALESCE(SUM(definition.is_local=TRUE AND result.status='failed'), 0) AS local_failed_count,
+                     COALESCE(SUM(definition.is_local=TRUE AND result.status='skipped'), 0) AS local_skipped_count,
+                     COALESCE(SUM(definition.evaluator_key='llm_judge' AND result.status='completed'), 0) AS judge_completed_count,
+                     COALESCE(SUM(definition.evaluator_key='llm_judge' AND result.status='failed'), 0) AS judge_failed_count,
+                     COALESCE(SUM(definition.evaluator_key='llm_judge' AND result.status='skipped'), 0) AS judge_skipped_count,
+                     COALESCE(SUM(definition.evaluator_key LIKE 'ragas_%' AND result.status='completed'), 0) AS ragas_completed_count,
+                     COALESCE(SUM(definition.evaluator_key LIKE 'ragas_%' AND result.status='failed'), 0) AS ragas_failed_count,
+                     COALESCE(SUM(definition.evaluator_key LIKE 'ragas_%' AND result.status='skipped'), 0) AS ragas_skipped_count,
                     (SELECT COUNT(*) FROM human_reviews review
                      WHERE review.response_id=response.response_id AND review.is_current=TRUE) AS human_review_count
              FROM rag_responses response
              JOIN evaluation_runs run ON run.run_id=response.run_id
+             LEFT JOIN evaluation_question_memberships membership
+               ON membership.dataset_id=run.dataset_id
+              AND membership.question_id=response.question_id
              LEFT JOIN evaluator_results result ON result.response_id=response.response_id
              LEFT JOIN evaluator_definitions definition ON definition.evaluator_id=result.evaluator_id
-             GROUP BY response.response_id ORDER BY response.response_id DESC LIMIT 250"
+             GROUP BY response.response_id
+             ORDER BY response.run_id DESC,
+                      COALESCE(dataset_question_number, 2147483647),
+                      response.response_id
+             LIMIT 250"
         )->fetchAll();
+        $runQuestionNumbers = [];
+        foreach ($responses as &$savedResponse) {
+            $savedRunId = (int) $savedResponse['run_id'];
+            $runQuestionNumbers[$savedRunId] = ($runQuestionNumbers[$savedRunId] ?? 0) + 1;
+            $savedResponse['run_question_number'] = $runQuestionNumbers[$savedRunId];
+        }
+        unset($savedResponse);
 
         $metricSummaries = normalizeJsonColumns($database->query(
             "SELECT definition.evaluator_key, definition.display_name, definition.family,
-                    definition.dimension, definition.configuration_json,
+                    definition.dimension, definition.configuration_json, definition.is_local,
                     COUNT(result.result_id) AS result_count,
                     SUM(result.status='completed') AS completed_count,
                     SUM(result.status='skipped') AS skipped_count,
                     SUM(result.status='failed') AS failed_count,
                     AVG(CASE WHEN result.status='completed' THEN result.normalized_score END) AS mean_score,
-                    MIN(CASE WHEN result.status='completed' THEN result.normalized_score END) AS min_score,
-                    MAX(CASE WHEN result.status='completed' THEN result.normalized_score END) AS max_score,
                     MAX(COALESCE(attempt_summary.attempt_count, 0)) AS attempt_count,
                     MAX(COALESCE(attempt_summary.mean_runtime_ms, 0)) AS mean_runtime_ms,
-                    MAX(COALESCE(attempt_summary.estimated_cost, 0)) AS estimated_cost
+                    MAX(attempt_summary.estimated_cost) AS estimated_cost,
+                    MAX(COALESCE(attempt_summary.priced_count, 0)) AS priced_attempt_count,
+                    MAX(COALESCE(attempt_summary.unpriced_count, 0)) AS unpriced_attempt_count
              FROM evaluator_definitions definition
              LEFT JOIN evaluator_results result ON result.evaluator_id=definition.evaluator_id
              LEFT JOIN (
                  SELECT evaluator_id, COUNT(*) AS attempt_count,
                         AVG(COALESCE(runtime_ms, 0)) AS mean_runtime_ms,
-                        SUM(COALESCE(estimated_cost, 0)) AS estimated_cost
+                        SUM(estimated_cost) AS estimated_cost,
+                        SUM(status<>'skipped' AND estimated_cost IS NOT NULL) AS priced_count,
+                        SUM(status<>'skipped' AND estimated_cost IS NULL) AS unpriced_count
                  FROM evaluator_result_attempts GROUP BY evaluator_id
              ) attempt_summary ON attempt_summary.evaluator_id=definition.evaluator_id
              WHERE definition.is_active=TRUE
@@ -339,6 +426,58 @@ try {
             $summary['layer'] = $summary['configuration_json']['layer'] ?? 'baseline';
         }
         unset($summary);
+
+        $runMetricSummaries = $database->query(
+            "SELECT run.run_id, run.run_name, definition.evaluator_key,
+                    definition.display_name, definition.dimension,
+                    COUNT(result.result_id) AS completed_count,
+                    COUNT(DISTINCT response.question_id) AS question_count,
+                    AVG(result.normalized_score) AS mean_score,
+                    MIN(result.normalized_score) AS min_score,
+                    MAX(result.normalized_score) AS max_score
+             FROM evaluation_runs run
+             JOIN rag_responses response ON response.run_id=run.run_id
+             JOIN evaluator_results result ON result.response_id=response.response_id
+             JOIN evaluator_definitions definition ON definition.evaluator_id=result.evaluator_id
+             WHERE result.status='completed'
+             GROUP BY run.run_id, definition.evaluator_id
+             ORDER BY run.run_id DESC, definition.evaluator_id"
+        )->fetchAll();
+
+        $matchedComparisons = $database->query(
+            "SELECT comparison_run.run_id AS comparison_run_id,
+                    comparison_run.run_name AS comparison_run_name,
+                    baseline_run.run_id AS baseline_run_id,
+                    baseline_run.run_name AS baseline_run_name,
+                    comparison_run.experiment_key,
+                    comparison_run.corpus_variant_key,
+                    definition.evaluator_key, definition.display_name,
+                    COUNT(*) AS paired_question_count,
+                    AVG(baseline_result.normalized_score) AS baseline_mean,
+                    AVG(comparison_result.normalized_score) AS comparison_mean,
+                    AVG(comparison_result.normalized_score - baseline_result.normalized_score) AS mean_delta
+             FROM evaluation_runs comparison_run
+             JOIN evaluation_runs baseline_run
+               ON baseline_run.run_id=comparison_run.baseline_run_id
+             JOIN rag_responses comparison_response
+               ON comparison_response.run_id=comparison_run.run_id
+              AND comparison_response.question_id IS NOT NULL
+             JOIN rag_responses baseline_response
+               ON baseline_response.run_id=baseline_run.run_id
+              AND baseline_response.question_id=comparison_response.question_id
+             JOIN evaluator_results comparison_result
+               ON comparison_result.response_id=comparison_response.response_id
+              AND comparison_result.status='completed'
+             JOIN evaluator_results baseline_result
+               ON baseline_result.response_id=baseline_response.response_id
+              AND baseline_result.evaluator_id=comparison_result.evaluator_id
+              AND baseline_result.status='completed'
+             JOIN evaluator_definitions definition
+               ON definition.evaluator_id=comparison_result.evaluator_id
+             WHERE comparison_run.status='completed' AND baseline_run.status='completed'
+             GROUP BY comparison_run.run_id, baseline_run.run_id, definition.evaluator_id
+             ORDER BY comparison_run.run_id DESC, definition.evaluator_id"
+        )->fetchAll();
 
         $layers = ['baseline' => 0, 'advanced' => 0];
         foreach ($evaluators as $evaluator) {
@@ -352,10 +491,14 @@ try {
             'layers' => $layers,
             'human_review_count' => $humanReviewCount,
             'metric_summaries' => $metricSummaries,
+            'run_metric_summaries' => $runMetricSummaries,
+            'matched_comparisons' => $matchedComparisons,
             'interpretation_rules' => [
                 'Metrics inspect one saved answer independently; they do not vote on the answer.',
+                'No cumulative 13-metric grade is calculated because the methods measure different targets and have different applicability.',
                 'Project-defined thresholds create review flags, not factual verdicts.',
                 'Skipped and failed evaluators are excluded from score summaries.',
+                'Run-to-run deltas are shown only for the same question and evaluator in a declared baseline pair.',
                 'Conclusions apply only to the stored dataset, corpus, models, and settings.',
             ],
         ];

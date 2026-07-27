@@ -283,15 +283,23 @@ def _json_list(value: Any) -> list[str]:
     return [str(item) for item in parsed] if isinstance(parsed, list) else []
 
 
+def _json_object(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    parsed = json.loads(value) if isinstance(value, str) else value
+    return dict(parsed) if isinstance(parsed, dict) else {}
+
+
 def load_evaluation_input(connection: Any, response_id: int) -> EvaluationInput:
     with connection.cursor(dictionary=True) as cursor:
         cursor.execute(
             """SELECT r.response_id, r.question_text, r.answer_text,
+                      r.evaluation_snapshot_json, r.snapshot_provenance,
                       q.expected_answer, q.expected_source, q.accepted_answers,
                       q.required_facts, q.is_answerable, q.expected_evidence,
                       q.review_status
                FROM rag_responses r
-               JOIN evaluation_questions q ON q.question_id = r.question_id
+               LEFT JOIN evaluation_questions q ON q.question_id = r.question_id
                WHERE r.response_id = %s""",
             (response_id,),
         )
@@ -299,7 +307,8 @@ def load_evaluation_input(connection: Any, response_id: int) -> EvaluationInput:
         if not row:
             raise ValueError("Saved response is missing or is not linked to an evaluation question.")
         cursor.execute(
-            """SELECT d.source_path, c.context_excerpt
+            """SELECT COALESCE(c.source_path_snapshot, d.source_path) AS source_path,
+                      c.context_excerpt
                FROM retrieved_contexts c
                LEFT JOIN documents d ON d.document_id = c.document_id
                WHERE c.response_id = %s ORDER BY c.rank_position""",
@@ -308,19 +317,23 @@ def load_evaluation_input(connection: Any, response_id: int) -> EvaluationInput:
         context_rows = cursor.fetchall()
         sources = [str(item["source_path"]) for item in context_rows if item["source_path"]]
         contexts = [str(item["context_excerpt"]) for item in context_rows if item["context_excerpt"]]
+    snapshot = _json_object(row.get("evaluation_snapshot_json"))
+    expected_answer = snapshot.get("expected_answer", row.get("expected_answer"))
+    if expected_answer is None:
+        raise ValueError("Saved response is missing its reviewed expected-answer snapshot.")
     return EvaluationInput(
         response_id=int(row["response_id"]),
         question=str(row["question_text"]),
-        expected_answer=str(row["expected_answer"]),
+        expected_answer=str(expected_answer),
         actual_answer=str(row["answer_text"]),
-        expected_source=row["expected_source"],
+        expected_source=snapshot.get("expected_source", row.get("expected_source")),
         retrieved_sources=sources,
-        accepted_answers=_json_list(row["accepted_answers"]),
-        required_facts=_json_list(row["required_facts"]),
-        is_answerable=bool(row["is_answerable"]),
-        expected_evidence=row["expected_evidence"],
+        accepted_answers=_json_list(snapshot.get("accepted_answers", row.get("accepted_answers"))),
+        required_facts=_json_list(snapshot.get("required_facts", row.get("required_facts"))),
+        is_answerable=bool(snapshot.get("is_answerable", row.get("is_answerable"))),
+        expected_evidence=snapshot.get("expected_evidence", row.get("expected_evidence")),
         retrieved_contexts=contexts,
-        review_status=str(row["review_status"]),
+        review_status=str(snapshot.get("review_status", row.get("review_status") or "unknown")),
     )
 
 

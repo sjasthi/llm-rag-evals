@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
+from ragas.llms.base import InstructorBaseRagasLLM
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "rag"))
 
 from advanced_evaluation import (  # noqa: E402
+    AsyncCompatibleRagasLLM,
     AdvancedEvaluatorEngine,
     JudgeRubricOutput,
     ProviderExecution,
@@ -19,11 +23,13 @@ from advanced_evaluation import (  # noqa: E402
     applicability_reason,
     build_judge_prompt,
     estimate_cost,
+    estimated_application_cost,
     ragas_arguments,
     run_llm_judge,
 )
 from evaluation import EvaluationInput  # noqa: E402
 from evaluator_catalog import ALL_DEFINITIONS, definition_for  # noqa: E402
+from evaluate_saved_run import LOCAL_EVALUATOR_KEYS, build_local_preflight  # noqa: E402
 from llm import REFUSAL_MESSAGE  # noqa: E402
 from settings import load_settings  # noqa: E402
 
@@ -62,6 +68,34 @@ def judge_output() -> JudgeRubricOutput:
 
 
 class AdvancedEvaluationTests(unittest.TestCase):
+    def test_saved_run_local_preflight_separates_reuse_and_run(self) -> None:
+        with patch(
+            "evaluate_saved_run.completed_result_exists",
+            side_effect=lambda _connection, _response_id, key: key == LOCAL_EVALUATOR_KEYS[0],
+        ):
+            preflight = build_local_preflight(object(), [19], force=False)
+
+        self.assertEqual(8, len(preflight["applications"]))
+        self.assertEqual(1, preflight["reused_count"])
+        self.assertEqual(7, preflight["application_count"])
+        self.assertEqual(0, preflight["paid_application_count"])
+
+    def test_ragas_llm_adapter_supplies_async_generation_for_sync_client(self) -> None:
+        calls: list[tuple[str, object]] = []
+
+        class SynchronousLLM:
+            def generate(self, prompt: str, response_model: object) -> dict[str, str]:
+                calls.append((prompt, response_model))
+                return {"result": "structured"}
+
+        response_model = object()
+        adapter = AsyncCompatibleRagasLLM(SynchronousLLM())
+        self.assertIsInstance(adapter, InstructorBaseRagasLLM)
+        result = asyncio.run(adapter.agenerate("evaluate this", response_model))
+
+        self.assertEqual({"result": "structured"}, result)
+        self.assertEqual([("evaluate this", response_model)], calls)
+
     def test_catalog_has_unique_score_contracts_for_thirteen_evaluators(self) -> None:
         keys = [definition["key"] for definition in ALL_DEFINITIONS]
         self.assertEqual(13, len(keys))
@@ -105,6 +139,14 @@ class AdvancedEvaluationTests(unittest.TestCase):
         )
         self.assertIsNone(estimate_cost(None, None, settings))
         self.assertEqual(0.0005, estimate_cost(100, 200, settings))
+
+        unpriced = replace(
+            settings,
+            evaluator_input_cost_per_million=0.0,
+            evaluator_output_cost_per_million=0.0,
+        )
+        self.assertIsNone(estimate_cost(100, 200, unpriced))
+        self.assertIsNone(estimated_application_cost(unpriced, "llm_judge"))
 
     def test_ragas_mapping_uses_saved_context_order(self) -> None:
         item = sample_input(retrieved_contexts=["rank one", "rank two"])

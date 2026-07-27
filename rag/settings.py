@@ -75,6 +75,8 @@ class Settings:
     llm_chat_model: str
     llm_temperature: float
     llm_top_p: float
+    llm_input_cost_per_million: float
+    llm_output_cost_per_million: float
     retrieval_top_k: int
     evaluator_provider: str
     evaluator_model: str
@@ -108,6 +110,12 @@ def load_settings() -> Settings:
         llm_chat_model=_env_value("LLM_CHAT_MODEL", "gemini-2.5-flash"),
         llm_temperature=_float_between_zero_and_one("LLM_TEMPERATURE", 0.0),
         llm_top_p=_float_between_zero_and_one("LLM_TOP_P", 0.9),
+        llm_input_cost_per_million=_nonnegative_float(
+            "LLM_INPUT_COST_PER_MILLION", 0.0
+        ),
+        llm_output_cost_per_million=_nonnegative_float(
+            "LLM_OUTPUT_COST_PER_MILLION", 0.0
+        ),
         retrieval_top_k=_positive_int("RETRIEVAL_TOP_K", 3),
         evaluator_provider=_env_value("EVALUATOR_PROVIDER", "gemini").lower(),
         evaluator_model=_env_value("EVALUATOR_MODEL", "gemini-2.5-flash"),

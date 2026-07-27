@@ -39,14 +39,26 @@ based on, why scores differ, and each evaluator's inputs, cost, speed,
 determinism, strengths, limitations, and appropriate use cases. The detailed
 working set and protocol are defined in `docs/evaluation-strategy.md`.
 
-## Current Implementation Boundary (July 14, 2026)
+## Current Implementation Boundary (July 20, 2026)
 
 The complete application support through FP9 is present: eight baselines, five
 advanced evaluator paths, immutable attempts, reproducible controlled runs,
-MySQL/Chroma retrieval choices, human response review, four-layer Experiments,
-and evidence-first Findings. No paid advanced call or matched final experiment
-is being claimed merely because its runner and UI exist. FP10 remains the
-collection, calibration, analysis, and teaching phase described below.
+MySQL/Chroma retrieval choices, human response review, status-first Evaluation,
+and evidence-first Compare Runs. FP10 hardening now adds immutable answer-key and
+context provenance, code/runtime/dependency fingerprints, generation usage and
+honest unknown-cost states, guarded paid-call paths, same-question/evaluator
+comparison rules, accessibility improvements, provider-free CI, and a complete
+demo/checkoff record. The frontend-first follow-up adds active chunk counts,
+organized delete/replace-capable document administration, an approved Chat
+model selector, and run-level evaluator preflight/execution. Chat exposes
+retrieval, top-k, temperature, and top-p and can preview sources without calling
+a model. The UI also explains that controlled Gold Standard questions use the same answer pipeline
+as Chat and reports Local, LLM-judge, and RAGAS status separately. A July 20 bounded proof produced one live response, one
+completed LLM-judge result, and four completed current RAGAS results while
+retaining earlier adapter/dependency/quota failures in attempt history; it did
+not produce a human calibration set, matched final experiment, or empirical
+recommendation. Those evidence-collection and final-report tasks remain the
+completion boundary described below.
 
 ## Final Product Goal
 
@@ -55,7 +67,7 @@ By the final submission, the application should let a user:
 1. Upload and manage TXT, text-based PDF, and DOCX Metro State documents.
 2. Ask questions against those documents.
 3. See generated answers with retrieved sources.
-4. Run a reviewed evaluation set containing at least 25 Metro State questions.
+4. Run a reviewed evaluation set containing 50 Metro State questions.
 5. Apply multiple evaluation metrics to the same stored responses.
 6. Compare retrieval/configuration and collection-size experiments.
 7. Inspect metric disagreements and categorized failure cases.
@@ -150,22 +162,24 @@ status.
 Supports document management:
 
 - upload or import Metro State documents,
-- list documents,
+- search, filter, sort, and group active documents,
 - show document type and chunk count,
-- replace an existing document,
-- delete or deactivate a document if needed.
+- replace an existing or same-name document,
+- delete any active document or clear the active index if needed.
 
-### 3. Ask
+### 3. Chat
 
 Supports normal RAG question answering:
 
 - question input,
+- browser controls for approved model, retrieval method, top-k, temperature, and top-p,
+- provider-free preview of the ranked source chunks,
 - generated answer,
 - source document names,
 - retrieved chunk excerpts,
 - model/settings used for the response.
 
-### 4. Evaluation Questions
+### 4. Gold Standard
 
 Manages the gold evaluation dataset:
 
@@ -175,20 +189,24 @@ Manages the gold evaluation dataset:
 - topic/category,
 - active/inactive status.
 
-### 5. Evaluation Runs
+### 5. Evaluation
 
-Runs selected questions through selected RAG settings:
+Creates and inspects saved tests using selected RAG settings:
 
-- chunk size,
-- overlap,
 - top-k,
+- retrieval method,
 - temperature,
 - provider/model,
-- selected evaluation method.
+- top-p.
 
-### 6. Results / Dashboard
+The browser can preview and create a bounded new test with approved model,
+retrieval, top-k, temperature, top-p, and reviewed-question count. New answers
+receive the local eight scores automatically. Every saved test also exposes
+preflight and execution for either the local eight across the full test or all
+13 methods for one exact selected answer under the configured response,
+application, and cost limits.
 
-Shows:
+The same view shows:
 
 - each named answer/retrieval score with its own calculation, scale, threshold
   provenance, applicability, and limitation,
@@ -198,10 +216,23 @@ Shows:
 - estimated API cost if available,
 - per-question failures,
 - metric agreement/disagreement,
-- results grouped by configuration and corpus variant.
+- results grouped by configuration and corpus variant,
+- the selected answer's metric value beside that metric's cumulative average
+  across completed tests, and
+- each metric's current-test mean beside its all-completed-tests mean.
 
 The dashboard must not average unlike lexical, semantic, retrieval, judged, and
 human signals into one universal answer grade.
+
+Chunk size, overlap, and embedding model describe the active index rather than
+one answer. Comparing those settings requires a separately re-chunked and
+re-embedded corpus variant so each test uses one internally consistent index.
+
+### 6. Compare Runs
+
+Provides the secondary, research-oriented comparison reached from Evaluation.
+It shows compatible configuration evidence and only computes deltas for
+question/evaluator-matched baseline pairs.
 
 ### 7. Report
 

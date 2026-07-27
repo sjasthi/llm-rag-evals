@@ -187,10 +187,12 @@ FP6 was completed early during FP5.
 Status: implemented, verified, and pushed in FP6. The PHP endpoint validates and stores
 uploads, `rag/document_loader.py` extracts normalized TXT/PDF/DOCX text, and
 `rag/admin.py` bridges the browser request to the shared MySQL/ChromaDB
-ingestion path. The UI lists document type, status, chunk count, and parser
-errors and permits same-format replacement or deletion of browser-managed
-uploads. Document/category summary counts update from the API response without
-a page reload, while bundled source documents remain protected.
+ingestion path. The UI lists document type, status, and chunk count; organizes
+the index through search/filter/sort/category grouping; and permits staged
+same-name replacement, deletion of any active source, or confirmed Delete All.
+Document/category/chunk summary counts update from the API response without a
+page reload. Bundled source files remain on disk only as recovery material when
+their active MySQL/Chroma records are removed.
 
 ### Phase 3: Create the Gold Dataset
 
@@ -214,13 +216,17 @@ advanced models.
 
 ### Phase 4: Add Evaluation Management to the PHP Application
 
-Implementation status: completed through the FP9 evidence dashboard.
+Implementation status: completed through the FP10 hardened evidence dashboard.
+New controlled responses freeze their reviewed answer key and exact retrieval
+provenance; Findings scopes descriptive means to a run and only calculates
+matched baseline deltas for the same question/evaluator.
 
-Implement three primary areas:
+Implement three primary browser areas:
 
-- Questions: manage expected answers, sources, categories, and answerability.
-- Evaluate: choose settings, run selected gold questions, and persist results.
-- Results: compare metrics and inspect individual responses and contexts.
+- Gold Standard: manage expected answers, sources, categories, and answerability.
+- Evaluation: choose settings, create bounded tests, score exact saved answers,
+  and inspect individual responses, contexts, and per-metric cumulative evidence.
+- Compare Runs: compare only compatible saved tests and matched questions.
 
 ### Phase 5: Add Evaluation Incrementally
 
@@ -315,4 +321,6 @@ retrieval, generation, and advanced evaluation. MySQL stores structured app
 data, authoritative chunk text, immutable attempts, human reviews, and results,
 while ChromaDB stores chunks and embeddings. FP5 verified the Ask path; FP8/FP9
 verified both retrieval implementations, advanced dry-run planning, and the
-multi-layer browser/API. See `docs/fp8-fp9-implementation.md`.
+multi-layer browser/API. FP10 verified immutable evidence, cost guards,
+question-matched findings, accessibility, and provider-free automation. See
+`docs/fp8-fp9-implementation.md` and `docs/fp10-hardening.md`.

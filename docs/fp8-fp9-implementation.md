@@ -3,8 +3,8 @@
 ## Status and Boundary
 
 FP8 and FP9 application support was implemented and locally verified on July
-14, 2026. The code, schema, evaluator catalog, controlled-run support,
-Experiments inspector, human-review workflow, and Findings workspace are live.
+14, 2026. The code, schema, evaluator catalog, controlled-run support, Results
+inspector, human-review workflow, and Compare Runs workspace are live.
 
 The implementation is intentionally separate from the empirical study:
 
@@ -244,7 +244,7 @@ Dataset review and response review are intentionally different:
 - Response human review rates a generated answer while showing its reference
   and exact saved contexts.
 
-The Experiments inspector records optional 1-5 correctness, completeness,
+The response inspector now housed under Evaluation records optional 1-5 correctness, completeness,
 faithfulness, relevance, and refusal-correctness ratings; an overall decision;
 a failure category; reviewer alias; notes; rubric version; and timestamps.
 Submitting another review by the same alias makes the older record noncurrent
@@ -253,31 +253,35 @@ instead of overwriting it.
 Human review is calibration evidence, not infallible ground truth. A reviewer
 may leave a dimension blank when the shown evidence cannot support a rating.
 
-## FP9 Experiments and Findings UX
+## FP9 Evaluation and Compare Runs UX
 
-The Experiments workspace now:
+At the FP9 checkpoint, the workspace then named Results added the underlying
+four evidence types. The later rename to Evaluation keeps all of that evidence
+but presents the
+automatic methods directly as Local metrics, LLM judge, and RAGAS, with Human
+review labeled as supporting evidence. The workspace now:
 
 - uses a compact run browser and automatically opens a real saved response;
 - states run coverage as executed responses out of dataset questions;
-- shows retrieval method, canonical-result count, skips, failures, and legacy
-  provenance;
-- explains four separate evidence layers: baseline, advanced, human, and
-  operations;
-- groups score cards by evaluator layer;
+- shows retrieval method, completed-result count, skips, failures, and legacy
+  provenance without presenting failed rows as completed checks;
+- summarizes completed, failed, skipped, and not-run status for Local metrics,
+  the LLM judge, and RAGAS on each selected response;
+- groups score cards by those named method families;
 - expands every score contract beside the observed explanation;
 - shows attempt variability only within the same evaluator;
 - marks the expected retrieved source;
 - provides evidence-backed human-review controls; and
 - raises targeted disagreement prompts without declaring an automatic cause.
 
-The Findings workspace now:
+The Compare Runs workspace now:
 
-- states the four interpretation rules first;
+- states the five interpretation rules first;
 - compares run configuration, corpus label, coverage, canonical evaluator
   count, skips/failures, runtime, and recorded cost;
 - provides a catalog entry for all 13 active evaluators;
-- reports an observed mean/range only within one evaluator across its completed
-  results; and
+- reports descriptive means within one run and calculates deltas only for
+  declared baselines matched on question and evaluator (FP10 hardening); and
 - never averages lexical, semantic, retrieval, judge, and human dimensions into
   one unexplained grade.
 
@@ -289,8 +293,8 @@ exist.
 ## API and Schema Surface
 
 `GET api/evaluations.php` returns the current dataset, questions, full evaluator
-contracts, runs, response summaries, per-metric findings, layer counts, and
-interpretation rules.
+contracts, runs, response summaries, run-scoped/matched findings, layer counts,
+and interpretation rules.
 
 `GET api/evaluations.php?response_id=17` returns the saved answer/reference,
 frozen run settings, exact contexts, canonical evaluator rows, attempt
@@ -311,11 +315,12 @@ New schema/migration elements include:
 
 ## Verification Completed
 
-- 34 Python unit/static regression tests pass.
+- 34 Python unit/static regression tests passed at the FP8/FP9 checkpoint; the
+  July 21 frontend-first suite now contains 54 provider-free tests.
 - All PHP files pass syntax lint.
 - Browser JavaScript passes `node --check`.
-- Dataset API returns 25 questions, 13 evaluators, 3 legacy runs, and 5 saved
-  response rows in the current local database.
+- Dataset API returns 25 questions and 13 evaluators. After the bounded FP10
+  proof, it returns 4 runs and 6 response summaries for the active dataset.
 - Response 17 returns 8 real baseline results, 8 immutable attempts, and 3
   exact saved contexts.
 - The human-review endpoint created two versions for one temporary reviewer,
@@ -323,10 +328,12 @@ New schema/migration elements include:
   the public current-review count returned to zero.
 - RAGAS 0.4.3 collections classes import successfully with the pinned
   compatibility dependency.
-- Advanced evaluation dry-run produces five planned, paid applications and
-  makes no external call.
+- The July 20 bounded proof and authorized follow-up stored one completed
+  LLM-judge result and four completed RAGAS results for response 19. Earlier
+  async-adapter, missing-extra, and free-tier throttle failures remain in the
+  immutable attempt history; the current canonical rows are completed.
 - Genuine MySQL retrieval ranks the expected Fall 2026 source first.
-- Desktop Experiments and Findings views were rendered and visually inspected;
+- Desktop Evaluation and Compare Runs views were rendered and visually inspected;
   responsive rules collapse all multi-column evaluation sections on narrow
   screens.
 
@@ -334,8 +341,8 @@ New schema/migration elements include:
 
 The implementation enables, but does not fabricate, these next steps:
 
-1. approve pricing and run one advanced response through all five evaluators;
-2. inspect raw outputs, applicability, latency, and provider usage;
+1. inspect raw outputs, applicability, latency, and provider usage;
+2. expand the reviewed evaluation set from 25 to the requested 50 questions;
 3. repeat the judge on a stratified subset to observe variability;
 4. collect independent human reviews for disagreements and failure cases;
 5. run a complete fixed Chroma baseline if budget permits;

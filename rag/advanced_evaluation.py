@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -12,6 +13,7 @@ from typing import Any, Callable, Literal
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field
+from ragas.llms.base import InstructorBaseRagasLLM
 
 from evaluation import EvaluationInput, EvaluationResult, normalize_text
 from evaluator_catalog import ADVANCED_DEFINITIONS, definition_for
@@ -60,6 +62,30 @@ class AdvancedExecution:
 
 JudgeProvider = Callable[[str, Settings], ProviderExecution]
 RagasFactory = Callable[[Settings], tuple[dict[str, Any], Any | None]]
+
+
+class AsyncCompatibleRagasLLM(InstructorBaseRagasLLM):
+    """Expose RAGAS' async contract over a synchronous structured-output LLM.
+
+    RAGAS 0.4.3's collection metrics call ``agenerate`` even when their public
+    ``score`` method is used. Its Google GenAI factory currently returns a
+    synchronous Instructor client, so the unadapted object raises before any
+    metric can run. Moving the synchronous generation into a worker thread
+    satisfies the async metric pipeline without changing providers or SDKs.
+    """
+
+    def __init__(self, delegate: Any) -> None:
+        self._delegate = delegate
+
+    def generate(self, prompt: str, response_model: Any) -> Any:
+        return self._delegate.generate(prompt, response_model)
+
+    async def agenerate(self, prompt: str, response_model: Any) -> Any:
+        return await asyncio.to_thread(
+            self._delegate.generate,
+            prompt,
+            response_model,
+        )
 
 
 def build_judge_prompt(item: EvaluationInput) -> str:
@@ -156,13 +182,25 @@ def estimate_cost(
 ) -> float | None:
     if input_tokens is None and output_tokens is None:
         return None
+    if not (
+        settings.evaluator_input_cost_per_million
+        or settings.evaluator_output_cost_per_million
+    ):
+        return None
     input_cost = (input_tokens or 0) * settings.evaluator_input_cost_per_million / 1_000_000
     output_cost = (output_tokens or 0) * settings.evaluator_output_cost_per_million / 1_000_000
     return round(input_cost + output_cost, 8)
 
 
-def estimated_application_cost(settings: Settings, evaluator_key: str) -> float:
-    """Conservative preflight estimate; zero means pricing was not configured."""
+def estimated_application_cost(
+    settings: Settings, evaluator_key: str
+) -> float | None:
+    """Return a conservative per-application estimate when pricing is configured."""
+    if not (
+        settings.evaluator_input_cost_per_million
+        or settings.evaluator_output_cost_per_million
+    ):
+        return None
     multiplier = {
         "llm_judge": 1,
         "ragas_faithfulness": 2,
@@ -266,12 +304,13 @@ def build_ragas_scorers(settings: Settings) -> tuple[dict[str, Any], Any | None]
 
     client = genai.Client(api_key=settings.llm_api_key)
     try:
-        llm = llm_factory(
+        synchronous_llm = llm_factory(
             settings.evaluator_model,
             provider="google",
             client=client,
             temperature=settings.evaluator_temperature,
         )
+        llm = AsyncCompatibleRagasLLM(synchronous_llm)
         embeddings = HuggingFaceEmbeddings(model=settings.evaluator_embedding_model)
         scorers = {
             "ragas_faithfulness": Faithfulness(llm=llm),

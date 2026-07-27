@@ -9,11 +9,10 @@
 
     <nav class="side-nav" id="mainNavigation" aria-label="Workspace sections">
         <a class="active" href="#overview" data-view="overview">Overview</a>
-        <a href="#ask" data-view="ask">Playground</a>
-        <a href="#evaluation" data-view="evaluation">Dataset</a>
-        <a href="#results" data-view="results">Experiments</a>
-        <a href="#documents" data-view="documents">Sources</a>
-        <a href="#report" data-view="report">Findings</a>
+        <a href="#ask" data-view="ask">Chat</a>
+        <a href="#documents" data-view="documents">Documents</a>
+        <a href="#evaluation" data-view="evaluation">Gold Standard</a>
+        <a href="#results" data-view="results">Evaluation</a>
     </nav>
 
     <div class="sidebar-note">

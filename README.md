@@ -13,15 +13,22 @@ composition affect retrieval and evaluation results.
 
 FP6 implements browser document administration and normalized multi-format
 ingestion. Administrators can upload and list TXT, text-based PDF, and DOCX
-files, then replace or delete browser-uploaded documents. Replacement uses
-another file of the same type. PHP validates upload status, size, extension,
-and MIME type; stores files
+files, then replace or de-index any active document. A same-name upload is
+paused behind an explicit **Replace existing** or **Cancel upload** decision.
+After confirmation it is treated as delete-plus-add only after the new file
+ingests successfully. The old Chroma IDs are deleted and read back for
+verification before the old database record is removed, and a successful
+corpus change clears any already-rendered Chat source preview. PHP
+validates upload status, size, extension, and MIME type; stores files
 under random server-controlled names; and calls the Python ingestion bridge.
 Python extracts and validates text, then sends every supported format through
 the same chunking, MySQL, and ChromaDB workflow. The interface reports status,
 chunk counts, and actionable parser errors. Uploaded files remain in ignored
-runtime storage. Dashboard document/category counts update from the indexed
+runtime storage. Dashboard document/category/chunk counts update from the indexed
 database records after each upload, replacement, deletion, or manual refresh.
+The library can be searched, filtered, sorted, and grouped by category. Delete
+All clears the active MySQL/Chroma index with explicit confirmation; bundled
+seed files remain on disk only so the starting corpus can be restored.
 
 The FP5 core remains operational. The 27 local
 Metro State documents are split into 77 chunks, tracked in MySQL, embedded with
@@ -31,19 +38,25 @@ earlier keyword baseline. `rag/answer.py` completes the non-GUI RAG round trip
 by sending retrieved context to Gemini, returning a grounded answer with
 sources, and saving the response and retrieved contexts in MySQL.
 
-The PHP Ask interface now uses that verified workflow through a server-side
-JSON endpoint. Users can submit a question in the browser, view the grounded
-answer and ranked source excerpts, and see the model, latency, and saved
-response ID.
+The PHP Chat interface uses that workflow through a server-side JSON endpoint.
+The browser exposes an approved-model selector, retrieval method, number of
+source chunks, temperature, and top-p instead of requiring `.env` edits for
+every question. A provider-free
+source preview makes those retrieval choices inspectable even while paid
+generation is paused. When a local operator deliberately enables generation
+after configuring pricing and a cap, users can submit a question, view the
+grounded answer and ranked source excerpts, and inspect the exact settings,
+model, usage, latency, saved-response, and retrieval-score provenance.
 
 FP7 is implemented and verified. The repository includes an
 idempotent, versioned 25-question reviewed dataset with expected answers, sources,
 evidence, accepted variants, required facts, category, difficulty, and
 answerability metadata. The redesigned task-focused browser explains the full
-Sources -> Dataset -> Experiments -> Findings workflow. Dataset cards expose
-cited evidence and manual review controls, while Experiments shows dataset/run
-coverage, limited or failed run explanations, compact run navigation, and an
-automatically populated response inspector. The additive
+Documents -> Chat -> Gold Standard -> Evaluation workflow. Gold Standard cards
+expose cited answer-key evidence and manual review controls, while Evaluation shows test-run
+scope, user-facing question navigation, actionable earlier-attempt history, and
+an automatically populated answer inspector. Internal response IDs are shown
+only inside expandable technical provenance. The additive
 schema stores evaluator definitions plus heterogeneous raw per-response results.
 Eight local evaluators are registered: exact/contains, required-fact coverage,
 token F1, ROUGE-L, embedding semantic similarity, BERTScore, expected-source
@@ -63,18 +76,48 @@ a latest-attempt canonical row keeps browser reads simple. New controlled runs
 freeze dataset/settings/document-manifest provenance and can compare Chroma
 with genuine MySQL FULLTEXT retrieval or use reproducible category subsets.
 
-The Experiments browser now explains four independent evidence layers
-(baseline, advanced, human, and operations), shows every score's basis,
-calculation, scale, threshold status, and limitation, exposes attempt
-variability, and supports versioned evidence-backed human response reviews.
-Findings compares run coverage/configuration and summarizes each evaluator
+The Evaluation browser now separates the automatic methods into eight local
+metrics, one LLM judge, and four RAGAS metrics. For each saved answer it reports
+completed, failed, skipped, and not-run methods instead of counting every
+stored status row as a successful result. Human review is explicitly labeled as
+supporting evidence rather than a fourth automatic evaluator. Every score still
+shows its basis, calculation, scale, threshold status, limitation, attempts,
+and audit metadata.
+The run-comparison view compares run coverage/configuration and summarizes each evaluator
 independently; it does not combine unlike metrics into a mystery grade.
+Each run now has a browser **Score saved answers** workflow with a provider-free
+preflight. Users can reapply all eight local metrics to the full run or all 13
+methods to one explicitly selected answer under the configured provider-call
+cap; Evaluation never silently chooses the first database response. Each metric
+card shows the selected answer's score beside that metric's cumulative mean
+across all completed stored tests; an expandable table also preserves the
+current-test and all-test means. Each saved answer has a direct **Evaluate**
+action that selects the exact all-13 target and performs a guarded preflight.
+The **New test run** form lets a browser-only user choose a bounded number of
+reviewed questions, approved model, retrieval method, top-k, temperature, and
+top-p; preview model calls/cost; and generate a saved test with its local-eight
+scores without using the terminal.
 
-No paid advanced evaluation was executed during implementation. The advanced
-runner's dry-run and compatibility path are verified, but real RAGAS/judge
-scores and empirical FP9 conclusions require an explicitly authorized,
-cost-bounded run. See the detailed
-[FP8/FP9 implementation record](docs/fp8-fp9-implementation.md).
+FP10 hardening is complete. New responses freeze the reviewed answer key,
+dataset version, exact retrieved source identity, raw ranking signals, retrieval
+algorithm version, and code fingerprint. Historical responses are labeled as
+legacy backfills instead of being presented as fully reproducible. Generation
+usage and cost status distinguish unknown pricing from zero cost. Baseline,
+advanced, direct CLI, and browser generation paths now require explicit paid
+authorization, call-count caps, and known-price estimates or a separate
+unknown-cost override. Compare Runs only calculates run-to-run deltas for declared
+baseline pairs matched on question and evaluator.
+
+On July 20, 2026, an explicitly authorized FP10 proof generated one saved
+response and completed the LLM judge. The first RAGAS attempts exposed a
+synchronous/async adapter defect and a missing Google structured-output extra;
+both failures remain in immutable attempt history. After the fixes, bounded
+retries completed all four RAGAS metrics. The free tier required a cooldown
+between the last two metrics. This is a pipeline validation for one response,
+not a comparative finding. See the detailed
+[FP8/FP9 implementation record](docs/fp8-fp9-implementation.md),
+[FP10 hardening record](docs/fp10-hardening.md), and
+[reference-repository comparison](docs/reference-repository-comparison.md).
 
 ## Research Direction
 
@@ -90,8 +133,8 @@ document collection with the full collection to observe how added documents and
 similar distractors affect retrieval and metric behavior. See the
 [research plan](docs/research-plan.md) for the detailed questions, experiments,
 interpretation rules, and FP6-FP10 roadmap.
-The [evaluation strategy](docs/evaluation-strategy.md) defines the proposed ten
-evaluator types, controlled protocol, trade-off questions, and FP7 resume point.
+The [evaluation strategy](docs/evaluation-strategy.md) documents the evaluator
+families, controlled protocol, trade-off questions, and research sequence.
 
 ## Technology Stack
 
@@ -134,32 +177,81 @@ http://127.0.0.1:8000/
 Expected result:
 
 - The RAG Evaluation Workspace page loads.
-- Overview explains the Sources -> Dataset -> Experiments -> Findings lifecycle
-  and shows live corpus, category, reviewed-question, and evaluator counts.
-- Playground accepts questions and displays a Gemini answer with ranked sources.
-- Dataset shows the sampled gold test set, cited evidence, filters, and manual
+- Overview explains the Documents -> Chat -> Gold Standard -> Evaluation lifecycle
+  and shows live corpus, category, chunk, reviewed-question, and evaluator counts.
+- Chat shows whether generation is enabled and exposes approved model, retrieval,
+  top-k, temperature, and top-p settings. Preview Sources performs retrieval without
+  a model call; Ask displays a Gemini answer only after the operator opts in.
+  The page explains that controlled evaluation runs call this same retrieval and
+  answer pipeline.
+- Gold Standard shows the reviewed answer-key questions, cited evidence, filters, and manual
   review status. `Reviewed` means source-verified; it does not mean the question
-  has already been sent through an experiment.
-- Experiments shows each run's coverage against the 25-question dataset, saved
-  responses, generated/reference answers, evaluator signals, and retrieved
-  evidence. The newest available response opens automatically.
-- Sources uploads, lists, replaces, and deletes supported documents.
-- Findings shows live run/configuration comparisons, interpretation rules, and
-  the score contract and observed same-metric range for all 13 evaluators.
+  has already been sent through a test run. A visible flow connects reviewed
+  question -> same Chat pipeline -> saved answer -> metric results.
+- Evaluation previews and generates bounded new tests, then shows each saved
+  test's scope against the 25-question answer key, saved answers,
+  generated/reference answers, evaluator signals, and retrieved
+  evidence. Each response summarizes local, judge, RAGAS, and human-review
+  status before the individual named metrics. The newest available response
+  opens automatically. Every test includes **Score saved answers** with
+  provider-free local-eight or exact-answer all-13 scope, reuse, call-count, and
+  cost information. Earlier interrupted attempts are collapsed separately.
+- Documents uploads, organizes, replaces, deletes, or clears supported documents.
+- Compare Runs, reached from Evaluation, shows live configuration evidence, question-matched baseline
+  deltas when valid pairs exist, run-scoped summaries, interpretation rules,
+  and the score contract for all 13 evaluators.
+
+The sections have deliberately different jobs:
+
+| Section | What the user does | What it is not |
+| --- | --- | --- |
+| Chat | Tries one question and adjusts its retrieval/generation settings | A controlled batch comparison |
+| Documents | Chooses the information the assistant may retrieve | The evaluation answer key |
+| Gold Standard | Reviews the questions, expected answers, and evidence used as the test answer key | Chat history or saved model answers |
+| Evaluation | Creates bounded tests, scores saved answers, and inspects answers, scores, and sources | A place to edit the answer key or an assumption that scoring regenerates an answer |
+
+A **test run** (internally still stored as an experiment run) means that several
+reviewed Gold Standard questions were answered with one fixed configuration. This
+is what makes later configuration comparisons meaningful.
+
+Chat and evaluation runs do not use separate RAG systems. `rag/answer.py` implements
+the shared retrieve-and-generate path. Chat can send any question to it;
+`rag/run_evaluation.py` sends reviewed answer-key questions to the same
+`answer_question()` function, saves each response with its question/run link,
+and then calls the evaluators. The expected answer and source make reference-
+based scoring possible for Gold Standard questions but usually do not exist for an
+arbitrary Chat question.
 
 To stop the PHP server, return to the terminal and press `Ctrl+C`.
 
-The browser Ask form posts to `api/ask.php`. The endpoint validates the
-question, runs the project virtual environment's `rag/answer.py --json`, and
-returns structured answer/source data without exposing the Gemini key to the
-browser.
+The browser Chat form posts JSON to `api/ask.php`. The endpoint validates the
+question plus approved model, retrieval method, top-k, temperature, and top-p. Its `preview`
+action runs guarded retrieval with `rag/answer.py --dry-run --json` and never
+calls Gemini. Its `answer` action refuses the request unless
+`ALLOW_PAID_GENERATION=1`; when enabled, it runs the project virtual
+environment's guarded `rag/answer.py --json` command and returns structured
+answer/source data without exposing the Gemini key to the browser. The selected
+configuration is passed to generation and stored with a saved response. Unknown provider pricing additionally requires
+`ALLOW_UNKNOWN_GENERATION_COST=1`; `MAX_GENERATION_COST` bounds one call.
+
+Evaluation's **New test run** form posts to `api/test_runs.php`. The endpoint
+uses the same approved model allowlist and generation safety flags, and
+`MAX_TEST_RUN_RESPONSES` bounds the number of synchronous browser-generated
+answers. Preview is no-write; Generate saves the new answers/contexts and
+applies the provider-free local eight. **Score saved answers** posts to
+`api/run_evaluation.php` and can target one exact answer for the all-13 mode.
 
 The Documents form uses `api/documents.php`. Uploaded files must be UTF-8 TXT,
 text-based PDF, or DOCX and no larger than 10 MB. Scanned PDFs without
-extractable text and encrypted PDFs are rejected. Replacement and deletion are
-limited to browser-uploaded documents, and replacement must keep the same file
-type. Deletion removes the uploaded file, MySQL record/chunks, and matching
-ChromaDB vectors; the 27 bundled Metro State documents are protected.
+extractable text and encrypted PDFs are rejected. A same-name upload first asks
+the user to replace the existing document or cancel. After replacement is
+confirmed, all older active records with that filename are removed only after
+the new copy succeeds and the old vector deletion is verified.
+Deletion removes the selected MySQL record/chunks and matching Chroma vectors;
+uploaded files are also removed from storage. Bundled sources can be removed
+from the active index without deleting their tracked recovery files. Adding,
+deleting, or replacing one source changes only that source's chunks/vectors;
+the rest of the corpus is not re-embedded.
 
 ## FP6 Setup
 
@@ -172,9 +264,11 @@ python -m pip install -r rag\requirements.txt
 Copy-Item .env.example .env
 ```
 
-Edit `.env` with the local MySQL connection values and set `GEMINI_API_KEY` or
-`LLM_API_KEY` for answer generation. Start MySQL, then create the schema and
-ingest both storage layers:
+Edit `.env` with the local MySQL connection values. Before any model-backed
+execution, set the provider's current per-million token prices. Add
+`GEMINI_API_KEY` or `LLM_API_KEY` only when answer generation is needed, and
+leave `ALLOW_PAID_GENERATION=0` until a paid call is deliberately authorized.
+Start MySQL, then create the schema and ingest both storage layers:
 
 ```powershell
 python rag\ingest.py --init-schema
@@ -190,6 +284,12 @@ ChromaDB collection now contains 77 embedded chunks.
 
 Rerunning the same command replaces the existing chunk records instead of
 creating duplicates.
+
+In the browser, choosing a filename that is already active displays an explicit
+**Replace existing** or **Cancel upload** decision. Replacement ingests the new
+copy first, verifies deletion of the old Chroma vectors, and only then removes
+the old database record and uploaded file. This prevents old chunks from
+remaining eligible for Chat source preview.
 
 The Python requirements include `pypdf` and `python-docx`. On Windows, ensure
 these lines are enabled in the PHP installation's active `php.ini`:
@@ -225,17 +325,18 @@ Check the retained filesystem keyword troubleshooting baseline:
 python rag\query.py "When does Fall 2026 registration begin?" --retrieval keyword --top-k 3
 ```
 
-Run the complete retrieval-to-answer flow:
+Preview the complete retrieval-to-answer prompt without a provider call:
 
 ```powershell
-python rag\answer.py "When does Fall 2026 registration begin?"
+python rag\answer.py "When does Fall 2026 registration begin?" --dry-run --json
 ```
 
-The command retrieves Chroma context, asks Gemini to answer only from that
-context, displays the sources, and saves the answer, settings, latency, and
-retrieved chunk links in MySQL. Use `--dry-run` to inspect the prompt without an
-API call, `--no-save` to skip persistence, or `--json` for machine-readable
-output.
+After reviewing the prompt, configured prices, and cap, an authorized call uses
+`--allow-paid`. If pricing cannot be configured, a second deliberate
+`--allow-unknown-cost` override is required. The command stores provider usage,
+cost status, answer-key snapshot, code version, settings, latency, retrieved
+excerpts, immutable source hashes, and raw/final ranking signals. Use
+`--no-save` to skip persistence or `--json` for machine-readable output.
 
 The live FP5 verification confirmed both behaviors: an answerable registration
 question returned March 23, 2026 with the correct calendar source, and an
@@ -255,11 +356,15 @@ Run the Python unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 34 tests covering TXT/PDF/DOCX loading, empty and
+The current suite contains 54 tests covering TXT/PDF/DOCX loading, empty and
 binary input rejection, metadata-preserving chunking, stable IDs, retrieval
 reranking, grounded prompts, refusal instructions, answer orchestration, local
 evaluators, advanced evaluator mapping/applicability/cost/failure isolation,
-score contracts, and frontend evaluation-layer regressions.
+score contracts, immutable evaluation snapshots, retrieval provenance,
+unknown-cost handling, matched-comparison rules, verified vector cleanup, and
+frontend regressions for duplicate replacement and exact-answer evaluation.
+The provider-free checks also run in `.github/workflows/quality.yml` on pushes
+and pull requests; the workflow has no database credentials or provider keys.
 
 ## FP7 Evaluation Foundation
 
@@ -271,11 +376,16 @@ python rag\evaluation.py --seed --json
 ```
 
 Review questions in the browser before running paid generation. Only active
-questions marked `reviewed` are selected by the runner. A bounded proof run is:
+questions marked `reviewed` are selected by the runner. A bounded no-write
+preflight is:
 
 ```powershell
-python rag\run_evaluation.py --dataset-id 5 --limit 3 --json
+python rag\run_evaluation.py --dataset-id 5 --limit 3 --dry-run --json
 ```
+
+Execution requires `--allow-paid`, the default five-response cap, and a known
+price estimate below `--max-estimated-cost`. If pricing is intentionally
+unavailable, `--allow-unknown-cost` is also required.
 
 Use the dataset ID returned by the seed command; it may differ on another
 database. To apply or reapply selected local evaluators to an existing saved
@@ -317,23 +427,29 @@ python rag\ingest.py --init-schema --json
 python rag\evaluation.py --seed --json
 ```
 
-Always preview advanced work first. This command reads response 17 and reports
-applicable, reused, and skipped methods without calling an external model:
+Always preview advanced work first. This command reads the live FP10 proof
+response and reports applicable, reused, and skipped methods without calling an
+external model:
 
 ```powershell
-python rag\run_advanced_evaluation.py --response-id 17 --dry-run --json
+python rag\run_advanced_evaluation.py --response-id 19 --dry-run --json
 ```
 
 External advanced calls require the deliberate `--allow-paid` flag as well as
 application and estimated-cost caps. Configure evaluator provider/model and
 current per-million token prices in `.env`; zero price defaults mean "price not
-configured," not "free." The runner can preserve 1-10 attempts per method and
-reuses a completed active-version result unless `--force` is specified.
+configured," not "free," and execution then remains blocked unless
+`--allow-unknown-cost` is also supplied. The runner can preserve 1-10 attempts
+per method and reuses a completed active-version result unless `--force` is
+specified.
 
 The RAGAS integration uses its modern collections API and pins
-`ragas==0.4.3` with `langchain-community==0.4.1` for compatibility. RAGAS and
-the judge operate on the already-saved answer and ordered contexts; they never
-regenerate the RAG answer.
+`ragas==0.4.3`, `langchain-community==0.4.1`, and
+`instructor[google-genai]==1.15.4` for compatibility. An
+async-compatible adapter bridges RAGAS' `agenerate()` calls to the synchronous
+Google GenAI structured-output client. RAGAS and the judge operate on the
+already-saved answer and ordered contexts; they never regenerate the RAG
+answer.
 
 Create new controlled runs with explicit retrieval and experiment metadata:
 
@@ -341,7 +457,7 @@ Create new controlled runs with explicit retrieval and experiment metadata:
 python rag\run_evaluation.py --dataset-id 5 --limit 1 `
   --retrieval mysql_keyword --top-k 3 `
   --experiment-key retrieval-method-v1 `
-  --corpus-variant full-current --json
+  --corpus-variant full-current --dry-run --json
 ```
 
 Use the actual dataset ID returned locally. New runs freeze their dataset,
@@ -349,8 +465,15 @@ retrieval/generation settings, category subset, ordered document manifest and
 hash, and evaluator list. Existing FP7 runs are honestly labeled as partial
 legacy provenance.
 
-Open `#results` for the four-layer response inspector and response-review
-rubric. Open `#report` for the Findings workspace. Dataset review controls
+A comparison run must use the same dataset as a completed baseline and declare
+the controlled change, for example `--baseline-run-id 4
+--change-from-baseline "retrieval method: Chroma to MySQL FULLTEXT"`. Compare Runs
+will still withhold a delta unless both runs scored the same question with the
+same evaluator.
+
+Open `#results` for the per-response local/LLM-judge/RAGAS status summary,
+individual metric cards, and response-review rubric. Open `#report` for Compare
+Runs. Evaluation review controls
 verify expected test data; the human-review form separately evaluates a saved
 generated response using the shown reference and contexts.
 
@@ -377,8 +500,10 @@ It defines tables for:
 
 `rag/ingest.py --init-schema` imports the schema and applies ordered migrations.
 FP8/FP9 add run provenance, immutable attempts, human reviews, and the MySQL
-FULLTEXT index while preserving earlier data. Legacy runs are explicitly
-labeled as partial provenance rather than assigned invented historical values.
+FULLTEXT index. FP10 adds response answer-key snapshots, immutable context
+identity/ranking provenance, code fingerprints, and generation usage/cost
+status while preserving earlier data. Legacy runs are explicitly labeled as
+partial provenance rather than assigned invented historical values.
 
 ## Configuration
 
@@ -403,6 +528,8 @@ Current safe example values are stored in:
 - [RAG evaluation research plan](docs/research-plan.md)
 - [Evaluator strategy and controlled protocol](docs/evaluation-strategy.md)
 - [FP8/FP9 implementation record and reproduction guide](docs/fp8-fp9-implementation.md)
+- [FP10 hardening record](docs/fp10-hardening.md)
+- [Original project notes](project-notes.md)
 
 ## Source Documents
 
@@ -416,8 +543,9 @@ Current local source set:
 - 27 text documents
 - 8 document categories
 
-FP6 adds browser upload, live listing/counts, protected replacement/deletion,
-and server-side parsing for TXT, text-based PDF, and DOCX documents. Uploaded
+The browser adds upload, live document/category/chunk counts, search/filter/sort,
+same-name replacement, per-document deletion, Delete All, and server-side parsing
+for TXT, text-based PDF, and DOCX documents. Uploaded
 files and generated vector data remain local runtime data and must not be
 committed.
 

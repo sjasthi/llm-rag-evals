@@ -11,9 +11,9 @@ Per-Credit Fees
 - Parking Fee: $13 per credit. Supports construction, maintenance, and operation of campus parking facilities.
 
 Other Fees
-- Graduate application fee: $20
-- Doctoral application fee: $40
-- Graduation fee: $20
+- Graduate application fee: $30
+- Doctoral application fee: $60
+- Graduation fee: $25
 - Returned payment fee: $20
 - Tuition late fee: $30
 - Transcript fees: $8 standard, $13 rush, $5 online

@@ -259,8 +259,11 @@ Implemented FP7 evidence:
 Implementation status: evaluator contracts, judge/RAGAS adapters, immutable
 attempts, applicability/failure handling, cost-bounded runner, human-review
 schema, reproducible run metadata, MySQL retrieval, and category corpus variants
-were completed and verified July 14, 2026. No paid advanced scores were created;
-empirical execution is still required.
+were completed and verified July 14, 2026. No paid advanced scores were created
+during that implementation pass. A separate July 20 bounded proof later stored
+one completed LLM-judge result. The preserved RAGAS adapter/dependency failures
+were corrected, and bounded retries completed all four RAGAS metrics for that
+same response. Broader empirical execution and human calibration are still required.
 
 - Add a versioned LLM-as-judge rubric plus RAGAS Faithfulness, Response
   Relevancy, Context Precision, and Context Recall.
@@ -271,15 +274,17 @@ empirical execution is still required.
 - Add a sampled human response-review rubric separate from Dataset review.
 - Label FP7 cutoffs as project-defined and test them against reviewed cases.
 - Explain each score's basis, calculation, scale, threshold, and limitation in
-  the Experiments UI.
+  the Evaluation UI.
 - Run controlled retrieval/top-k and corpus-size/composition experiments.
 - Analyze disagreements and label failure cases.
 
-### FP9: Results, Interpretation, and System Testing
+### FP9: Evaluation Results, Interpretation, and System Testing
 
-Implementation status: the four-layer Experiments drill-down, score-contract
-explanations, human-review form, disagreement prompts, run comparison, Findings
-rules, and full evaluator catalog were completed and verified July 14, 2026.
+Implementation status: the drill-down now housed under Evaluation, score-contract explanations,
+human-review form, disagreement prompts, run comparison, interpretation rules,
+and full evaluator catalog were completed and verified July 14, 2026. The final
+clarity pass groups automatic results as Local metrics, LLM judge, and RAGAS,
+with Human review labeled separately as supporting evidence.
 Preliminary findings await matched run and review evidence.
 
 - Build dashboard comparisons and drill-down views.
@@ -289,6 +294,13 @@ Preliminary findings await matched run and review evidence.
 - Complete accessibility, upload security, and end-to-end testing.
 
 ### FP10: Final Research Report and Delivery
+
+Implementation status (July 20, 2026): application stabilization,
+reproducibility/cost safeguards, matched-comparison rules, accessibility,
+provider-free CI, documentation, and FP10 demonstration/checkoff preparation
+are complete. Empirical advanced runs, human calibration, matched experiments,
+final evidence-based recommendations, presentation delivery, and release tag
+remain pending.
 
 - Stabilize the application and reproducible experiment procedure.
 - Finalize findings, limitations, and future-research questions.

@@ -1,10 +1,11 @@
 # UX Design
 
-Implementation status: the task-focused shell, four-layer Experiments
-inspector, score contracts, human-review workflow, and evidence-first Findings
-workspace described below are implemented as of July 14, 2026. Remaining UX
-work is empirical refinement after complete comparison runs, not another broad
-frontend redesign.
+Implementation status: the task-focused shell, configurable Chat, provider-free
+source preview, status-first Evaluation inspector, score contracts, human-review
+workflow, and evidence-first run comparison described below are implemented as
+of July 20, 2026. The July 20 simplification pass renamed the user-facing
+sections around tasks while retaining the richer experiment data model behind
+them.
 
 ## Design Goal
 
@@ -17,13 +18,16 @@ developers to diagnose retrieval and answer-quality problems.
 The frontend uses task-focused views rather than one long dashboard. Navigation
 preserves a stable URL hash for each workspace:
 
-- Overview: research purpose, current baseline, corpus, dataset, and evaluator counts.
-- Playground: one interactive question with its answer and evidence side by side.
-- Dataset: reviewed question coverage, filters, expected answers, and review state.
-- Experiments: immutable run history with a two-pane response inspector for
+- Overview: purpose, current corpus, test-question, and evaluator counts.
+- Chat: one interactive question with configurable retrieval/generation settings,
+  its answer, and evidence side by side.
+- Documents: source ingestion and a contained source library.
+- Evaluation: reviewed test-question coverage, expected answers, cited evidence,
+  and review state.
+- Results: immutable batch-run history with a two-pane response inspector for
   outputs, references, evaluator signals, runtime, and retrieved contexts.
-- Sources: document ingestion and a contained source library.
-- Findings: conclusions, failure patterns, metric trade-offs, and recommendations.
+- Compare Runs: a secondary view reached from Results for matched comparisons,
+  failure patterns, metric trade-offs, and recommendations.
 
 This lifecycle follows established LLM-evaluation product patterns: iterate on
 one case in a playground, maintain a versioned dataset, preserve experiments,
@@ -42,14 +46,34 @@ milestone organization as the primary user experience.
 
 ## Information Architecture
 
-The main navigation contains:
+The main navigation contains five task labels:
 
 - Overview: project purpose, current capabilities, and entry points.
-- Playground: question-answer interface with retrieved evidence.
-- Dataset: manage reviewed questions and coverage.
-- Experiments: compare saved runs and inspect individual responses.
-- Sources: upload and manage Metro State documents.
-- Findings: summarize research evidence, recommendations, and limitations.
+- Chat: ask one question, choose settings, preview sources, and inspect evidence.
+- Documents: upload and manage Metro State documents.
+- Evaluation: manage the reviewed answer key and coverage.
+- Results: inspect saved batch runs and individual responses.
+
+Compare Runs is intentionally reached from Results instead of occupying the
+main navigation. This keeps advanced research analysis available without making
+it part of the first-time user's required path.
+
+## Plain-Language Evaluation Model
+
+The user-facing model is:
+
+1. Evaluation contains the test answer key: a reviewed question, expected
+   answer, and expected evidence.
+2. A test run sends several reviewed questions through the same retrieval and
+   generation pipeline used by Chat, with one fixed configuration.
+3. Results stores each generated answer, its retrieved sources, and separate
+   metric statuses for every answered question.
+4. Compare Runs only claims a difference when the same questions and the same
+   quality check exist in both runs.
+
+“Dataset” and “experiment” remain valid research/database terms, but they are
+not used as unexplained primary navigation labels. Chat history is never the
+evaluation answer key.
 
 ## Key Screens
 
@@ -61,7 +85,12 @@ asking a question, managing documents, and viewing evaluations.
 ### Ask a Question
 
 Uses a focused question form. The result area displays the answer first,
-followed by source citations and expandable retrieved chunks.
+followed by source citations and retrieved chunks. Users can choose vector or
+keyword retrieval, top-k, temperature, and top-p in the browser. A settings
+summary makes the active configuration visible, Reset Defaults restores the
+environment-backed choices, and Preview Sources runs retrieval without a paid
+model call. Answer generation remains disabled unless the local paid-call guard
+is explicitly enabled.
 
 ### Evaluation Dashboard
 
@@ -80,19 +109,20 @@ show its method family, score, explanation/details, runtime, cost estimate,
 version/configuration, and error state. Users must be able to hold a question
 and saved response fixed while comparing evaluator outputs side by side.
 
-FP8 organizes evaluation evidence into four visibly separate layers:
+The Evaluation UI names three automatic method families instead of presenting an
+abstract numbered layer model:
 
-1. Baseline/local: lexical, required-fact, token-overlap, semantic, BERTScore,
-   expected-source, and refusal signals.
-2. Advanced: versioned LLM-as-judge plus RAGAS Faithfulness, Response
-   Relevancy, Context Precision, and Context Recall.
-3. Human calibration: sampled response reviews and failure labels.
-4. Operations: response/evaluator runtime, model usage, estimated cost, skips,
-   and errors.
+- Local metrics: lexical, required-fact, token-overlap, semantic, BERTScore,
+  expected-source, and refusal signals.
+- LLM judge: one versioned rubric evaluator.
+- RAGAS: Faithfulness, Response Relevancy, Context Precision, and Context Recall.
 
-These layers do not vote on or generate the answer. They describe different
-properties of one already-saved answer and its exact contexts. The default UI
-must present a dimensional profile rather than an average of unlike scores.
+Human review is labeled as supporting calibration evidence, not another
+automatic evaluator. Runtime, usage, cost, skips, and failures are operational
+metadata. None of these methods vote on or generate the answer: they describe
+different properties of one already-saved answer and its exact contexts. The
+default UI presents a dimensional profile rather than an average of unlike
+scores.
 
 ### Score Explanation Contract
 
@@ -123,32 +153,79 @@ labels `Correct` and `Incorrect` on thresholded similarity cards. Prefer
 `Above review threshold`, `Below review threshold`, `Not applicable`,
 `Skipped`, and `Failed`.
 
-### Implemented Experiments Workspace
+### Implemented Evaluation Workspace
 
-The run browser makes experiment coverage and purpose explicit. Each run
-summary shows:
+Evaluation leads with the boundary between generating and scoring: **New test
+run** creates answers, while **Score saved answers** only applies metrics to
+text that already exists. A bounded browser form exposes approved model,
+retrieval, top-k, temperature, top-p, and reviewed-question count with a
+call/cost preview.
 
-- executed responses versus dataset size, for example `3 of 25`;
-- dataset version and corpus variant;
-- retrieval method, top-k, answer model, and the one controlled variable;
-- evaluator coverage by baseline/advanced/human/operations layer;
-- completed, skipped, and failed evaluator counts; and
-- total runtime and estimated cost when available.
+The saved-test browser makes scope and purpose explicit. Completed tests appear
+first; interrupted records are collapsed under **Earlier attempts needing
+attention** with a recovery explanation. Each test summary shows:
+
+- saved-answer scope versus the Gold Standard;
+- saved method-result slots versus the 13 available methods;
+- whether all 13, the local eight, or only partial results are available;
+- concise completed/skipped/failed status; and
+- expandable model/retrieval settings and technical run identity.
 
 The newest available response remains selected automatically so large empty
-panels do not obscure the workflow. The response inspector should show:
+panels do not obscure the workflow. Database IDs are hidden from primary labels;
+answers are shown as `Question 1 of 3`, with internal IDs available only in
+technical provenance. The response inspector should show:
 
 1. question, category, difficulty, and answerability;
 2. generated answer beside the reviewed reference;
 3. saved contexts in rank order with expected-source/evidence indicators;
-4. evaluator cards grouped by the four layers;
-5. human/failure labels and disagreement review prompts; and
-6. expandable audit details.
+4. a status summary for Local metrics, LLM judge, RAGAS, and human review;
+5. collapsed, individually named evaluator cards grouped by the three
+   automatic method families;
+6. human/failure labels and disagreement review prompts; and
+7. expandable audit details.
 
 Each evaluator card should include its name, the question it answers, method
 family, retrieval/generation dimension, applicability/status, score and scale,
 threshold interpretation, explanation, limitations, inputs, deterministic or
 model-judged status, version/model/prompt metadata, runtime, cost, and errors.
+
+### FP10 Evidence and Accessibility Pass
+
+FP10 makes the research state and audit trail visible without requiring users
+to infer it from database fields:
+
+- Chat shows whether paid generation is enabled, disables Ask while the local
+  paid-call flag is off, and keeps provider-free source preview available.
+- Response metadata distinguishes recorded generation usage from unavailable
+  usage/cost and exposes answer-key snapshot and code provenance.
+- Retrieved evidence displays semantic distance, lexical signal, final ranking
+  score, and retrieval algorithm version when captured.
+- Compare Runs puts question-matched baseline evidence before descriptive run cards
+  and shows an explicit empty state when no valid pair exists.
+- Global catalog cards teach score contracts and coverage; they are not a
+  cross-run leaderboard.
+- The reviewed answer-key workspace is named Gold Standard; saved tests and
+  scores are named Evaluation. Each test exposes preflighted **Score saved
+  answers** controls plus a direct per-answer **Evaluate** action. Each metric
+  card shows the selected answer value and completed-test cumulative mean;
+  current-test and all-test means remain available separately.
+- The metric dependency guide separates gold-standard-dependent methods from
+  RAGAS Faithfulness and Response Relevancy, which do not require a gold answer.
+- Documents exposes search, category/type filtering, sorting, category groups,
+  explicit Replace/Cancel conflict handling, replacement/deletion for every
+  active source, verified vector cleanup, and a confirmed Delete All. Successful
+  corpus changes clear an already-rendered Chat source preview.
+- Overview includes the live active chunk count and Chat includes an
+  allowlisted model selector.
+- Previously tiny audit text is raised to a readable floor, secondary colors
+  have stronger contrast, disclosure controls have larger targets, keyboard
+  focus is visible, browser Back/Forward navigation works across workspace
+  views, and reduced-motion preferences are honored.
+
+The full single-page workspace received the typography, contrast, focus, and
+responsive pass; Chat, Evaluation, and Compare Runs received the deepest
+workflow changes because they contain the model-cost and research-claim risks.
 
 ### Choosing a Metric
 
@@ -201,10 +278,16 @@ submission, an elapsed parsing/ingestion state, and specific validation or
 parser errors. Successful ingestion updates the list and dashboard counts
 without a page reload.
 
-Replacement identifies which document will be replaced and regenerates its
-chunks and embeddings. Deletion requires confirmation and removes a
-browser-managed upload from file storage, MySQL, and ChromaDB. Bundled sources
-cannot be replaced or deleted. Unsupported, encrypted, empty, and
+Replacement identifies which document will be replaced and regenerates only
+its chunks and embeddings. Selecting a duplicate filename first presents a
+Replace existing/Cancel upload decision; no silent replacement is initiated.
+The old vectors are verified absent before removal is considered complete, so
+Chat source preview cannot silently reuse stale chunks. A successful corpus
+change also clears any already-rendered Chat source preview. Deletion requires
+confirmation and removes any
+active source from MySQL and ChromaDB; uploaded files are removed from storage,
+while bundled seed files remain only as recovery material. Delete All clears
+the active index after typed confirmation. Unsupported, encrypted, empty, and
 scanned-without-text files produce understandable messages.
 
 ### Evaluation Questions
@@ -247,6 +330,6 @@ human review.
 - Layer number, label, state text, and border treatment prevent color from being
   the only status cue.
 - Desktop uses a compact run/response split view; responsive breakpoints stack
-  summaries, layers, results, forms, Findings rules, and catalog cards.
+  summaries, layers, results, forms, comparison rules, and catalog cards.
 - The home page and empty states distinguish implemented capability, missing
   experiment evidence, and future research conclusions.

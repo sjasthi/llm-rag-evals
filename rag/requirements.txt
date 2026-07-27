@@ -4,3 +4,10 @@ mysql-connector-python>=9.2.0,<10.0.0
 python-dotenv>=1.0.1,<2.0.0
 pypdf>=5.0.0,<7.0.0
 python-docx>=1.1.0,<2.0.0
+sentence-transformers>=5.0.0,<6.0.0
+bert-score>=0.3.13,<0.4.0
+ragas==0.4.3
+# RAGAS' Gemini structured-output path needs Instructor's provider extra.
+instructor[google-genai]==1.15.4
+# RAGAS 0.4.3 imports a path removed in 0.4.2; keep this compatibility pin.
+langchain-community==0.4.1

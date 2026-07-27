@@ -1,0 +1,50 @@
+name: Quality gates
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  provider-free-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: rag/requirements.txt
+
+      - name: Install Python dependencies
+        run: python -m pip install -r rag/requirements.txt
+
+      - name: Compile Python sources
+        run: python -m compileall -q rag tests
+
+      - name: Run provider-free tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Verify Python dependency health
+        run: python -m pip check
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_mysql, fileinfo
+          coverage: none
+
+      - name: Lint PHP
+        shell: bash
+        run: find . -type f -name '*.php' -not -path './.venv/*' -print0 | xargs -0 -n1 php -l
+
+      - name: Check browser JavaScript syntax
+        run: node --check assets/js/app.js

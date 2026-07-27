@@ -17,7 +17,9 @@ llm-rag-evals/
 |-- api/
 |   |-- ask.php
 |   |-- documents.php
-|   `-- evaluations.php
+|   |-- evaluations.php
+|   |-- run_evaluation.php
+|   `-- test_runs.php
 |-- database/
 |   |-- migrations/
 |   `-- seeds/
@@ -32,9 +34,16 @@ llm-rag-evals/
 |   |-- answer.py
 |   |-- database.py
 |   |-- document_loader.py
-|   |-- evaluate.py
+|   |-- advanced_evaluation.py
+|   |-- evaluation.py
+|   |-- evaluation_store.py
+|   |-- evaluator_catalog.py
+|   |-- run_evaluation.py
+|   |-- run_advanced_evaluation.py
+|   |-- evaluate_saved_run.py
 |   |-- ingest.py
 |   |-- llm.py
+|   |-- provenance.py
 |   |-- query.py
 |   |-- settings.py
 |   |-- vector_store.py
@@ -62,6 +71,61 @@ placeholder directories are unnecessary.
 - `rag/`: Python helper layer for TXT/PDF/DOCX text extraction,
   MySQL/ChromaDB ingestion, embeddings, retrieval, grounded answer generation,
   and evaluation metrics/experiments.
+
+FP7 uses `rag/evaluation.py` for versioned dataset seeding, local evaluator
+implementations, and saved-response scoring. FP8/FP9 add:
+
+- `rag/evaluator_catalog.py`: the authoritative 13-method metadata and score
+  contracts used by storage, execution, and UI;
+- `rag/evaluation_store.py`: immutable attempt insertion and latest-attempt
+  canonical-result maintenance;
+- `rag/advanced_evaluation.py`: structured judge/RAGAS execution,
+  applicability, failure isolation, and usage/cost metadata;
+- `rag/run_advanced_evaluation.py`: selection, reuse, dry-run preflight, repeat
+  attempts, and paid-call/application/cost guardrails; and
+- `rag/evaluate_saved_run.py`: browser-facing orchestration for reusing or
+  reapplying the local eight or all 13 methods to saved run responses;
+- `rag/run_evaluation.py`: controlled answer-generation runs with frozen
+  dataset, model, retrieval, corpus category, document-manifest, reviewed
+  answer-key, cost-preflight, and baseline-pair metadata; and
+- `rag/provenance.py`: Git, source-tree, Python/platform, and key dependency
+  fingerprints for reproducible run records.
+
+`api/evaluations.php` provides dataset review, evaluator contracts, run-scoped
+and question-matched run-comparison summaries, immutable response/context provenance,
+response-level attempts/disagreement inspection, and versioned human response
+review.
+
+`api/test_runs.php` provides browser preflight and bounded creation for a new
+Gold Standard test. It forwards approved model, retrieval, top-k, temperature,
+top-p, and question count to `rag/run_evaluation.py`; generation remains behind
+the existing paid-call and cost policies.
+
+`api/run_evaluation.php` provides the no-write browser preflight and bounded
+execution bridge for each saved test's **Score saved answers** control. For an
+all-13 request it validates and forwards the exact selected `response_id`
+instead of implicitly scoring the first answer. Provider-backed work still
+requires explicit server policy plus application and estimated-cost caps.
+The per-answer **Evaluate** button selects this same exact-answer path and opens
+its guarded preflight. `api/evaluations.php` returns both the isolated result
+and same-evaluator cumulative average across completed tests.
+
+`api/ask.php` validates browser-selected approved model, retrieval method,
+top-k, temperature, and top-p. The provider-free `preview` action invokes
+`rag/answer.py --dry-run`
+and returns ranked source chunks. The guarded `answer` action forwards the same
+configuration to generation; `rag/answer.py` applies it to the model settings
+and persists it through the response's model-setting record.
+
+Chat and controlled evaluation deliberately converge on that implementation.
+The browser Ask endpoint and `rag/run_evaluation.py` both call
+`rag.answer.answer_question()`. The evaluation runner adds a reviewed
+`question_id` and `run_id`, saves the generated answer and exact contexts, and
+then calls `score_saved_response()`; it is not a second chatbot. This shared
+path is the central connection between the Chat, Gold Standard, and Evaluation
+views. Compare Runs reads the same saved Evaluation evidence but does not create
+or rescore an answer.
+
 - `storage/`: generated files, uploads, and logs; private content is not committed.
 - `tests/`: automated tests and stable evaluation fixtures.
 - `docs/`: planning, architecture, UX, and setup documentation.
@@ -110,8 +174,9 @@ placeholder directories are unnecessary.
 - Save evaluator name/version/configuration, raw details, runtime, estimated
   cost, and errors; never regenerate a RAG answer merely to score it with a
   different evaluator.
-- Use `docs/evaluation-strategy.md` as the authoritative source for the proposed
-  ten evaluator types and controlled experiment protocol.
+- Use `rag/evaluator_catalog.py` as the executable source for the 13 evaluator
+  definitions/score contracts and `docs/evaluation-strategy.md` as the
+  authoritative controlled experiment and interpretation protocol.
 
 ### HTML, CSS, and JavaScript
 

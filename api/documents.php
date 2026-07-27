@@ -153,7 +153,7 @@ function runDocumentIngestion(
     return $result;
 }
 
-function runDocumentDeletion(string $sourcePath): array
+function runDocumentDeletion(?string $sourcePath = null, bool $deleteAll = false): array
 {
     $root = projectRoot();
     $python = envValue('PYTHON_BIN', $root . '/.venv/Scripts/python.exe');
@@ -161,8 +161,19 @@ function runDocumentDeletion(string $sourcePath): array
         throw new RuntimeException('Project Python environment was not found.');
     }
 
+    $command = [$python, $root . '/rag/admin.py'];
+    if ($deleteAll) {
+        $command[] = '--delete-all';
+    } else {
+        if ($sourcePath === null || trim($sourcePath) === '') {
+            throw new InvalidArgumentException('A source path is required for document deletion.');
+        }
+        $command[] = '--source-path';
+        $command[] = $sourcePath;
+        $command[] = '--delete';
+    }
     $process = proc_open(
-        [$python, $root . '/rag/admin.py', '--source-path', $sourcePath, '--delete'],
+        $command,
         [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
         $pipes,
         $root,
@@ -196,6 +207,26 @@ try {
     }
     if ($method === 'DELETE') {
         $payload = json_decode(file_get_contents('php://input') ?: '{}', true, 8, JSON_THROW_ON_ERROR);
+        if (($payload['action'] ?? '') === 'delete_all') {
+            if (($payload['confirmation'] ?? '') !== 'DELETE ALL') {
+                documentResponse(422, ['ok' => false, 'error' => 'Type DELETE ALL to confirm clearing the active index.']);
+            }
+            $result = runDocumentDeletion(null, true);
+            foreach (($result['source_paths'] ?? []) as $sourcePath) {
+                if (!is_string($sourcePath) || !str_starts_with($sourcePath, 'storage/uploads/')) {
+                    continue;
+                }
+                $absolutePath = projectRoot() . '/' . $sourcePath;
+                if (is_file($absolutePath) && !unlink($absolutePath)) {
+                    error_log('Indexed upload removed but its stored file could not be removed: ' . $sourcePath);
+                }
+            }
+            documentResponse(200, ['ok' => true, 'data' => [
+                'deleted_count' => (int) ($result['deleted_count'] ?? 0),
+                'deleted_chunk_count' => (int) ($result['deleted_chunk_count'] ?? 0),
+            ]]);
+        }
+
         $documentId = filter_var($payload['document_id'] ?? null, FILTER_VALIDATE_INT);
         if (!$documentId) {
             documentResponse(422, ['ok' => false, 'error' => 'A valid document ID is required.']);
@@ -204,17 +235,24 @@ try {
         $statement = $database->prepare('SELECT source_path FROM documents WHERE document_id = ?');
         $statement->execute([$documentId]);
         $document = $statement->fetch();
-        if (!$document || !str_starts_with($document['source_path'], 'storage/uploads/')) {
-            documentResponse(422, ['ok' => false, 'error' => 'Only browser-uploaded documents can be deleted.']);
+        if (!$document) {
+            documentResponse(404, ['ok' => false, 'error' => 'Indexed document was not found.']);
         }
 
         $sourcePath = $document['source_path'];
-        runDocumentDeletion($sourcePath);
-        $absolutePath = projectRoot() . '/' . $sourcePath;
-        if (is_file($absolutePath) && !unlink($absolutePath)) {
-            error_log('Indexed document deleted but upload file could not be removed: ' . $sourcePath);
+        $result = runDocumentDeletion($sourcePath);
+        $isUploaded = str_starts_with($sourcePath, 'storage/uploads/');
+        if ($isUploaded) {
+            $absolutePath = projectRoot() . '/' . $sourcePath;
+            if (is_file($absolutePath) && !unlink($absolutePath)) {
+                error_log('Indexed document deleted but upload file could not be removed: ' . $sourcePath);
+            }
         }
-        documentResponse(200, ['ok' => true, 'data' => ['document_id' => (int) $documentId]]);
+        documentResponse(200, ['ok' => true, 'data' => [
+            'document_id' => (int) $documentId,
+            'deleted_chunk_count' => (int) ($result['deleted_chunk_count'] ?? 0),
+            'source_file_retained' => !$isUploaded,
+        ]]);
     }
     if ($method !== 'POST') {
         header('Allow: GET, POST, DELETE');
@@ -234,50 +272,59 @@ try {
     }
 
     $replaceId = filter_var($_POST['replace_document_id'] ?? null, FILTER_VALIDATE_INT);
-    $backupPath = null;
+    $replacementDocuments = [];
     if ($replaceId) {
-        $statement = $database->prepare('SELECT source_path, source_type FROM documents WHERE document_id = ?');
+        $statement = $database->prepare(
+            'SELECT document_id, source_path, source_type, original_filename FROM documents WHERE document_id = ?'
+        );
         $statement->execute([$replaceId]);
         $existing = $statement->fetch();
-        if (!$existing || !str_starts_with($existing['source_path'], 'storage/uploads/')) {
-            documentResponse(422, ['ok' => false, 'error' => 'Only browser-uploaded documents can be replaced.']);
+        if (!$existing) {
+            documentResponse(404, ['ok' => false, 'error' => 'The document selected for replacement was not found.']);
         }
-        if ($existing['source_type'] !== $extension) {
-            documentResponse(422, ['ok' => false, 'error' => 'A replacement must use the same file type.']);
-        }
-        $sourcePath = $existing['source_path'];
-        $absolutePath = projectRoot() . '/' . $sourcePath;
-        if (is_file($absolutePath)) {
-            $backupPath = $absolutePath . '.bak';
-            if (!rename($absolutePath, $backupPath)) {
-                throw new RuntimeException('The existing document could not be prepared for replacement.');
-            }
-        }
+        $replacementDocuments = [$existing];
     } else {
-        $sourcePath = 'storage/uploads/' . bin2hex(random_bytes(16)) . '.' . $extension;
-        $absolutePath = projectRoot() . '/' . $sourcePath;
+        $statement = $database->prepare(
+            'SELECT document_id, source_path, source_type, original_filename '
+            . 'FROM documents WHERE original_filename = ? ORDER BY document_id'
+        );
+        $statement->execute([$originalName]);
+        $replacementDocuments = $statement->fetchAll();
     }
 
+    $sourcePath = 'storage/uploads/' . bin2hex(random_bytes(16)) . '.' . $extension;
+    $absolutePath = projectRoot() . '/' . $sourcePath;
+
     if (!move_uploaded_file($temporaryPath, $absolutePath)) {
-        if ($backupPath !== null) {
-            rename($backupPath, $absolutePath);
-        }
         throw new RuntimeException('The uploaded file could not be stored.');
     }
 
     try {
         $result = runDocumentIngestion($absolutePath, $sourcePath, $category, $title, $originalName);
-        if ($backupPath !== null && is_file($backupPath)) {
-            unlink($backupPath);
+        foreach ($replacementDocuments as $existing) {
+            $oldSourcePath = (string) $existing['source_path'];
+            runDocumentDeletion($oldSourcePath);
+            if (str_starts_with($oldSourcePath, 'storage/uploads/')) {
+                $oldAbsolutePath = projectRoot() . '/' . $oldSourcePath;
+                if (is_file($oldAbsolutePath) && !unlink($oldAbsolutePath)) {
+                    error_log('Replaced upload was de-indexed but its stored file could not be removed: ' . $oldSourcePath);
+                }
+            }
         }
     } catch (Throwable $error) {
-        unlink($absolutePath);
-        if ($backupPath !== null && is_file($backupPath)) {
-            rename($backupPath, $absolutePath);
+        try {
+            runDocumentDeletion($sourcePath);
+        } catch (Throwable $rollbackError) {
+            error_log('Replacement rollback could not clear the new index record: ' . $rollbackError->getMessage());
+        }
+        if (is_file($absolutePath)) {
+            unlink($absolutePath);
         }
         throw $error;
     }
 
+    $result['replaced_document_count'] = count($replacementDocuments);
+    $result['auto_replaced'] = !$replaceId && count($replacementDocuments) > 0;
     documentResponse(201, ['ok' => true, 'data' => $result]);
 } catch (Throwable $error) {
     error_log('Documents endpoint failure: ' . $error->getMessage());

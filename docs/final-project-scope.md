@@ -31,12 +31,34 @@ The final product should help:
 The final report should recommend metrics for specific uses. It should not
 claim that one metric, provider, or configuration is universally best.
 
-The professor-confirmed emphasis is to research and explain approximately ten
-evaluator/metric types across multiple method families. RAGAS is part of this
-comparison, not the sole evaluation approach. The project must teach why scores
-differ and describe each evaluator's inputs, cost, speed, determinism,
-strengths, limitations, and appropriate use cases. The detailed working set and
-protocol are defined in `docs/evaluation-strategy.md`.
+The working emphasis is to research and explain representative evaluator types
+across multiple method families. The professor's reference lists eight broad
+options, not eight required advanced models. RAGAS is part of this comparison,
+not the sole evaluation approach. The project must teach what each score is
+based on, why scores differ, and each evaluator's inputs, cost, speed,
+determinism, strengths, limitations, and appropriate use cases. The detailed
+working set and protocol are defined in `docs/evaluation-strategy.md`.
+
+## Current Implementation Boundary (July 20, 2026)
+
+The complete application support through FP9 is present: eight baselines, five
+advanced evaluator paths, immutable attempts, reproducible controlled runs,
+MySQL/Chroma retrieval choices, human response review, status-first Evaluation,
+and evidence-first Compare Runs. FP10 hardening now adds immutable answer-key and
+context provenance, code/runtime/dependency fingerprints, generation usage and
+honest unknown-cost states, guarded paid-call paths, same-question/evaluator
+comparison rules, accessibility improvements, provider-free CI, and a complete
+demo/checkoff record. The frontend-first follow-up adds active chunk counts,
+organized delete/replace-capable document administration, an approved Chat
+model selector, and run-level evaluator preflight/execution. Chat exposes
+retrieval, top-k, temperature, and top-p and can preview sources without calling
+a model. The UI also explains that controlled Gold Standard questions use the same answer pipeline
+as Chat and reports Local, LLM-judge, and RAGAS status separately. A July 20 bounded proof produced one live response, one
+completed LLM-judge result, and four completed current RAGAS results while
+retaining earlier adapter/dependency/quota failures in attempt history; it did
+not produce a human calibration set, matched final experiment, or empirical
+recommendation. Those evidence-collection and final-report tasks remain the
+completion boundary described below.
 
 ## Final Product Goal
 
@@ -45,7 +67,7 @@ By the final submission, the application should let a user:
 1. Upload and manage TXT, text-based PDF, and DOCX Metro State documents.
 2. Ask questions against those documents.
 3. See generated answers with retrieved sources.
-4. Run a reviewed evaluation set containing at least 25 Metro State questions.
+4. Run a reviewed evaluation set containing 50 Metro State questions.
 5. Apply multiple evaluation metrics to the same stored responses.
 6. Compare retrieval/configuration and collection-size experiments.
 7. Inspect metric disagreements and categorized failure cases.
@@ -140,22 +162,24 @@ status.
 Supports document management:
 
 - upload or import Metro State documents,
-- list documents,
+- search, filter, sort, and group active documents,
 - show document type and chunk count,
-- replace an existing document,
-- delete or deactivate a document if needed.
+- replace an existing or same-name document,
+- delete any active document or clear the active index if needed.
 
-### 3. Ask
+### 3. Chat
 
 Supports normal RAG question answering:
 
 - question input,
+- browser controls for approved model, retrieval method, top-k, temperature, and top-p,
+- provider-free preview of the ranked source chunks,
 - generated answer,
 - source document names,
 - retrieved chunk excerpts,
 - model/settings used for the response.
 
-### 4. Evaluation Questions
+### 4. Gold Standard
 
 Manages the gold evaluation dataset:
 
@@ -165,29 +189,50 @@ Manages the gold evaluation dataset:
 - topic/category,
 - active/inactive status.
 
-### 5. Evaluation Runs
+### 5. Evaluation
 
-Runs selected questions through selected RAG settings:
+Creates and inspects saved tests using selected RAG settings:
 
-- chunk size,
-- overlap,
 - top-k,
+- retrieval method,
 - temperature,
 - provider/model,
-- selected evaluation method.
+- top-p.
 
-### 6. Results / Dashboard
+The browser can preview and create a bounded new test with approved model,
+retrieval, top-k, temperature, top-p, and reviewed-question count. New answers
+receive the local eight scores automatically. Every saved test also exposes
+preflight and execution for either the local eight across the full test or all
+13 methods for one exact selected answer under the configured response,
+application, and cost limits.
 
-Shows:
+The same view shows:
 
-- average answer score,
-- source accuracy,
-- faithfulness or groundedness score if available,
+- each named answer/retrieval score with its own calculation, scale, threshold
+  provenance, applicability, and limitation,
+- source accuracy and retained rank,
+- faithfulness or groundedness when applicable,
 - latency,
 - estimated API cost if available,
 - per-question failures,
 - metric agreement/disagreement,
-- results grouped by configuration and corpus variant.
+- results grouped by configuration and corpus variant,
+- the selected answer's metric value beside that metric's cumulative average
+  across completed tests, and
+- each metric's current-test mean beside its all-completed-tests mean.
+
+The dashboard must not average unlike lexical, semantic, retrieval, judged, and
+human signals into one universal answer grade.
+
+Chunk size, overlap, and embedding model describe the active index rather than
+one answer. Comparing those settings requires a separately re-chunked and
+re-embedded corpus variant so each test uses one internally consistent index.
+
+### 6. Compare Runs
+
+Provides the secondary, research-oriented comparison reached from Evaluation.
+It shows compatible configuration evidence and only computes deltas for
+question/evaluator-matched baseline pairs.
 
 ### 7. Report
 
@@ -214,9 +259,9 @@ The project should be considered successful if it implements:
 6. Source display.
 7. A manually reviewed dataset of at least 25 questions covering the current
    categories and including unanswerable cases.
-8. Approximately ten evaluator types spanning lexical/token overlap, semantic,
+8. Representative evaluator types spanning lexical/token overlap, semantic,
    contextual embedding, source/retrieval, LLM-as-judge, and RAGAS measures,
-   applied to common stored responses.
+   applied to common stored responses with documented score contracts.
 9. Stored per-question evaluation results and run settings.
 10. At least one controlled retrieval/configuration comparison.
 11. A controlled document-collection size or composition comparison.
@@ -284,15 +329,16 @@ The final demo should show:
 10. A conclusion explaining which metrics are useful for particular decisions,
     what failed, and what cannot yet be generalized.
 
-## Example Final Comparison
+## Example Final Comparison Structure
 
-| Configuration | Chunk Size | Top-K | Temperature | Avg Answer Score | Source Accuracy | Notes |
-| --- | ---: | ---: | ---: | ---: | ---: | --- |
-| A | 500 | 3 | 0.0 | 78% | 85% | Faster but missed some context |
-| B | 800 | 5 | 0.0 | 86% | 93% | Best balance for the test set |
-| C | 800 | 8 | 0.3 | 81% | 90% | More context, less consistent answers |
+| Configuration | Retrieval | Top-K | Dataset coverage | Expected-source hit rate | RAGAS faithfulness | Human acceptable | Runtime/cost | Notes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| A | Chroma | 3 | measured/25 | report observed | report observed | reviewed sample | recorded | Fixed baseline |
+| B | MySQL | 3 | measured/25 | report observed | report observed | reviewed sample | recorded | Retrieval method changed only |
 
-The final report should explain this table in plain language.
+The placeholders must be replaced with stored experiment evidence. The final
+report should explain metric trade-offs in plain language and may not invent an
+`Avg Answer Score` by mixing incompatible metrics.
 
 ## Difference From `implementation-approach.md`
 

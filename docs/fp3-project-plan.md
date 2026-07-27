@@ -32,9 +32,38 @@ work.
 | FP5 | Complete the core RAG round trip and first web workflow | MySQL/ChromaDB ingestion, retrieval, grounded Gemini answer, PHP Ask page, stored sources |
 | FP6 | Add document administration and multi-format ingestion | Browser upload/list/replace/delete flow, live counts, TXT/PDF/DOCX extraction, ingestion status and regression tests |
 | FP7 | Build the reviewed dataset and evaluator foundation | At least 25 reviewed questions, evaluator/result schema, shared saved responses, local lexical/token/semantic/BERT/source baselines |
-| FP8 | Complete approximately ten evaluator types and controlled experiments | LLM-as-judge and RAGAS retrieval/generation evaluators, cost/runtime tracking, disagreement analysis, retrieval and corpus experiments |
+| FP8 | Add the advanced evaluator layer and controlled experiments | Versioned LLM-as-judge and four RAGAS dimensions, score-basis UX, cost/runtime/variability tracking, human calibration, disagreement analysis, retrieval and corpus experiments |
 | FP9 | Complete research dashboard, interpretation, and system testing | Per-evaluator explanations and trade-offs, comparisons, failure analysis, preliminary findings, accessibility/security checks |
 | FP10 | Stabilize and teach the research findings | Reproducible experiment guide, use-case recommendations, findings and limitations, presentation, final report, tagged release |
+
+FP7 status: completed and verified July 10, 2026. Dataset version 1.0 contains
+25 reviewed cases, eight local/supporting evaluators are registered, and a
+three-question controlled run produced 24 inspectable evaluator results.
+
+FP8 implementation status: completed and verified July 14, 2026. The five
+advanced evaluator paths, immutable attempts, cost guardrails, human-review
+schema, full run provenance, genuine MySQL retrieval, and corpus variants are
+implemented. A paid advanced proof and matched experiments remain evidence
+collection, not missing application code.
+
+FP9 implementation status: completed and verified July 14, 2026. Evaluation and
+Compare Runs expose score contracts, attempt variability, disagreement prompts,
+response review, configuration/coverage comparison, and all 13 evaluator
+definitions. The final clarity pass presents Local metrics, the LLM judge, and
+RAGAS directly and labels Human review as supporting evidence. Comparative
+findings remain pending matched and human-review data.
+
+FP10 hardening status: completed and provider-free verified July 20, 2026.
+Controlled responses/runs now preserve immutable reviewed inputs, exact context
+identity and ranking evidence, code/runtime/dependency fingerprints, and honest
+generation usage/cost status. Paid paths require explicit bounded opt-in;
+Compare Runs only compares matched question/evaluator pairs; accessibility, CI,
+reproduction documentation, and the combined FP8-FP10 demo/signoffs are present.
+One bounded paid proof produced a completed LLM-judge result; authorized
+follow-up retries completed all four RAGAS metrics after correcting the adapter
+and provider-extra dependency. Human calibration, matched experiments, final
+empirical recommendations, presentation delivery, and release tagging remain
+pending evidence/delivery work rather than completed claims.
 
 ## Revised Research Direction After FP5 Review
 
@@ -43,9 +72,10 @@ final value of the project is not only the working question-answer interface;
 it is the evidence and explanation produced from comparing evaluation methods.
 
 The research should determine what each metric is specifically useful for,
-where automated metrics agree or disagree, and which combination provides a
-defensible evaluation of retrieval, correctness, grounding, and refusal
-behavior. The number of evaluation questions should be justified by coverage;
+where automated metrics agree or disagree, and which portfolio provides
+defensible evidence about retrieval, correctness, grounding, and refusal
+behavior without hiding disagreement in one score. The number of evaluation
+questions should be justified by coverage;
 at least 25 reviewed questions is the initial target rather than a fixed ratio
 between questions and documents.
 
@@ -55,8 +85,8 @@ scale. It should run a controlled collection-size or collection-composition
 experiment and clearly state the limits of generalizing from the local corpus.
 
 See `docs/research-plan.md` for the detailed experiment design and FP6-FP10
-implementation sequence and `docs/evaluation-strategy.md` for the confirmed
-ten-evaluator research direction.
+implementation sequence and `docs/evaluation-strategy.md` for the layered
+baseline/advanced evaluator direction.
 
 ## FP6 Exit Criteria
 
@@ -67,8 +97,9 @@ Status: implemented, verified, committed, and pushed on July 6, 2026.
 - Format-specific extraction produces normalized text for one shared ingestion path.
 - MySQL stores original filename, type, status, errors, and chunk counts.
 - ChromaDB replacement removes the earlier vectors for the same source path.
-- The browser lists indexed documents, updates document/category counts live,
-  and supports same-format replacement and deletion for uploads.
+- The browser lists and organizes indexed documents, updates
+  document/category/chunk counts live, and supports staged same-name
+  replacement, deletion of any active source, and confirmed Delete All.
 - Parser and FP5 regression tests pass before the milestone is committed.
 - FP7 begins with the manually reviewed 25+ question research dataset.
 

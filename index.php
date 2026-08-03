@@ -64,7 +64,7 @@ if (!in_array($formattedDefaultTopP, $topPOptions, true)) {
 $chatModel = envValue('LLM_CHAT_MODEL', 'gemini-2.5-flash');
 $chatModelOptions = array_values(array_unique(array_filter(array_map(
     'trim',
-    explode(',', (string) envValue('LLM_CHAT_MODELS', $chatModel . ',gemini-2.5-flash-lite'))
+    explode(',', (string) envValue('LLM_CHAT_MODELS', $chatModel . ',gemini-3.1-flash-lite'))
 ))));
 if (!in_array($chatModel, $chatModelOptions, true)) {
     array_unshift($chatModelOptions, $chatModel);
@@ -93,7 +93,7 @@ require __DIR__ . '/includes/header.php';
                 <p class="topbar-description">Chat with the document collection, manage its sources, run repeatable evaluations, and review what changed.</p>
             </div>
             <div class="topbar-actions">
-                <span class="pill live-pill"><span></span> Ready for evaluation</span>
+                <span class="pill muted" id="applicationStatusPill" role="status" aria-live="polite"><span></span><b id="applicationStatusText">Checking application…</b></span>
                 <span class="pill muted">Local-first · evidence retained</span>
             </div>
         </header>
@@ -137,7 +137,7 @@ require __DIR__ . '/includes/header.php';
                     </article>
                     <article class="stat-card">
                         <span class="stat-label">Reviewed prompts</span>
-                        <strong id="evaluationQuestionCount">25</strong>
+                        <strong id="evaluationQuestionCount">50</strong>
                         <small>questions with expected evidence</small>
                     </article>
                     <article class="stat-card">
@@ -364,6 +364,7 @@ require __DIR__ . '/includes/header.php';
                             </div>
                             <div class="document-library-actions">
                                 <button class="btn btn-sm btn-outline-secondary" id="refreshDocumentsButton" type="button">Refresh</button>
+                                <button class="btn btn-sm btn-outline-primary" id="restoreBundledDocumentsButton" type="button">Restore bundled sources</button>
                                 <button class="btn btn-sm btn-outline-danger" id="deleteAllDocumentsButton" type="button">Delete all</button>
                             </div>
                         </div>
@@ -468,20 +469,54 @@ require __DIR__ . '/includes/header.php';
                             </div>
                             <button class="btn btn-sm btn-outline-secondary" id="closeNewTestRun" type="button">Close</button>
                         </div>
-                        <p>This calls the selected model once per question, saves each answer and its evidence, and applies the local eight scoring methods. Preview the calls and cost before generating anything.</p>
+                        <p>This calls the selected model once per question, saves each answer and its evidence, and applies the local eight scoring methods. Choose a quick test or let the guided comparison setup keep the baseline questions and unchanged settings fixed.</p>
                         <input id="newTestDatasetId" type="hidden">
+                        <div class="new-test-research-setup">
+                            <div class="new-test-run-grid">
+                                <label>
+                                    <span>What are you doing?</span>
+                                    <select class="form-select form-select-sm" id="newTestExperimentMode">
+                                        <option value="standalone">Quick standalone test</option>
+                                        <option value="baseline">Start a controlled experiment</option>
+                                        <option value="comparison">Compare with a saved baseline</option>
+                                    </select>
+                                </label>
+                                <label id="newTestBaselineField" hidden>
+                                    <span>Saved baseline</span>
+                                    <select class="form-select form-select-sm" id="newTestBaselineRun">
+                                        <option value="">Choose a completed test</option>
+                                    </select>
+                                </label>
+                                <label class="new-test-wide-field" id="newTestExperimentField" hidden>
+                                    <span>Experiment label</span>
+                                    <input class="form-control form-control-sm" id="newTestExperimentKey" maxlength="120" placeholder="Example: Vector versus keyword search">
+                                </label>
+                                <label id="newTestChangeField" hidden>
+                                    <span>Change exactly one setting</span>
+                                    <select class="form-select form-select-sm" id="newTestControlledVariable">
+                                        <option value="">Choose the setting</option>
+                                        <option value="retrieval_method">Retrieval method</option>
+                                        <option value="top_k">Source chunks (top-k)</option>
+                                        <option value="model">Answer model</option>
+                                        <option value="temperature">Temperature</option>
+                                        <option value="top_p">Top-p</option>
+                                        <option value="corpus">Source category composition</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <p id="newTestComparisonGuide">A standalone test is useful for a quick check. For report-ready evidence, first save a baseline and then create a comparison that changes one setting.</p>
+                            <div class="new-test-baseline-summary" id="newTestBaselineSummary" hidden></div>
+                        </div>
                         <div class="new-test-run-grid">
-                            <label>
+                            <label class="new-test-name-field">
                                 <span>Test name</span>
                                 <input class="form-control form-control-sm" id="newTestName" maxlength="120" placeholder="Example: Vector search · top-k 3" required>
                             </label>
-                            <label>
-                                <span>Reviewed questions</span>
-                                <select class="form-select form-select-sm" id="newTestLimit">
-                                    <?php for ($testLimit = 1; $testLimit <= $maxTestRunResponses; $testLimit++): ?>
-                                        <option value="<?= h((string) $testLimit) ?>"><?= h((string) $testLimit) ?> question<?= $testLimit === 1 ? '' : 's' ?></option>
-                                    <?php endfor; ?>
-                                </select>
+                            <input id="newTestLimit" type="hidden" value="<?= h((string) $maxTestRunResponses) ?>" data-max="<?= h((string) $maxTestRunResponses) ?>">
+                            <label class="new-test-wide-field">
+                                <span>Exact reviewed questions</span>
+                                <select class="form-select form-select-sm" id="newTestQuestionIds" multiple size="7" aria-describedby="newTestQuestionHelp"></select>
+                                <small id="newTestQuestionHelp">The recommended final-study sample is selected automatically. Use Ctrl or Command to change the selection. A comparison reuses and locks the baseline's exact questions.</small>
                             </label>
                             <label>
                                 <span>Model</span>
@@ -510,10 +545,24 @@ require __DIR__ . '/includes/header.php';
                                 <span>Top-p</span>
                                 <input class="form-control form-control-sm" id="newTestTopP" type="number" min="0" max="1" step="0.1" value="<?= h($formattedDefaultTopP) ?>">
                             </label>
+                            <label>
+                                <span>Source collection</span>
+                                <select class="form-select form-select-sm" id="newTestCorpusScope">
+                                    <option value="full_current">All active documents</option>
+                                    <option value="category_subset">Selected source categories</option>
+                                </select>
+                            </label>
+                            <fieldset class="new-test-category-field" id="newTestCategoryField" hidden>
+                                <legend>Source categories in this test</legend>
+                                <div class="new-test-category-choices" id="newTestCategoryChoices">
+                                    <span>Loading active source categories…</span>
+                                </div>
+                                <small>Only documents in the checked categories will be available to retrieval. The exact document manifest is saved with the test.</small>
+                            </fieldset>
                         </div>
                         <small>
                             Current index: <?= h((string) $chunkSize) ?>-character chunks with <?= h((string) $chunkOverlap) ?>-character overlap.
-                            Search, model, top-k, temperature, and top-p can vary per test. Testing another chunk size requires rebuilding a separate index so every answer uses one consistent corpus.
+                            Retrieval, model, top-k, temperature, top-p, and source categories can vary here. Testing another chunk size requires rebuilding a separate index with consistent settings so every answer uses one consistent corpus.
                         </small>
                         <div class="new-test-run-actions">
                             <button class="btn btn-sm btn-outline-primary" id="previewNewTestRun" type="button">Preview test</button>
@@ -544,6 +593,15 @@ require __DIR__ . '/includes/header.php';
                             <small>current rubric decisions</small>
                         </article>
                     </div>
+                    <section class="research-readiness" aria-labelledby="researchReadinessTitle">
+                        <div>
+                            <span>Study checklist</span>
+                            <strong id="researchReadinessTitle">What still needs evidence?</strong>
+                        </div>
+                        <ul id="researchReadinessList" aria-live="polite">
+                            <li>Loading the current study evidence…</li>
+                        </ul>
+                    </section>
                     <div class="evaluation-boundary" role="note">
                         <strong>Evaluation scores answers that are already saved.</strong>
                         <p>It does not ask the LLM again. A different model, retrieval method, or generation setting requires a new test run so the old and new answers remain comparable.</p>
@@ -622,7 +680,7 @@ require __DIR__ . '/includes/header.php';
                         <article>
                             <span>Human reviews</span>
                             <strong id="findingHumanCount">—</strong>
-                            <small>current independent decisions</small>
+                            <small>current human-review decisions</small>
                         </article>
                     </div>
 

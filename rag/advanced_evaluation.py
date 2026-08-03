@@ -49,6 +49,8 @@ class ProviderExecution:
     input_tokens: int | None
     output_tokens: int | None
     total_tokens: int | None
+    thinking_tokens: int | None = None
+    finish_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,7 @@ class AdvancedExecution:
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    thinking_tokens: int | None = None
 
 
 JudgeProvider = Callable[[str, Settings], ProviderExecution]
@@ -154,6 +157,22 @@ def generate_judge_with_gemini(prompt: str, settings: Settings) -> ProviderExecu
     finally:
         client.close()
 
+    candidate = response.candidates[0] if response.candidates else None
+    raw_finish_reason = getattr(candidate, "finish_reason", None)
+    finish_reason = (
+        getattr(raw_finish_reason, "name", None)
+        or (str(raw_finish_reason) if raw_finish_reason is not None else None)
+    )
+    normalized_finish_reason = (finish_reason or "").upper().split(".")[-1]
+    if normalized_finish_reason and normalized_finish_reason not in {
+        "STOP",
+        "FINISH_REASON_UNSPECIFIED",
+    }:
+        raise RuntimeError(
+            "The evaluator model stopped before a complete rubric "
+            f"(finish_reason={finish_reason})."
+        )
+
     raw_output = (response.text or "").strip()
     if not raw_output:
         raise RuntimeError("The evaluator model returned an empty response.")
@@ -172,6 +191,8 @@ def generate_judge_with_gemini(prompt: str, settings: Settings) -> ProviderExecu
         input_tokens=getattr(usage, "prompt_token_count", None),
         output_tokens=getattr(usage, "candidates_token_count", None),
         total_tokens=getattr(usage, "total_token_count", None),
+        thinking_tokens=getattr(usage, "thoughts_token_count", None),
+        finish_reason=finish_reason,
     )
 
 
@@ -179,6 +200,8 @@ def estimate_cost(
     input_tokens: int | None,
     output_tokens: int | None,
     settings: Settings,
+    *,
+    thinking_tokens: int | None = None,
 ) -> float | None:
     if input_tokens is None and output_tokens is None:
         return None
@@ -188,7 +211,8 @@ def estimate_cost(
     ):
         return None
     input_cost = (input_tokens or 0) * settings.evaluator_input_cost_per_million / 1_000_000
-    output_cost = (output_tokens or 0) * settings.evaluator_output_cost_per_million / 1_000_000
+    billable_output_tokens = (output_tokens or 0) + (thinking_tokens or 0)
+    output_cost = billable_output_tokens * settings.evaluator_output_cost_per_million / 1_000_000
     return round(input_cost + output_cost, 8)
 
 
@@ -250,6 +274,7 @@ def run_llm_judge(
         "temperature": settings.evaluator_temperature,
         "rubric_version": JUDGE_RUBRIC_VERSION,
         "prompt_hash": judge_prompt_hash(),
+        "max_output_tokens": 2048,
     }
     details = {
         "dimensions": dimensions,
@@ -258,8 +283,15 @@ def run_llm_judge(
         "missing_facts": parsed.missing_facts,
         "summary": parsed.summary,
         "raw_scale": "0-4",
+        "thinking_tokens": execution.thinking_tokens,
+        "finish_reason": execution.finish_reason,
     }
-    cost = estimate_cost(execution.input_tokens, execution.output_tokens, settings)
+    cost = estimate_cost(
+        execution.input_tokens,
+        execution.output_tokens,
+        settings,
+        thinking_tokens=execution.thinking_tokens,
+    )
     result = EvaluationResult(
         evaluator_key="llm_judge",
         raw_score=raw_score,
@@ -277,6 +309,7 @@ def run_llm_judge(
         input_tokens=execution.input_tokens,
         output_tokens=execution.output_tokens,
         total_tokens=execution.total_tokens,
+        thinking_tokens=execution.thinking_tokens,
     )
 
 

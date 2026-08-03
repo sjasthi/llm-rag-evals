@@ -16,6 +16,11 @@ The main navigation now describes user tasks:
 5. **Evaluation** creates bounded tests, scores saved answers, and inspects the
    generated answer, reference, evidence, and method results.
 
+The header begins in a neutral checking state and calls a read-only health
+endpoint. It reports either application-data readiness or a concise
+retry/contact-administrator state. Infrastructure names and setup steps stay in
+operator documentation rather than end-user error copy.
+
 ## Document lifecycle
 
 The active index is incremental. Rebuilding unrelated documents is unnecessary:
@@ -26,6 +31,7 @@ The active index is incremental. Rebuilding unrelated documents is unnecessary:
 | Delete Doc 49 | Delete Doc 49; live chunks cascade | Delete vectors filtered by Doc 49 source path | Delete uploads; retain bundled seed files for recovery |
 | Replace Doc 48 | Ingest the new copy, then delete the previous active record | Upsert new vectors and delete old source vectors | Replace uploaded storage after successful ingestion |
 | Delete all | Delete all active document/chunk rows | Delete all collection records | Delete uploads; retain bundled seed files for recovery |
+| Restore bundled | Upsert all tracked starting documents/chunks | Replace vectors for each bundled source | Read retained bundled files; preserve uploads |
 
 The visible filename is now a replacement identity for browser ingestion. If a
 new file has the same name as an indexed file, the browser stops and asks the
@@ -41,6 +47,11 @@ different files named `frontend_replacement_probe.txt`: chunk count changed from
 one to two, only one active same-name record remained, and cleanup restored the
 corpus to 27 documents and 77 chunks.
 
+The Documents action **Restore bundled sources** runs that retained-source
+recovery through the browser. It adds or refreshes the complete starting
+collection under the current chunk/embedding settings without deleting any
+separately uploaded source.
+
 Chroma supports record `upsert` by ID and `delete` by IDs or metadata filters,
 which is why incremental source updates do not require re-embedding the complete
 corpus: <https://docs.trychroma.com/reference/python/collection>.
@@ -52,9 +63,13 @@ for those answers. The page deliberately separates two actions:
 
 - **New test run** sends reviewed Gold Standard questions through the shared
   retrieval-and-generation pipeline. The browser selects an approved model,
-  retrieval method, top-k, temperature, top-p, and a bounded question count,
-  then previews model calls and estimated cost before generation. New answers
-  are saved and receive the local eight scores automatically.
+  retrieval method, top-k, temperature, top-p, source collection, and a bounded
+  exact reviewed-question set, then previews model calls and estimated cost before
+  generation. It offers a quick test, a labeled controlled baseline, or a
+  comparison with a completed baseline. Comparison mode copies the baseline,
+  fixes the same ordered questions, locks unchanged controls, and requires the
+  researcher to vary exactly one setting. New answers are saved and receive
+  the local eight scores automatically.
 - **Score saved answers** never regenerates text. It provides two bounded modes:
 
 - **All 13 methods · one selected answer:** eight local methods plus LLM judge
@@ -70,6 +85,12 @@ that exact saved answer, switches to the all-13 scope, and runs the call/cost
 preflight. The user then confirms **Apply scores**. This extra confirmation is
 intentional because up to five methods may call the configured evaluator
 provider.
+
+The Evaluation summary includes a study checklist for reviewed Gold Standard
+coverage, a controlled baseline, valid question/evaluator-matched comparison
+rows, sampled human review, and portable exports. It points the user to the
+next missing action rather than requiring a database query or documentation
+cross-check.
 
 The scoring preflight reports saved answers, methods to apply, results to reuse,
 external applications, and estimated cost before execution. Evaluation does not
@@ -149,8 +170,9 @@ results. See <https://docs.langchain.com/langsmith/evaluation> and
 
 ## Remaining scale work
 
-The browser can now launch a bounded synchronous test without terminal access.
-A full grid across models, retrieval methods, top-k values, temperatures, and
-all 25 questions still needs a persistent background job queue, rate-limit-aware
+The browser can now launch a bounded synchronous test without terminal access
+and download any saved test as JSON or long-form CSV. A full grid across models,
+retrieval methods, top-k values, temperatures, and all 50 reviewed v2.0
+questions still needs a persistent background job queue, rate-limit-aware
 scheduling, progress/cancellation, and resumable retries. The current browser
 preflight, bounded launcher, and immutable attempts are the foundation for it.

@@ -39,7 +39,7 @@ based on, why scores differ, and each evaluator's inputs, cost, speed,
 determinism, strengths, limitations, and appropriate use cases. The detailed
 working set and protocol are defined in `docs/evaluation-strategy.md`.
 
-## Current Implementation Boundary (July 20, 2026)
+## Current Implementation Boundary (August 2, 2026)
 
 The complete application support through FP9 is present: eight baselines, five
 advanced evaluator paths, immutable attempts, reproducible controlled runs,
@@ -56,9 +56,14 @@ a model. The UI also explains that controlled Gold Standard questions use the sa
 as Chat and reports Local, LLM-judge, and RAGAS status separately. A July 20 bounded proof produced one live response, one
 completed LLM-judge result, and four completed current RAGAS results while
 retaining earlier adapter/dependency/quota failures in attempt history; it did
-not produce a human calibration set, matched final experiment, or empirical
-recommendation. Those evidence-collection and final-report tasks remain the
-completion boundary described below.
+not produce a human calibration set or matched final experiment. The August 3
+continuation now adds six completed exact-question controlled conditions,
+matched advanced evidence, portable final-study exports, and an empirical
+report/recommendation draft. Seven selected final-study responses now have
+single-reviewer overall human decisions for descriptive calibration. The
+final-readiness pass adds the
+source-verified 50-question v2.0 Gold Standard while preserving v1.0 and adds
+per-run JSON/CSV evidence downloads for the final report.
 
 ## Final Product Goal
 
@@ -200,8 +205,12 @@ Creates and inspects saved tests using selected RAG settings:
 - top-p.
 
 The browser can preview and create a bounded new test with approved model,
-retrieval, top-k, temperature, top-p, and reviewed-question count. New answers
-receive the local eight scores automatically. Every saved test also exposes
+retrieval, top-k, temperature, top-p, exact reviewed-question selection, and a full or
+category-scoped source collection. It can label a run as a controlled baseline
+or create a one-setting comparison by choosing an existing completed baseline;
+the browser copies and locks the other settings/questions and the server verifies
+the exact question set and actual difference count. New answers receive the local eight scores
+automatically. Every saved test also exposes
 preflight and execution for either the local eight across the full test or all
 13 methods for one exact selected answer under the configured response,
 application, and cost limits.
@@ -274,8 +283,8 @@ The preferred final scope is intentionally focused on the evaluation goal:
 
 - The existing 27 Metro State documents as the initial baseline, with approved
   additions when they support a research experiment.
-- At least 25 reviewed evaluation questions, expanded when additional questions
-  improve category, document, difficulty, or failure-mode coverage.
+- The final 50 reviewed v2.0 evaluation questions, with the 25-question v1.0
+  set retained for historical-run reproducibility.
 - Browser-based TXT, text-based PDF, and DOCX upload and ingestion.
 - No requirement to reproduce enterprise scale locally; use controlled document
   subsets/additions and state the limits of extrapolating to very large corpora.
@@ -333,8 +342,8 @@ The final demo should show:
 
 | Configuration | Retrieval | Top-K | Dataset coverage | Expected-source hit rate | RAGAS faithfulness | Human acceptable | Runtime/cost | Notes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| A | Chroma | 3 | measured/25 | report observed | report observed | reviewed sample | recorded | Fixed baseline |
-| B | MySQL | 3 | measured/25 | report observed | report observed | reviewed sample | recorded | Retrieval method changed only |
+| A | Chroma | 3 | measured/50 | report observed | report observed | reviewed sample | recorded | Fixed baseline |
+| B | MySQL | 3 | measured/50 | report observed | report observed | reviewed sample | recorded | Retrieval method changed only |
 
 The placeholders must be replaced with stored experiment evidence. The final
 report should explain metric trade-offs in plain language and may not invent an

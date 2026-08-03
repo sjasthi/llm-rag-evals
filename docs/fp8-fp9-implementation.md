@@ -6,18 +6,20 @@ FP8 and FP9 application support was implemented and locally verified on July
 14, 2026. The code, schema, evaluator catalog, controlled-run support, Results
 inspector, human-review workflow, and Compare Runs workspace are live.
 
-The implementation is intentionally separate from the empirical study:
+The implementation is intentionally separate from the broader empirical study:
 
 - the existing FP7 responses still have their eight real baseline results;
-- no RAGAS or LLM-judge score has been invented or inserted;
-- the advanced runner was exercised in dry-run mode only because those methods
-  can call an external model and consume API quota;
-- an advanced proof run requires an explicit `--allow-paid` flag; and
-- preliminary and final research conclusions remain pending until comparable
-  advanced, human, and controlled-run evidence is actually collected.
+- the July 20 bounded proof stored one LLM-judge result and four current RAGAS
+  results for one response while preserving earlier failed attempts;
+- any additional advanced proof or experiment still requires an explicit
+  `--allow-paid` flag because those methods can consume API quota; and
+- the August 3 continuation added six matched controlled conditions, advanced
+  scoring for one hard response in both retrieval conditions, and seven
+  single-reviewer overall human decisions for descriptive calibration.
 
-This distinction lets the project say that FP8/FP9 infrastructure is complete
-without claiming that an experiment occurred when it did not.
+This distinction originally separated completed FP8/FP9 infrastructure from
+pending empirical work. The later final-study evidence is now reported without
+overstating its five-question conditions or single-reviewer calibration sample.
 
 ## Implemented Evaluator Portfolio
 
@@ -316,11 +318,13 @@ New schema/migration elements include:
 ## Verification Completed
 
 - 34 Python unit/static regression tests passed at the FP8/FP9 checkpoint; the
-  July 21 frontend-first suite now contains 54 provider-free tests.
+  August 3 final-readiness suite now contains 60 provider-free tests.
 - All PHP files pass syntax lint.
 - Browser JavaScript passes `node --check`.
-- Dataset API returns 25 questions and 13 evaluators. After the bounded FP10
-  proof, it returns 4 runs and 6 response summaries for the active dataset.
+- At the July v1.0 checkpoint, the Dataset API returned 25 questions and 13
+  evaluators. After the bounded FP10 proof, it returned 4 runs and 6 response
+  summaries for that active dataset. Seeding v2.0 makes the new 50-question set
+  active without relabeling those historical runs.
 - Response 17 returns 8 real baseline results, 8 immutable attempts, and 3
   exact saved contexts.
 - The human-review endpoint created two versions for one temporary reviewer,
@@ -337,20 +341,18 @@ New schema/migration elements include:
   responsive rules collapse all multi-column evaluation sections on narrow
   screens.
 
-## Remaining Research Work
+## Final-study continuation and future work
 
-The implementation enables, but does not fabricate, these next steps:
+The August 3 continuation used the completed infrastructure to inspect raw
+outputs, applicability, latency, usage, and failure history; run a bounded fixed
+Chroma baseline; compare Chroma/MySQL retrieval, top-k, answer model, and
+focused/full corpus conditions on the same five questions; collect seven
+selected overall human decisions; and write conclusions scoped to the tested
+dataset, corpus, models, versions, and settings. Dataset v2.0 contains 50
+reviewed, source-verified questions while v1.0 remains available for historical
+runs. Saved runs can be exported as JSON or long-form CSV.
 
-1. inspect raw outputs, applicability, latency, and provider usage;
-2. expand the reviewed evaluation set from 25 to the requested 50 questions;
-3. repeat the judge on a stratified subset to observe variability;
-4. collect independent human reviews for disagreements and failure cases;
-5. run a complete fixed Chroma baseline if budget permits;
-6. run matched MySQL/Chroma or top-k comparisons;
-7. run a matched focused/full corpus comparison;
-8. analyze each evaluator against human/failure evidence; and
-9. write conclusions scoped to the tested dataset, corpus, models, versions,
-   and settings.
-
-FP10 should emphasize empirical execution, calibration, teaching examples,
-final findings, and reproducibility—not another evaluation-framework expansion.
+Future research could enlarge the fixed question sample, repeat the judge to
+measure variability, and add multiple independent reviewers for inter-rater
+analysis. Those extensions would strengthen generalizability but are not
+presented as completed evidence in this submission.

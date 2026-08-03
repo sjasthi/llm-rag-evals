@@ -18,6 +18,7 @@ llm-rag-evals/
 |   |-- ask.php
 |   |-- documents.php
 |   |-- evaluations.php
+|   |-- exports.php
 |   |-- run_evaluation.php
 |   `-- test_runs.php
 |-- database/
@@ -48,6 +49,8 @@ llm-rag-evals/
 |   |-- settings.py
 |   |-- vector_store.py
 |   `-- requirements.txt
+|-- scripts/
+|   `-- start-local-mysql.ps1
 |-- storage/
 |   |-- uploads/
 |   `-- logs/
@@ -71,6 +74,9 @@ placeholder directories are unnecessary.
 - `rag/`: Python helper layer for TXT/PDF/DOCX text extraction,
   MySQL/ChromaDB ingestion, embeddings, retrieval, grounded answer generation,
   and evaluation metrics/experiments.
+- `scripts/`: operator-only local runtime helpers. Browser users never need
+  this directory; `start-local-mysql.ps1` safely starts the existing recovered
+  user-space MySQL instance and refuses to initialize or replace data.
 
 FP7 uses `rag/evaluation.py` for versioned dataset seeding, local evaluator
 implementations, and saved-response scoring. FP8/FP9 add:
@@ -96,10 +102,27 @@ and question-matched run-comparison summaries, immutable response/context proven
 response-level attempts/disagreement inspection, and versioned human response
 review.
 
+`api/exports.php` provides read-only, per-run JSON and UTF-8 long-form CSV
+downloads. Exports carry run/dataset/settings data, answers, immutable question
+snapshots, ordered contexts, canonical results, attempts, human reviews, and
+valid same-question/same-evaluator matched comparisons without exposing direct
+database access to the browser user.
+
 `api/test_runs.php` provides browser preflight and bounded creation for a new
 Gold Standard test. It forwards approved model, retrieval, top-k, temperature,
-top-p, and question count to `rag/run_evaluation.py`; generation remains behind
-the existing paid-call and cost policies.
+top-p, exact reviewed-question IDs, experiment/baseline metadata, and optional source
+categories to `rag/run_evaluation.py`; generation remains behind the existing
+paid-call and cost policies. Browser comparison mode copies and locks unchanged
+baseline controls, while the runner independently verifies the exact ordered
+question set and exactly one actual setting/corpus difference.
+
+`api/documents.php` owns the complete browser source lifecycle: list, validated
+upload, staged same-name replacement, verified single/all deletion, and
+restoration of the retained bundled collection through `rag/ingest.py`.
+
+`api/health.php` is a read-only application-data readiness probe. It returns a
+minimal ready/unavailable contract; technical connection details go to the
+server log rather than the browser.
 
 `api/run_evaluation.php` provides the no-write browser preflight and bounded
 execution bridge for each saved test's **Score saved answers** control. For an

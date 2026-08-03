@@ -1,11 +1,17 @@
 # UX Design
 
 Implementation status: the task-focused shell, configurable Chat, provider-free
-source preview, status-first Evaluation inspector, score contracts, human-review
-workflow, and evidence-first run comparison described below are implemented as
-of July 20, 2026. The July 20 simplification pass renamed the user-facing
+source preview, guided baseline/comparison launcher, study-readiness checklist,
+status-first Evaluation inspector, score contracts, human-review workflow,
+portable run exports, and evidence-first run comparison described
+below are implemented as of August 2, 2026. The July 20 simplification pass renamed the user-facing
 sections around tasks while retaining the richer experiment data model behind
 them.
+
+The global status pill is evidence-based: it begins at **Checking
+application…**, becomes **Application data ready** only after a server health
+response, and otherwise gives a user-safe unavailable state. Operational
+details remain in logs and setup documentation.
 
 ## Design Goal
 
@@ -22,11 +28,11 @@ preserves a stable URL hash for each workspace:
 - Chat: one interactive question with configurable retrieval/generation settings,
   its answer, and evidence side by side.
 - Documents: source ingestion and a contained source library.
-- Evaluation: reviewed test-question coverage, expected answers, cited evidence,
-  and review state.
-- Results: immutable batch-run history with a two-pane response inspector for
+- Gold Standard: reviewed test-question coverage, expected answers, cited
+  evidence, and review state.
+- Evaluation: immutable batch-run history with a two-pane response inspector for
   outputs, references, evaluator signals, runtime, and retrieved contexts.
-- Compare Runs: a secondary view reached from Results for matched comparisons,
+- Compare Runs: a secondary view reached from Evaluation for matched comparisons,
   failure patterns, metric trade-offs, and recommendations.
 
 This lifecycle follows established LLM-evaluation product patterns: iterate on
@@ -51,10 +57,11 @@ The main navigation contains five task labels:
 - Overview: project purpose, current capabilities, and entry points.
 - Chat: ask one question, choose settings, preview sources, and inspect evidence.
 - Documents: upload and manage Metro State documents.
-- Evaluation: manage the reviewed answer key and coverage.
-- Results: inspect saved batch runs and individual responses.
+- Gold Standard: manage the reviewed answer key and coverage.
+- Evaluation: create and inspect saved batch runs, download evidence, and review
+  individual responses.
 
-Compare Runs is intentionally reached from Results instead of occupying the
+Compare Runs is intentionally reached from Evaluation instead of occupying the
 main navigation. This keeps advanced research analysis available without making
 it part of the first-time user's required path.
 
@@ -62,11 +69,11 @@ it part of the first-time user's required path.
 
 The user-facing model is:
 
-1. Evaluation contains the test answer key: a reviewed question, expected
+1. Gold Standard contains the test answer key: a reviewed question, expected
    answer, and expected evidence.
 2. A test run sends several reviewed questions through the same retrieval and
    generation pipeline used by Chat, with one fixed configuration.
-3. Results stores each generated answer, its retrieved sources, and separate
+3. Evaluation stores each generated answer, its retrieved sources, and separate
    metric statuses for every answered question.
 4. Compare Runs only claims a difference when the same questions and the same
    quality check exist in both runs.
@@ -158,8 +165,13 @@ labels `Correct` and `Incorrect` on thresholded similarity cards. Prefer
 Evaluation leads with the boundary between generating and scoring: **New test
 run** creates answers, while **Score saved answers** only applies metrics to
 text that already exists. A bounded browser form exposes approved model,
-retrieval, top-k, temperature, top-p, and reviewed-question count with a
-call/cost preview.
+retrieval, top-k, temperature, top-p, exact reviewed-question selection, and full or
+category-scoped sources with a call/cost preview. Quick, baseline, and
+comparison modes use task language. Selecting a comparison baseline copies its
+settings and exact ordered questions, shows a readable summary, and disables every
+control except the one variable chosen for the experiment. The server repeats
+the zero/one/multiple-change check. A five-item study checklist turns stored
+evidence into concrete next actions for the final report.
 
 The saved-test browser makes scope and purpose explicit. Completed tests appear
 first; interrupted records are collapsed under **Earlier attempts needing
@@ -286,13 +298,15 @@ Chat source preview cannot silently reuse stale chunks. A successful corpus
 change also clears any already-rendered Chat source preview. Deletion requires
 confirmation and removes any
 active source from MySQL and ChromaDB; uploaded files are removed from storage,
-while bundled seed files remain only as recovery material. Delete All clears
-the active index after typed confirmation. Unsupported, encrypted, empty, and
+while bundled seed files remain as recovery material. **Restore bundled
+sources** re-indexes that starting collection from the same page and preserves
+uploads. Delete All clears the active index after typed confirmation.
+Unsupported, encrypted, empty, and
 scanned-without-text files produce understandable messages.
 
 ### Evaluation Questions
 
-Provides a searchable list and form for at least 25 reviewed questions. The UI
+Provides a searchable list and form for the 50 reviewed v2.0 questions. The UI
 should display expected answer, expected source, category, difficulty, and
 whether the question is answerable from the corpus. Filters should help verify
 coverage across categories and answerability before running experiments.

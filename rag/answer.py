@@ -44,6 +44,8 @@ class AnswerResult:
     input_tokens: int | None
     output_tokens: int | None
     total_tokens: int | None
+    thinking_tokens: int | None
+    finish_reason: str | None
     estimated_cost: float | None
     generation_cost_status: str
     response_id: int | None
@@ -106,12 +108,21 @@ def answer_question(
         input_tokens = generated.input_tokens
         output_tokens = generated.output_tokens
         total_tokens = generated.total_tokens
+        thinking_tokens = generated.thinking_tokens
+        finish_reason = generated.finish_reason
     else:
         answer = generated
         input_tokens = None
         output_tokens = None
         total_tokens = None
-    estimated_cost = estimate_generation_cost(input_tokens, output_tokens, settings)
+        thinking_tokens = None
+        finish_reason = None
+    estimated_cost = estimate_generation_cost(
+        input_tokens,
+        output_tokens,
+        settings,
+        thinking_tokens=thinking_tokens,
+    )
     generation_cost_status = "recorded" if estimated_cost is not None else "unavailable"
     latency_ms = round((time.perf_counter() - started_at) * 1000)
 
@@ -156,6 +167,8 @@ def answer_question(
                     generation_metadata={
                         "provider": settings.llm_provider,
                         "model": settings.llm_chat_model,
+                        "thinking_tokens": thinking_tokens,
+                        "finish_reason": finish_reason,
                         "pricing_configured": bool(
                             settings.llm_input_cost_per_million
                             or settings.llm_output_cost_per_million
@@ -180,6 +193,8 @@ def answer_question(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         total_tokens=total_tokens,
+        thinking_tokens=thinking_tokens,
+        finish_reason=finish_reason,
         estimated_cost=estimated_cost,
         generation_cost_status=generation_cost_status,
         response_id=response_id,

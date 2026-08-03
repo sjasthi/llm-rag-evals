@@ -21,7 +21,7 @@ def active_evaluator(connection: Any, evaluator_key: str) -> dict[str, Any]:
     return row
 
 
-def completed_result_exists(connection: Any, response_id: int, evaluator_key: str) -> bool:
+def reusable_result_exists(connection: Any, response_id: int, evaluator_key: str) -> bool:
     with connection.cursor() as cursor:
         cursor.execute(
             """SELECT 1
@@ -29,7 +29,8 @@ def completed_result_exists(connection: Any, response_id: int, evaluator_key: st
                JOIN evaluator_definitions definition
                  ON definition.evaluator_id=result.evaluator_id
                WHERE result.response_id=%s AND definition.evaluator_key=%s
-                 AND definition.is_active=TRUE AND result.status='completed'
+                 AND definition.is_active=TRUE
+                 AND result.status IN ('completed', 'skipped')
                LIMIT 1""",
             (response_id, evaluator_key),
         )

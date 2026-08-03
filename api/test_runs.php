@@ -21,10 +21,17 @@ function testRunResponse(int $status, array $payload): never
 function testRunUserError(string $technicalError): string
 {
     error_log('Browser test-run process failed: ' . $technicalError);
+    $fallback = 'The test run could not be completed. Any answer saved before the interruption remains available in Evaluation. Try again or contact the application administrator.';
     if (preg_match('/error:\s*([^\r\n]+)$/mi', $technicalError, $matches) === 1) {
-        return ucfirst(trim($matches[1]));
+        $message = trim($matches[1]);
+        if (
+            strlen($message) <= 300
+            && preg_match('/api[ _-]?key|\.env|environment|traceback|mysql|database|python|chroma|gemini|file path|directory/i', $message) !== 1
+        ) {
+            return ucfirst($message);
+        }
     }
-    return 'The test run could not be completed. Any answer saved before the interruption remains available in Evaluation.';
+    return $fallback;
 }
 
 function runTestCommand(array $payload): array
@@ -33,11 +40,22 @@ function runTestCommand(array $payload): array
     $datasetId = filter_var($payload['dataset_id'] ?? null, FILTER_VALIDATE_INT);
     $name = trim((string) ($payload['name'] ?? ''));
     $maxResponses = max(1, (int) envValue('MAX_TEST_RUN_RESPONSES', '5'));
-    $limit = filter_var(
-        $payload['limit'] ?? 1,
-        FILTER_VALIDATE_INT,
-        ['options' => ['min_range' => 1, 'max_range' => $maxResponses]]
-    );
+    $rawQuestionIds = $payload['question_ids'] ?? [];
+    if (!is_array($rawQuestionIds)) {
+        testRunResponse(422, ['ok' => false, 'error' => 'Choose reviewed questions from the Gold Standard.']);
+    }
+    $questionIds = [];
+    foreach ($rawQuestionIds as $rawQuestionId) {
+        $questionId = filter_var($rawQuestionId, FILTER_VALIDATE_INT);
+        if ($questionId === false || (int) $questionId <= 0) {
+            testRunResponse(422, ['ok' => false, 'error' => 'One selected Gold Standard question is invalid.']);
+        }
+        $questionIds[] = (int) $questionId;
+    }
+    if (count($questionIds) !== count(array_unique($questionIds))) {
+        testRunResponse(422, ['ok' => false, 'error' => 'Choose each reviewed question only once.']);
+    }
+    $limit = count($questionIds);
     $retrieval = (string) ($payload['retrieval_method'] ?? 'chroma_vector');
     $topK = filter_var(
         $payload['top_k'] ?? 3,
@@ -47,6 +65,29 @@ function runTestCommand(array $payload): array
     $temperature = filter_var($payload['temperature'] ?? 0.0, FILTER_VALIDATE_FLOAT);
     $topP = filter_var($payload['top_p'] ?? 0.9, FILTER_VALIDATE_FLOAT);
     $model = trim((string) ($payload['model'] ?? ''));
+    $experimentMode = trim((string) ($payload['experiment_mode'] ?? 'standalone'));
+    $experimentKey = trim((string) ($payload['experiment_key'] ?? ''));
+    $baselineRunId = null;
+    if (($payload['baseline_run_id'] ?? null) !== null && ($payload['baseline_run_id'] ?? '') !== '') {
+        $validatedBaselineRunId = filter_var($payload['baseline_run_id'], FILTER_VALIDATE_INT);
+        $baselineRunId = $validatedBaselineRunId === false ? false : (int) $validatedBaselineRunId;
+    }
+    $controlledVariable = trim((string) ($payload['controlled_variable'] ?? ''));
+    $changeFromBaseline = trim((string) ($payload['change_from_baseline'] ?? ''));
+    $corpusVariantKey = trim((string) ($payload['corpus_variant_key'] ?? 'full_current'));
+    $rawCategories = $payload['categories'] ?? [];
+    if (!is_array($rawCategories)) {
+        testRunResponse(422, ['ok' => false, 'error' => 'Choose source categories from the application.']);
+    }
+    $categories = [];
+    foreach ($rawCategories as $category) {
+        if (!is_string($category) || preg_match('/^[a-z0-9][a-z0-9_-]{1,49}$/', $category) !== 1) {
+            testRunResponse(422, ['ok' => false, 'error' => 'One selected source category is invalid. Refresh the page and try again.']);
+        }
+        $categories[] = $category;
+    }
+    $categories = array_values(array_unique($categories));
+    sort($categories);
     $allowedModels = array_values(array_unique(array_filter(array_map(
         'trim',
         explode(',', (string) envValue('LLM_CHAT_MODELS', (string) envValue('LLM_CHAT_MODEL', 'gemini-2.5-flash')))
@@ -55,10 +96,10 @@ function runTestCommand(array $payload): array
     if (!in_array($action, ['preflight', 'create'], true)) {
         testRunResponse(422, ['ok' => false, 'error' => 'Choose Preview test or Generate test.']);
     }
-    if (!$datasetId || $limit === false) {
+    if (!$datasetId || $limit < 1 || $limit > $maxResponses) {
         testRunResponse(422, [
             'ok' => false,
-            'error' => "Choose between 1 and {$maxResponses} reviewed questions.",
+            'error' => "Choose between 1 and {$maxResponses} exact reviewed questions.",
         ]);
     }
     if ($name === '' || strlen($name) > 120) {
@@ -76,6 +117,41 @@ function runTestCommand(array $payload): array
     if ($model === '' || !in_array($model, $allowedModels, true)) {
         testRunResponse(422, ['ok' => false, 'error' => 'Choose a deployment-approved model.']);
     }
+    if (!in_array($experimentMode, ['standalone', 'baseline', 'comparison'], true)) {
+        testRunResponse(422, ['ok' => false, 'error' => 'Choose a quick test, controlled baseline, or baseline comparison.']);
+    }
+    if (strlen($experimentKey) > 120) {
+        testRunResponse(422, ['ok' => false, 'error' => 'Keep the experiment label to 120 characters or fewer.']);
+    }
+    if (preg_match('/^[a-z0-9][a-z0-9_-]{1,119}$/', $corpusVariantKey) !== 1) {
+        testRunResponse(422, ['ok' => false, 'error' => 'The selected source collection could not be identified. Refresh the page and try again.']);
+    }
+    if (count($categories) > 50) {
+        testRunResponse(422, ['ok' => false, 'error' => 'Choose no more than 50 source categories in one test.']);
+    }
+    $allowedControlledVariables = ['retrieval_method', 'top_k', 'model', 'temperature', 'top_p', 'corpus'];
+    if ($experimentMode === 'standalone') {
+        if ($baselineRunId !== null || $controlledVariable !== '' || $changeFromBaseline !== '') {
+            testRunResponse(422, ['ok' => false, 'error' => 'A standalone test cannot be attached to a comparison baseline.']);
+        }
+    } elseif ($experimentMode === 'baseline') {
+        if ($experimentKey === '') {
+            testRunResponse(422, ['ok' => false, 'error' => 'Give the controlled experiment a short label.']);
+        }
+        if ($baselineRunId !== null || $controlledVariable !== '' || $changeFromBaseline !== '') {
+            testRunResponse(422, ['ok' => false, 'error' => 'A baseline starts an experiment and cannot reference another baseline.']);
+        }
+    } else {
+        if ($experimentKey === '' || !is_int($baselineRunId) || $baselineRunId <= 0) {
+            testRunResponse(422, ['ok' => false, 'error' => 'Choose a completed baseline and label the experiment.']);
+        }
+        if (!in_array($controlledVariable, $allowedControlledVariables, true)) {
+            testRunResponse(422, ['ok' => false, 'error' => 'Choose the one setting changed from the baseline.']);
+        }
+        if ($changeFromBaseline === '' || strlen($changeFromBaseline) > 500) {
+            testRunResponse(422, ['ok' => false, 'error' => 'The comparison must describe its one changed setting.']);
+        }
+    }
 
     $root = projectRoot();
     $python = envValue('PYTHON_BIN', $root . '/.venv/Scripts/python.exe');
@@ -91,6 +167,8 @@ function runTestCommand(array $payload): array
         $name,
         '--limit',
         (string) $limit,
+        '--question-ids',
+        implode(',', $questionIds),
         '--retrieval',
         $retrieval,
         '--top-k',
@@ -107,6 +185,22 @@ function runTestCommand(array $payload): array
         (string) envValue('MAX_GENERATION_COST', '0.25'),
         '--json',
     ];
+    if ($experimentKey !== '') {
+        $command[] = '--experiment-key';
+        $command[] = $experimentKey;
+    }
+    $command[] = '--corpus-variant';
+    $command[] = $corpusVariantKey;
+    if ($categories !== []) {
+        $command[] = '--categories';
+        $command[] = implode(',', $categories);
+    }
+    if (is_int($baselineRunId)) {
+        $command[] = '--baseline-run-id';
+        $command[] = (string) $baselineRunId;
+        $command[] = '--change-from-baseline';
+        $command[] = $changeFromBaseline;
+    }
     if ($action === 'preflight') {
         $command[] = '--dry-run';
     } else {
@@ -173,7 +267,11 @@ try {
         header('Allow: POST');
         testRunResponse(405, ['ok' => false, 'error' => 'Use POST to preview or generate a test run.']);
     }
-    $payload = json_decode(file_get_contents('php://input') ?: '{}', true, 16, JSON_THROW_ON_ERROR);
+    try {
+        $payload = json_decode(file_get_contents('php://input') ?: '{}', true, 16, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        testRunResponse(400, ['ok' => false, 'error' => 'Request body must contain valid JSON.']);
+    }
     if (!is_array($payload)) {
         testRunResponse(400, ['ok' => false, 'error' => 'Request body must contain a JSON object.']);
     }

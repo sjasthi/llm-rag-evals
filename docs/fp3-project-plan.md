@@ -51,7 +51,8 @@ Compare Runs expose score contracts, attempt variability, disagreement prompts,
 response review, configuration/coverage comparison, and all 13 evaluator
 definitions. The final clarity pass presents Local metrics, the LLM judge, and
 RAGAS directly and labels Human review as supporting evidence. Comparative
-findings remain pending matched and human-review data.
+automated findings were added August 3 through six controlled runs, and seven
+selected final-study responses now have single-reviewer overall human decisions.
 
 FP10 hardening status: completed and provider-free verified July 20, 2026.
 Controlled responses/runs now preserve immutable reviewed inputs, exact context
@@ -62,8 +63,16 @@ reproduction documentation, and the combined FP8-FP10 demo/signoffs are present.
 One bounded paid proof produced a completed LLM-judge result; authorized
 follow-up retries completed all four RAGAS metrics after correcting the adapter
 and provider-extra dependency. Human calibration, matched experiments, final
-empirical recommendations, presentation delivery, and release tagging remain
-pending evidence/delivery work rather than completed claims.
+empirical recommendations, and their supporting evidence are now complete.
+Presentation delivery and release tagging remain delivery work.
+
+Final-readiness status (August 3, 2026): dataset v2.0 now contains 50 reviewed,
+source-verified questions while v1.0 remains intact, every saved run has
+portable JSON/CSV evidence downloads, and all 60 provider-free tests pass. The
+historical user-space MySQL instance was recovered and backed up; the v2 seed,
+MySQL retrieval, and database-backed browser/API smoke tests pass without model
+calls. It is not an automatic Windows service, so the local operator launcher
+must be used after reboot.
 
 ## Revised Research Direction After FP5 Review
 

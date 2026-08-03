@@ -121,9 +121,9 @@ does not mean the answer is 95.31 percent factually correct.
 
 ## Dataset Requirements
 
-The earlier target of at least 25 manually reviewed questions remains the
-working dataset-size goal unless the professor changes it. That number is
-separate from the evaluator portfolio. The planning table names ten primary
+Dataset v2.0 now contains the final 50 manually reviewed questions; the
+25-question v1.0 file remains unchanged for historical-run reproducibility.
+The dataset size is separate from the evaluator portfolio. The planning table names ten primary
 types; the executable catalog registers 13 methods because required-fact
 coverage, ROUGE-L, and refusal correctness are retained as distinct baseline
 signals rather than hidden inside broader families.
@@ -221,8 +221,12 @@ defending an arbitrary metric count.
 ### FP8: Judged/RAGAS Evaluators and Experiments
 
 Implementation status: evaluator/application infrastructure completed and
-verified July 14, 2026. Real advanced scores remain pending an explicitly
-authorized cost-bounded provider run.
+verified July 14, 2026. A separately authorized July 20 proof completed the
+LLM judge and all four RAGAS metrics for one response after preserving and
+fixing the initial adapter/dependency failures. On August 3, the same five
+advanced methods completed on a matched hard response in the Chroma and MySQL
+final-study runs. Seven selected final-study responses now have single-reviewer
+overall human decisions; broader advanced coverage remains future work.
 
 - Add a versioned LLM-as-judge rubric for correctness, completeness,
   faithfulness, relevance, and answerability/refusal.
@@ -248,8 +252,9 @@ authorized cost-bounded provider run.
 ### FP9: Research Dashboard, Interpretation, and UX
 
 Implementation status: dashboard/API/human-review infrastructure completed and
-verified July 14, 2026. Empirical findings remain pending matched experiments
-and reviewer evidence.
+verified July 14, 2026. Six matched automated conditions and seven selected
+single-reviewer overall human decisions are complete. The reviewer evidence is a
+descriptive single-reviewer calibration sample, not inter-rater evidence.
 
 - Present per-question scores, evaluator explanations, errors, and failure
   categories.
@@ -262,11 +267,13 @@ and reviewer evidence.
 
 ### FP10: Validation and Teaching Deliverables
 
-Implementation status (July 20, 2026): reproducibility/cost hardening,
-question-matched Findings, accessibility, provider-free validation, CI, and the
-demo/checkoff materials are complete. Repeat paid runs, human calibration,
-empirical recommendations, final presentation/report delivery, and release
-tagging remain pending.
+Implementation status (August 2, 2026): reproducibility/cost hardening,
+question-matched Findings, accessibility, provider-free validation, CI, the
+50-question v2.0 answer key, portable run exports, and demo/checkoff materials
+are complete. The bounded automated matrix, empirical recommendations, complete
+exports, report draft, and presentation outline were added August 3. Human
+calibration and bounded live validation of the two output-budget fixes are also
+complete. Final delivery and release tagging remain pending.
 
 - Repeat key runs for reproducibility and document environment/version details.
 - Finalize findings, recommendations by use case/stakeholder, and limitations.
@@ -287,15 +294,13 @@ tagging remain pending.
 - State conclusions only for the tested corpus, question set, models, settings,
   and evaluator versions.
 
-## Immediate Resume Point
+## Current Evidence Status
 
-FP8/FP9 support and FP10 provider-free hardening are implemented. Resume only
-after recording current provider pricing, an approved monetary cap, the exact
-response/application count, and whether unknown cost is permitted. First run a
-dry-run-reviewed one-response baseline proof, then an advanced proof against
-that saved response. Inspect raw judge/RAGAS output, runtime, applicability,
-usage, and immutable provenance before expanding. Then collect a human review
-and run matched one-variable retrieval or corpus comparisons. Do not regenerate
-answers merely to add an evaluator, do not treat a project threshold as truth,
-and do not write comparative findings until the corresponding stored evidence
-exists. See `docs/fp8-fp9-implementation.md` and `docs/fp10-hardening.md`.
+FP8/FP9 support, FP10 hardening, the 50-question answer key, and JSON/CSV export
+are implemented. The local MySQL instance has been recovered, backed up, and
+provider-free smoke tested. Six exact-question controlled conditions, matched
+advanced scoring, and seven selected human reviews are complete. Before any new
+provider work, record current pricing, an approved monetary cap, the exact
+response/application count, and whether unknown cost is permitted. Do not
+regenerate answers merely to add an evaluator or treat a project threshold as
+truth.

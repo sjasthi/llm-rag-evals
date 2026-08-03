@@ -196,6 +196,8 @@ a { color: inherit; }
 }
 
 .live-pill { color: var(--forest-950); background: var(--lime); }
+.unavailable-pill { color: #fff; background: #9f352b; }
+.unavailable-pill > span { width: 0.45rem; height: 0.45rem; background: #ffd8d3; border-radius: 50%; box-shadow: 0 0 0 4px rgba(255, 216, 211, 0.14); }
 .pill.muted { color: #e0e9e3; border: 1px solid rgba(255, 255, 255, 0.2); }
 
 .workspace-section { margin-top: 1.25rem; }
@@ -494,10 +496,22 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
 .new-test-run-heading span { color: var(--orange); font-size: 0.58rem; font-weight: 900; letter-spacing: 0.07em; text-transform: uppercase; }
 .new-test-run-heading strong { margin-top: 0.2rem; color: var(--forest-900); font-size: 0.74rem; }
 .new-test-run > p { max-width: 55rem; margin: 0.55rem 0; color: var(--muted); font-size: 0.65rem; line-height: 1.5; }
+.new-test-research-setup { padding: 0.75rem; margin: 0.7rem 0; background: var(--paper-muted); border: 1px solid var(--line); border-radius: 0.65rem; }
+.new-test-research-setup > p { margin: 0.55rem 0 0; color: var(--muted); font-size: 0.62rem; line-height: 1.5; }
 .new-test-run-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.55rem; }
 .new-test-run-grid label { display: grid; min-width: 0; gap: 0.25rem; color: var(--forest-800); font-size: 0.59rem; font-weight: 850; }
-.new-test-run-grid label:first-child { grid-column: span 2; }
+.new-test-run-grid .new-test-name-field, .new-test-run-grid .new-test-wide-field { grid-column: span 2; }
 .new-test-run-grid .form-control, .new-test-run-grid .form-select { min-width: 0; font-size: 0.63rem; }
+.new-test-run-grid :disabled { color: var(--quiet); background-color: #edf0ed; cursor: not-allowed; opacity: 0.82; }
+.new-test-baseline-summary { padding: 0.6rem; margin-top: 0.6rem; color: var(--forest-800); background: #fff; border-left: 3px solid var(--blue); border-radius: 0.4rem; font-size: 0.61rem; line-height: 1.5; }
+.new-test-baseline-summary strong, .new-test-baseline-summary span { display: block; }
+.new-test-baseline-summary span { margin-top: 0.12rem; color: var(--muted); }
+.new-test-category-field { grid-column: 1 / -1; min-width: 0; padding: 0.6rem; margin: 0; border: 1px solid var(--line); border-radius: 0.55rem; }
+.new-test-category-field legend { width: auto; padding: 0 0.2rem; margin: 0; color: var(--forest-800); font-size: 0.59rem; font-weight: 850; }
+.new-test-category-field > small { display: block; margin-top: 0.4rem; color: var(--quiet); font-size: 0.57rem; line-height: 1.4; }
+.new-test-category-choices { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.new-test-category-choices label { display: inline-flex; grid-column: auto; gap: 0.3rem; align-items: center; padding: 0.3rem 0.45rem; color: var(--forest-800); background: #fff; border: 1px solid var(--line); border-radius: 99rem; font-size: 0.58rem; font-weight: 750; }
+.new-test-category-choices input { margin: 0; }
 .new-test-run > small { display: block; margin-top: 0.55rem; color: var(--quiet); font-size: 0.57rem; line-height: 1.45; }
 .new-test-run-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; margin-top: 0.65rem; }
 .new-test-run-actions > span { flex: 1 1 20rem; color: var(--muted); font-size: 0.6rem; line-height: 1.45; }
@@ -508,6 +522,17 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
 .experiment-summary-grid span { color: var(--muted); font-size: 0.64rem; font-weight: 800; }
 .experiment-summary-grid strong { margin: 0.25rem 0 0.1rem; color: var(--forest-900); font-family: Georgia, "Times New Roman", serif; font-size: 1.8rem; font-weight: 500; }
 .experiment-summary-grid small { color: var(--quiet); font-size: 0.62rem; }
+
+.research-readiness { display: grid; grid-template-columns: minmax(10rem, 0.35fr) minmax(0, 1.65fr); gap: 0.8rem 1.2rem; align-items: start; padding: 0.75rem 0.85rem; margin-top: 0.65rem; background: #fff; border: 1px solid var(--line); border-radius: 0.7rem; }
+.research-readiness > div span, .research-readiness > div strong { display: block; }
+.research-readiness > div span { color: var(--orange); font-size: 0.57rem; font-weight: 900; letter-spacing: 0.07em; text-transform: uppercase; }
+.research-readiness > div strong { margin-top: 0.18rem; color: var(--forest-900); font-size: 0.7rem; }
+.research-readiness ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem; padding: 0; margin: 0; list-style: none; }
+.research-readiness li { display: flex; gap: 0.4rem; align-items: flex-start; min-width: 0; padding: 0.38rem 0.45rem; border-radius: 0.45rem; font-size: 0.59rem; line-height: 1.4; }
+.research-readiness li > span { flex: 0 0 auto; font-weight: 900; }
+.research-readiness a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.12rem; }
+.research-readiness .readiness-ready { color: #315c3d; background: #edf5e9; }
+.research-readiness .readiness-next { color: #75441f; background: var(--orange-soft); }
 
 .evaluation-boundary { display: grid; grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1.45fr); gap: 0.4rem 1rem; align-items: center; padding: 0.75rem 0.85rem; margin-top: 0.7rem; color: #fff; background: var(--forest-800); border-radius: 0.7rem; }
 .evaluation-boundary strong { font-size: 0.7rem; }
@@ -548,12 +573,15 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
 .evaluation-run h3 { margin: 0.4rem 0 0.15rem; color: var(--ink); font-size: 0.72rem; line-height: 1.35; }
 .evaluation-run-meta { display: block; color: var(--quiet); font-size: 0.6rem; }
 .evaluation-run-scope { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.6rem; line-height: 1.4; }
+.evaluation-run-experiment { margin: 0.45rem 0 0; padding: 0.42rem 0.5rem; color: var(--forest-800); background: rgba(200, 239, 98, 0.2); border-left: 3px solid var(--lime-strong); border-radius: 0.45rem; font-size: 0.61rem; line-height: 1.45; }
 .evaluation-run-note, .evaluation-run-warning { margin: 0.5rem 0 0; padding: 0.42rem 0.5rem; font-size: 0.62rem; line-height: 1.4; border-radius: 0.45rem; }
 .evaluation-run-note { color: #4c5d50; background: #edf2e9; }
 .evaluation-run-warning { color: #79472a; background: var(--orange-soft); border-left: 3px solid var(--orange); }
 .run-settings { margin-top: 0.45rem; }
 .run-settings > summary { color: var(--forest-700); font-size: 0.58rem; font-weight: 800; cursor: pointer; }
 .run-settings > p { margin: 0.35rem 0 0; padding: 0.45rem; color: var(--muted); font-size: 0.56rem; line-height: 1.45; background: var(--paper-muted); border-radius: 0.4rem; }
+.run-export-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-top: 0.55rem; }
+.run-export-actions > span { flex-basis: 100%; color: var(--muted); font-size: 0.58rem; font-weight: 700; }
 .run-evaluation-actions { margin-top: 0.6rem; }
 .run-evaluation-panel { display: grid; gap: 0.5rem; padding: 0.6rem; margin-top: 0.45rem; background: #fff; border: 1px solid var(--line); border-radius: 0.55rem; }
 .run-evaluation-panel[hidden] { display: none; }
@@ -786,6 +814,7 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
     .document-list { margin-top: 1rem !important; }
     .document-library-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .new-test-run-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .research-readiness { grid-template-columns: 1fr; }
     .evaluation-boundary { grid-template-columns: 1fr; }
     .experiment-guide { display: block; }
     .experiment-guide strong, .experiment-guide p { margin-top: 0.2rem; }
@@ -814,9 +843,9 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
     .chat-settings-heading, .chat-settings-footer { align-items: stretch; flex-direction: column; }
     .chat-settings-heading .btn { align-self: flex-start; }
     .chat-settings-footer > small { max-width: none; text-align: left; }
-    .evaluation-status-guide, .experiment-summary-grid, .response-method-summary, .evaluation-run-list, .evaluation-score-list, .findings-summary-grid, .finding-run-grid, .finding-metric-catalog, .findings-rules ol, .metric-dependency-guide, .document-library-toolbar { grid-template-columns: 1fr; }
+    .evaluation-status-guide, .experiment-summary-grid, .research-readiness ul, .response-method-summary, .evaluation-run-list, .evaluation-score-list, .findings-summary-grid, .finding-run-grid, .finding-metric-catalog, .findings-rules ol, .metric-dependency-guide, .document-library-toolbar { grid-template-columns: 1fr; }
     .new-test-run-grid { grid-template-columns: 1fr; }
-    .new-test-run-grid label:first-child { grid-column: auto; }
+    .new-test-run-grid .new-test-name-field, .new-test-run-grid .new-test-wide-field { grid-column: auto; }
     .new-test-run-heading { align-items: stretch; flex-direction: column; }
     .new-test-run-heading .btn { align-self: flex-start; }
     .evaluation-toolbar { align-items: stretch; flex-direction: column; }

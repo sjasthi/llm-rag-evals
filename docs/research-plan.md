@@ -51,9 +51,11 @@ score contracts, trade-offs, teaching examples, and FP7-FP10 sequence.
 
 ## Evaluation Dataset Design
 
-Begin with at least 25 manually reviewed questions. Twenty-five is a practical
-starting point, not a universal ratio between questions and documents. The
-number of questions should be justified by coverage and research usefulness.
+Dataset v2.0 now contains 50 manually reviewed questions. The original 25-case
+v1.0 set was a practical starting point, not a universal ratio between questions
+and documents, and remains tracked for historical reproducibility. The final
+count is justified by added category, distractor, multi-fact, policy, cost, and
+failure-mode coverage.
 
 The initial dataset should:
 
@@ -65,8 +67,8 @@ The initial dataset should:
 - record category, difficulty, and answerability;
 - avoid multiple questions that test the same fact without a research reason.
 
-For the current 27-document collection, a starting distribution of 25-35
-questions is appropriate. More questions can be added when they improve topic,
+For the current 27-document collection, the 50-question v2.0 set is the final
+submission baseline. More questions should be added only when they improve topic,
 document, difficulty, or failure-mode coverage. A much larger document corpus
 does not automatically require the same proportional increase in questions;
 the evaluation set should instead sample the behaviors and risks that matter.
@@ -126,6 +128,12 @@ where required-fact coverage, lexical/semantic similarity, source accuracy,
 RAGAS dimensions, LLM judgment, and human judgment disagree. Start by applying
 the advanced evaluators to the three saved Run 3 responses without regenerating
 their answers, then expand only after the cost-bounded proof is stable.
+
+August 3 bounded-study result: five stratified questions were used for the
+deadline matrix rather than claiming execution of all 50. All eight baseline
+methods ran on 30 responses; all five advanced methods ran on one matched hard
+case in each retrieval condition. The sample-size limitation must remain
+explicit in any reported findings.
 
 On a stratified subset, repeat the LLM judge and preserve every attempt. Report
 score range/variance and decision agreement so judged results are not treated
@@ -263,7 +271,8 @@ were completed and verified July 14, 2026. No paid advanced scores were created
 during that implementation pass. A separate July 20 bounded proof later stored
 one completed LLM-judge result. The preserved RAGAS adapter/dependency failures
 were corrected, and bounded retries completed all four RAGAS metrics for that
-same response. Broader empirical execution and human calibration are still required.
+same response. The August 3 continuation completed six controlled conditions,
+matched advanced scoring, and seven selected human reviews.
 
 - Add a versioned LLM-as-judge rubric plus RAGAS Faithfulness, Response
   Relevancy, Context Precision, and Context Recall.
@@ -285,7 +294,9 @@ human-review form, disagreement prompts, run comparison, interpretation rules,
 and full evaluator catalog were completed and verified July 14, 2026. The final
 clarity pass groups automatic results as Local metrics, LLM judge, and RAGAS,
 with Human review labeled separately as supporting evidence.
-Preliminary findings await matched run and review evidence.
+Matched automated findings are available from the completed study runs.
+Seven selected final-study responses have single-reviewer overall human decisions:
+six acceptable and one needs revision.
 
 - Build dashboard comparisons and drill-down views.
 - Explain each metric in plain language, including limitations.
@@ -295,12 +306,13 @@ Preliminary findings await matched run and review evidence.
 
 ### FP10: Final Research Report and Delivery
 
-Implementation status (July 20, 2026): application stabilization,
+Implementation status (August 2, 2026): application stabilization,
 reproducibility/cost safeguards, matched-comparison rules, accessibility,
-provider-free CI, documentation, and FP10 demonstration/checkoff preparation
-are complete. Empirical advanced runs, human calibration, matched experiments,
-final evidence-based recommendations, presentation delivery, and release tag
-remain pending.
+provider-free CI, documentation, the 50-question v2.0 answer key, portable run
+exports, and FP10 demonstration/checkoff preparation are complete. The August 3
+matrix, evidence exports, evidence-based report draft, and presentation outline
+are also complete, along with the seven-response human-calibration sample. Final
+presentation delivery, commit/push, and the release tag remain pending.
 
 - Stabilize the application and reproducible experiment procedure.
 - Finalize findings, limitations, and future-research questions.

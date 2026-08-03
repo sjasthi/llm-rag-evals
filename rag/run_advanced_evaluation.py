@@ -15,7 +15,7 @@ from advanced_evaluation import (
 )
 from database import database_connection
 from evaluation import load_evaluation_input
-from evaluation_store import completed_result_exists, persist_result
+from evaluation_store import persist_result, reusable_result_exists
 from settings import Settings, load_settings
 
 
@@ -58,14 +58,14 @@ def build_preflight(
     for response_id in response_ids:
         item = load_evaluation_input(connection, response_id)
         for evaluator_key in evaluator_keys:
-            existing = completed_result_exists(connection, response_id, evaluator_key)
+            existing = reusable_result_exists(connection, response_id, evaluator_key)
             if existing and not force:
                 reuse_count += 1
                 applications.append({
                     "response_id": response_id,
                     "evaluator": evaluator_key,
                     "action": "reuse",
-                    "reason": "A completed active-version result already exists.",
+                    "reason": "A completed or not-applicable active-version result already exists.",
                 })
                 continue
             reason = applicability_reason(evaluator_key, item)
@@ -171,6 +171,7 @@ def execute_plan(
                         "input_tokens": execution.input_tokens,
                         "output_tokens": execution.output_tokens,
                         "total_tokens": execution.total_tokens,
+                        "thinking_tokens": execution.thinking_tokens,
                     },
                 })
     return outcomes

@@ -1,5 +1,7 @@
 $(function () {
     const $navigation = $("#mainNavigation");
+    const $applicationStatusPill = $("#applicationStatusPill");
+    const $applicationStatusText = $("#applicationStatusText");
     const $askForm = $("#askForm");
     const $questionInput = $("#questionInput");
     const $askButton = $("#askButton");
@@ -38,6 +40,7 @@ $(function () {
     const $documentMessage = $("#documentMessage");
     const $documentList = $("#documentList");
     const $refreshDocumentsButton = $("#refreshDocumentsButton");
+    const $restoreBundledDocumentsButton = $("#restoreBundledDocumentsButton");
     const $deleteAllDocumentsButton = $("#deleteAllDocumentsButton");
     const $documentSearch = $("#documentSearch");
     const $documentCategoryFilter = $("#documentCategoryFilter");
@@ -58,6 +61,7 @@ $(function () {
     const $evaluatorCount = $("#evaluatorCount");
     const $overviewEvaluatorCount = $("#overviewEvaluatorCount");
     const $experimentHumanReviewCount = $("#experimentHumanReviewCount");
+    const $researchReadinessList = $("#researchReadinessList");
     const $evaluatorSummary = $("#evaluatorSummary");
     const $evaluationRunList = $("#evaluationRunList");
     const $evaluationResultDetail = $("#evaluationResultDetail");
@@ -65,13 +69,26 @@ $(function () {
     const $newTestRunForm = $("#newTestRunForm");
     const $closeNewTestRun = $("#closeNewTestRun");
     const $newTestDatasetId = $("#newTestDatasetId");
+    const $newTestExperimentMode = $("#newTestExperimentMode");
+    const $newTestBaselineField = $("#newTestBaselineField");
+    const $newTestBaselineRun = $("#newTestBaselineRun");
+    const $newTestExperimentField = $("#newTestExperimentField");
+    const $newTestExperimentKey = $("#newTestExperimentKey");
+    const $newTestChangeField = $("#newTestChangeField");
+    const $newTestControlledVariable = $("#newTestControlledVariable");
+    const $newTestComparisonGuide = $("#newTestComparisonGuide");
+    const $newTestBaselineSummary = $("#newTestBaselineSummary");
     const $newTestName = $("#newTestName");
     const $newTestLimit = $("#newTestLimit");
+    const $newTestQuestionIds = $("#newTestQuestionIds");
     const $newTestModel = $("#newTestModel");
     const $newTestRetrieval = $("#newTestRetrieval");
     const $newTestTopK = $("#newTestTopK");
     const $newTestTemperature = $("#newTestTemperature");
     const $newTestTopP = $("#newTestTopP");
+    const $newTestCorpusScope = $("#newTestCorpusScope");
+    const $newTestCategoryField = $("#newTestCategoryField");
+    const $newTestCategoryChoices = $("#newTestCategoryChoices");
     const $previewNewTestRun = $("#previewNewTestRun");
     const $createNewTestRun = $("#createNewTestRun");
     const $newTestRunStatus = $("#newTestRunStatus");
@@ -85,16 +102,46 @@ $(function () {
     const generationEnabled = $askForm.data("generationEnabled") === true;
     let evaluationQuestions = [];
     let evaluationDatasetQuestionCount = 0;
+    let evaluationRuns = [];
     let evaluatorCatalog = [];
     let currentEvaluationResponseId = null;
     let evaluationResponseContexts = new Map();
     let indexedDocuments = [];
+    let requestedNewTestCategories = [];
     let pendingDuplicateDocument = null;
     let documentListRequest = null;
     let ingestionStartedAt = null;
     let ingestionTimer = null;
 
     const $workspaceViews = $("[data-view-panel]");
+
+    function loadApplicationHealth() {
+        function showUnavailable(message) {
+            $applicationStatusPill.removeClass("live-pill muted").addClass("unavailable-pill");
+            $applicationStatusText.text("Application data unavailable");
+            $applicationStatusPill.attr("title", message);
+        }
+        $.ajax({
+            url: "api/health.php",
+            method: "GET",
+            dataType: "json",
+            timeout: 10000,
+        })
+            .done(function (response) {
+                if (response?.ok !== true || response.data?.status !== "ready") {
+                    showUnavailable("Application readiness could not be confirmed. Try again or contact the application administrator.");
+                    return;
+                }
+                $applicationStatusPill.removeClass("muted unavailable-pill").addClass("live-pill");
+                $applicationStatusText.text("Application data ready");
+                $applicationStatusPill.removeAttr("title");
+            })
+            .fail(function (xhr) {
+                const message = xhr.responseJSON?.error ||
+                    "Application data is temporarily unavailable. Try again or contact the application administrator.";
+                showUnavailable(message);
+            });
+    }
 
     function preferredScrollBehavior() {
         return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
@@ -404,6 +451,79 @@ $(function () {
         if (categories.includes(currentCategory)) {
             $documentCategoryFilter.val(currentCategory);
         }
+        updateNewTestCategoryChoices(categories);
+    }
+
+    function updateNewTestCategoryChoices(categories) {
+        const checkedValues = $newTestCategoryChoices.find("input:checked").map(function () {
+            return String($(this).val());
+        }).get();
+        const selected = new Set(checkedValues.length ? checkedValues : requestedNewTestCategories);
+        $newTestCategoryChoices.empty();
+        if (!categories.length) {
+            $newTestCategoryChoices.append($("<span>").text("No active source categories are available."));
+            syncNewTestExperimentControls(false);
+            return;
+        }
+        categories.forEach(function (category) {
+            const checkboxId = "newTestCategory_" + String(category).replace(/[^a-z0-9_-]/gi, "_");
+            const $checkbox = $("<input>").attr({
+                id: checkboxId,
+                type: "checkbox",
+                value: category,
+            }).addClass("form-check-input new-test-category-input");
+            if (selected.has(String(category))) {
+                $checkbox.prop("checked", true);
+            }
+            $newTestCategoryChoices.append(
+                $("<label>").attr("for", checkboxId).append($checkbox, $("<span>").text(readable(category)))
+            );
+        });
+        syncNewTestExperimentControls(false);
+    }
+
+    function selectedNewTestQuestionIds() {
+        return $newTestQuestionIds.find("option:selected").map(function () {
+            return Number($(this).val());
+        }).get().filter(Number.isInteger);
+    }
+
+    function setSelectedNewTestQuestionIds(questionIds) {
+        const selected = new Set((questionIds || []).map(Number));
+        $newTestQuestionIds.find("option").each(function () {
+            $(this).prop("selected", selected.has(Number($(this).val())));
+        });
+        $newTestLimit.val(String(selected.size));
+    }
+
+    function populateNewTestQuestionChoices() {
+        const previouslySelected = selectedNewTestQuestionIds();
+        const maxQuestions = Number($newTestLimit.data("max")) || 5;
+        $newTestQuestionIds.empty();
+        evaluationQuestions.forEach(function (question) {
+            const number = Number(question.display_order) || Number(question.question_id);
+            const label = "Question " + number + " · " + readable(question.category) + " · " + question.question_text;
+            $newTestQuestionIds.append(
+                $("<option>").val(question.question_id).text(label)
+            );
+        });
+        if (previouslySelected.length) {
+            setSelectedNewTestQuestionIds(previouslySelected.slice(0, maxQuestions));
+            return;
+        }
+        const finalStudyNumbers = [1, 23, 35, 38, 46].slice(0, maxQuestions);
+        const recommendedIds = evaluationQuestions.filter(function (question) {
+            return finalStudyNumbers.includes(Number(question.display_order));
+        }).map(function (question) {
+            return Number(question.question_id);
+        });
+        setSelectedNewTestQuestionIds(
+            recommendedIds.length === finalStudyNumbers.length
+                ? recommendedIds
+                : evaluationQuestions.slice(0, maxQuestions).map(function (question) {
+                    return Number(question.question_id);
+                })
+        );
     }
 
     function documentRow(item) {
@@ -676,6 +796,45 @@ $(function () {
 
     $refreshDocumentsButton.on("click", function () {
         loadDocuments();
+    });
+
+    $restoreBundledDocumentsButton.on("click", function () {
+        if (!window.confirm(
+            "Restore and re-index the bundled Metro State source collection?\n\n" +
+            "Bundled sources will be added or refreshed with the current index settings. Browser-uploaded documents will remain."
+        )) {
+            return;
+        }
+        $restoreBundledDocumentsButton.prop("disabled", true).text("Restoring…");
+        $uploadDocumentButton.add($deleteAllDocumentsButton).prop("disabled", true);
+        showDocumentMessage(
+            "Restoring the bundled sources and rebuilding their searchable chunks. Keep this page open until the source list refreshes.",
+            "info"
+        );
+        $.ajax({
+            url: "api/documents.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            timeout: 310000,
+            data: JSON.stringify({ action: "restore_bundled", confirmation: "RESTORE" }),
+        })
+            .done(function (response) {
+                showDocumentMessage(
+                    (response.data?.documents || 0) + " bundled documents restored with " +
+                    (response.data?.chunks || 0) + " searchable chunks.",
+                    "success"
+                );
+                resetAnswer();
+                loadDocuments();
+            })
+            .fail(function (xhr) {
+                showDocumentMessage(xhr.responseJSON?.error || "Bundled sources could not be restored.", "danger");
+            })
+            .always(function () {
+                $restoreBundledDocumentsButton.prop("disabled", false).text("Restore bundled sources");
+                $uploadDocumentButton.add($deleteAllDocumentsButton).prop("disabled", false);
+            });
     });
 
     $documentSearch.on("input", renderDocumentList);
@@ -1092,21 +1251,27 @@ $(function () {
                 const dataset = data.dataset;
                 if (!dataset) {
                     evaluationDatasetQuestionCount = 0;
+                    evaluationRuns = [];
+                    populateNewTestBaselines();
                     $evaluationDatasetSummary.text("No evaluation dataset has been seeded.");
+                    renderResearchReadiness(null, [], {});
                     return;
                 }
                 evaluationDatasetQuestionCount = Number(dataset.question_count) || 0;
                 $newTestDatasetId.val(dataset.dataset_id);
+                populateNewTestQuestionChoices();
+                evaluationRuns = data.runs || [];
+                populateNewTestBaselines();
                 $evaluationQuestionCount.text(dataset.question_count);
                 $experimentDatasetCount.text(dataset.question_count);
-                const readyRunCount = (data.runs || []).filter(function (run) {
+                const readyRunCount = evaluationRuns.filter(function (run) {
                     return run.status === "completed";
                 }).length;
-                const attentionRunCount = Math.max(0, (data.runs || []).length - readyRunCount);
+                const attentionRunCount = Math.max(0, evaluationRuns.length - readyRunCount);
                 $experimentRunCount.text(readyRunCount);
                 $experimentRunCountNote.text(
                     attentionRunCount
-                        ? attentionRunCount + " earlier attempt needs attention"
+                        ? attentionRunCount + " earlier attempt" + (attentionRunCount === 1 ? " needs" : "s need") + " attention"
                         : "completed batches"
                 );
                 $evaluationDatasetSummary.text(
@@ -1116,6 +1281,7 @@ $(function () {
                 $evaluatorCount.text(evaluatorCatalog.length);
                 $overviewEvaluatorCount.text(evaluatorCatalog.length);
                 $experimentHumanReviewCount.text(data.findings?.human_review_count || 0);
+                renderResearchReadiness(dataset, evaluationRuns, data.findings || {});
                 $evaluatorSummary.text(
                     "Start with a completed test below. Scoring can reuse finished results, add missing local checks without an API call, or apply all 13 methods to one exact saved answer after a call preview."
                 );
@@ -1125,12 +1291,68 @@ $(function () {
                     $evaluationCategoryFilter.append($("<option>").val(value).text(value.replaceAll("_", " ")));
                 });
                 renderEvaluationQuestions();
-                renderEvaluationRuns(data.runs || [], data.responses || [], data.findings || {});
+                renderEvaluationRuns(evaluationRuns, data.responses || [], data.findings || {});
                 renderFindings(data);
             })
             .fail(function () {
-                $evaluationDatasetSummary.text("Evaluation data could not be loaded. Verify the local database setup and try again.");
+                $evaluationDatasetSummary.text("Evaluation data is temporarily unavailable. Try again or contact the application administrator.");
+                $researchReadinessList.empty().append(
+                    $("<li>").addClass("readiness-next").text("Study status is unavailable until the application data can be loaded.")
+                );
             });
+    }
+
+    function renderResearchReadiness(dataset, runs, findings) {
+        const completedRuns = (runs || []).filter(function (run) { return run.status === "completed"; });
+        const controlledBaselines = completedRuns.filter(function (run) {
+            return run.experiment_key && !run.baseline_run_id;
+        });
+        const matchedCount = (findings.matched_comparisons || []).length;
+        const humanReviewCount = Number(findings.human_review_count) || 0;
+        const reviewedCount = Number(dataset?.reviewed_count) || 0;
+        const questionCount = Number(dataset?.question_count) || 0;
+        const items = [
+            {
+                ready: questionCount > 0 && reviewedCount === questionCount,
+                readyText: "Gold Standard ready · " + reviewedCount + " of " + questionCount + " questions reviewed",
+                nextText: "Review the Gold Standard · " + reviewedCount + " of " + questionCount + " questions are ready",
+                href: "#evaluation",
+            },
+            {
+                ready: controlledBaselines.length > 0,
+                readyText: "Controlled baseline saved · " + controlledBaselines.length + " available",
+                nextText: "Create a controlled baseline from New test run",
+                href: "#results",
+            },
+            {
+                ready: matchedCount > 0,
+                readyText: "Matched comparison evidence ready · " + matchedCount + " metric pair" + (matchedCount === 1 ? "" : "s"),
+                nextText: "Run a one-setting comparison against the saved baseline",
+                href: "#results",
+            },
+            {
+                ready: humanReviewCount > 0,
+                readyText: "Human review evidence saved · " + humanReviewCount + " current review" + (humanReviewCount === 1 ? "" : "s"),
+                nextText: "Open representative saved answers and add human reviews",
+                href: "#results",
+            },
+            {
+                ready: completedRuns.length > 0,
+                readyText: "Report exports available on every completed test",
+                nextText: "Complete a test to unlock JSON and CSV report evidence",
+                href: "#results",
+            },
+        ];
+        $researchReadinessList.empty();
+        items.forEach(function (item) {
+            const $link = $("<a>").attr("href", item.href).text(item.ready ? item.readyText : item.nextText);
+            $researchReadinessList.append(
+                $("<li>").addClass(item.ready ? "readiness-ready" : "readiness-next").append(
+                    $("<span>").attr("aria-hidden", "true").text(item.ready ? "✓" : "→"),
+                    $link
+                )
+            );
+        });
     }
 
     function savedTestDate(value) {
@@ -1193,6 +1415,21 @@ $(function () {
             "Saved scope: " + responseCount + " answer" + (responseCount === 1 ? "" : "s") +
             (evaluationDatasetQuestionCount ? " from the " + evaluationDatasetQuestionCount + "-question Gold Standard." : ".")
         ));
+        const configuration = run.run_configuration_json || {};
+        if (run.baseline_run_id) {
+            const baseline = evaluationRuns.find(function (candidate) {
+                return Number(candidate.run_id) === Number(run.baseline_run_id);
+            });
+            $run.append($("<p>").addClass("evaluation-run-experiment").text(
+                "Controlled comparison" + (run.experiment_key ? " · " + run.experiment_key : "") +
+                " · baseline: " + (baseline ? baseline.run_name : "saved test " + run.baseline_run_id) +
+                (configuration.change_from_baseline ? " · changed: " + configuration.change_from_baseline : "")
+            ));
+        } else if (run.experiment_key) {
+            $run.append($("<p>").addClass("evaluation-run-experiment").text(
+                "Controlled baseline · " + run.experiment_key + " · ready for a one-setting comparison"
+            ));
+        }
 
         const skipped = Number(run.evaluator_skipped_count) || 0;
         const failed = Number(run.evaluator_error_count) || 0;
@@ -1216,9 +1453,25 @@ $(function () {
             readable(run.retrieval_method, "unknown") + " retrieval · " +
             readable(run.chat_model, "unknown model") + " · top-k " + readable(run.top_k, "unknown") +
             " · temperature " + readable(run.temperature, "unknown") +
-            " · top-p " + readable(run.top_p, "unknown") + " · internal run ID " + run.run_id
+            " · top-p " + readable(run.top_p, "unknown") + " · sources: " +
+            controlledSettingDisplay("corpus", Array.isArray(configuration.categories) ? configuration.categories : []) +
+            " · internal run ID " + run.run_id
         ));
         $run.append($settings);
+
+        const exportBase = "api/exports.php?run_id=" + encodeURIComponent(run.run_id) + "&format=";
+        const $exportActions = $("<div>").addClass("run-export-actions").append(
+            $("<span>").text("Download this test for the report:"),
+            $("<a>")
+                .addClass("btn btn-sm btn-outline-secondary")
+                .attr({ href: exportBase + "json", download: "" })
+                .text("Export JSON"),
+            $("<a>")
+                .addClass("btn btn-sm btn-outline-secondary")
+                .attr({ href: exportBase + "csv", download: "" })
+                .text("Export CSV")
+        );
+        $run.append($exportActions);
 
         const $evaluateActions = $("<div>").addClass("run-evaluation-actions");
         const $evaluateToggle = $("<button>")
@@ -1425,18 +1678,302 @@ $(function () {
         }
     }
 
+    const controlledVariableLabels = {
+        retrieval_method: "Retrieval method",
+        top_k: "Source chunks (top-k)",
+        model: "Answer model",
+        temperature: "Temperature",
+        top_p: "Top-p",
+        corpus: "Source category composition",
+    };
+
+    function selectedNewTestCategories() {
+        return $newTestCategoryChoices.find("input:checked").map(function () {
+            return String($(this).val());
+        }).get().sort();
+    }
+
+    function setSelectedNewTestCategories(categories) {
+        requestedNewTestCategories = [...new Set((categories || []).map(String))].sort();
+        $newTestCategoryChoices.find("input").each(function () {
+            $(this).prop("checked", requestedNewTestCategories.includes(String($(this).val())));
+        });
+    }
+
+    function selectedBaselineRun() {
+        const runId = Number($newTestBaselineRun.val());
+        return evaluationRuns.find(function (run) {
+            return Number(run.run_id) === runId;
+        }) || null;
+    }
+
+    function newTestSettingsFromRun(run) {
+        const configuration = run?.run_configuration_json || {};
+        return {
+            retrieval_method: String(run?.retrieval_method || configuration.retrieval_method || ""),
+            top_k: Number(run?.top_k ?? configuration.top_k),
+            model: String(run?.chat_model || configuration.answer_model || ""),
+            temperature: Number(run?.temperature ?? configuration.temperature),
+            top_p: Number(run?.top_p ?? configuration.top_p),
+            corpus: Array.isArray(configuration.categories)
+                ? configuration.categories.map(String).sort()
+                : [],
+        };
+    }
+
+    function questionIdsFromRun(run) {
+        const configuration = run?.run_configuration_json || {};
+        return Array.isArray(configuration.question_ids)
+            ? configuration.question_ids.map(Number).filter(Number.isInteger)
+            : [];
+    }
+
+    function currentNewTestSettings() {
+        return {
+            retrieval_method: String($newTestRetrieval.val() || ""),
+            top_k: Number($newTestTopK.val()),
+            model: String($newTestModel.val() || ""),
+            temperature: Number($newTestTemperature.val()),
+            top_p: Number($newTestTopP.val()),
+            corpus: $newTestCorpusScope.val() === "category_subset"
+                ? selectedNewTestCategories()
+                : [],
+        };
+    }
+
+    function controlledSettingEqual(left, right, key) {
+        if (key === "corpus") {
+            return JSON.stringify(left || []) === JSON.stringify(right || []);
+        }
+        if (["top_k", "temperature", "top_p"].includes(key)) {
+            return Number(left) === Number(right);
+        }
+        return String(left) === String(right);
+    }
+
+    function controlledSettingDisplay(key, value) {
+        if (key === "corpus") {
+            return value.length ? value.map(readable).join(", ") : "all active documents";
+        }
+        if (key === "retrieval_method") {
+            return readable(value);
+        }
+        return String(value);
+    }
+
+    function comparisonChangeDescription() {
+        const baseline = selectedBaselineRun();
+        const key = String($newTestControlledVariable.val() || "");
+        if (!baseline || !controlledVariableLabels[key]) {
+            return "";
+        }
+        const before = newTestSettingsFromRun(baseline)[key];
+        const after = currentNewTestSettings()[key];
+        return controlledVariableLabels[key] + ": " + controlledSettingDisplay(key, before) +
+            " -> " + controlledSettingDisplay(key, after);
+    }
+
+    function corpusVariantKey(categories) {
+        if (!categories.length) {
+            return "full_current";
+        }
+        return ("categories_" + categories.join("_")).slice(0, 120);
+    }
+
     function newTestRunPayload(action) {
+        const mode = String($newTestExperimentMode.val() || "standalone");
+        const categories = $newTestCorpusScope.val() === "category_subset"
+            ? selectedNewTestCategories()
+            : [];
+        const questionIds = selectedNewTestQuestionIds();
+        $newTestLimit.val(String(questionIds.length));
         return {
             action: action,
             dataset_id: Number($newTestDatasetId.val()),
             name: String($newTestName.val() || "").trim(),
-            limit: Number($newTestLimit.val()),
+            limit: questionIds.length,
+            question_ids: questionIds,
             model: String($newTestModel.val() || ""),
             retrieval_method: String($newTestRetrieval.val() || ""),
             top_k: Number($newTestTopK.val()),
             temperature: Number($newTestTemperature.val()),
             top_p: Number($newTestTopP.val()),
+            experiment_mode: mode,
+            experiment_key: mode === "standalone" ? "" : String($newTestExperimentKey.val() || "").trim(),
+            baseline_run_id: mode === "comparison" ? Number($newTestBaselineRun.val()) : null,
+            controlled_variable: mode === "comparison" ? String($newTestControlledVariable.val() || "") : "",
+            change_from_baseline: mode === "comparison" ? comparisonChangeDescription() : "",
+            corpus_variant_key: corpusVariantKey(categories),
+            categories: categories,
         };
+    }
+
+    function newTestValidationError(payload) {
+        if (!payload.name || !payload.dataset_id) {
+            return "Give the test a name and wait for the Gold Standard to finish loading.";
+        }
+        const maxQuestions = Number($newTestLimit.data("max")) || 5;
+        if (!Array.isArray(payload.question_ids) || payload.question_ids.length < 1 || payload.question_ids.length > maxQuestions) {
+            return "Choose between 1 and " + maxQuestions + " exact reviewed questions.";
+        }
+        if (payload.experiment_mode !== "standalone" && !payload.experiment_key) {
+            return "Give this controlled experiment a short label so its runs stay grouped.";
+        }
+        if ($newTestCorpusScope.val() === "category_subset" && !payload.categories.length) {
+            return "Choose at least one active source category for the selected collection.";
+        }
+        if (payload.experiment_mode !== "comparison") {
+            return "";
+        }
+        const baseline = selectedBaselineRun();
+        if (!baseline) {
+            return "Choose a completed saved test to use as the baseline.";
+        }
+        if (!controlledVariableLabels[payload.controlled_variable]) {
+            return "Choose the one setting this comparison will change.";
+        }
+        const baselineQuestionIds = questionIdsFromRun(baseline);
+        if (JSON.stringify(payload.question_ids) !== JSON.stringify(baselineQuestionIds)) {
+            return "A controlled comparison must reuse the baseline's exact ordered reviewed-question set.";
+        }
+        const baselineSettings = newTestSettingsFromRun(baseline);
+        const currentSettings = currentNewTestSettings();
+        const differences = Object.keys(controlledVariableLabels).filter(function (key) {
+            return !controlledSettingEqual(baselineSettings[key], currentSettings[key], key);
+        });
+        if (differences.length === 0) {
+            return "Change " + controlledVariableLabels[payload.controlled_variable].toLowerCase() +
+                " from the baseline before previewing.";
+        }
+        if (differences.length !== 1 || differences[0] !== payload.controlled_variable) {
+            return "This comparison must change only " +
+                controlledVariableLabels[payload.controlled_variable].toLowerCase() + ". Re-select the baseline to restore the other settings.";
+        }
+        return "";
+    }
+
+    function populateNewTestBaselines() {
+        const selectedRunId = String($newTestBaselineRun.val() || "");
+        const completedRuns = evaluationRuns.filter(function (run) {
+            const questionIds = questionIdsFromRun(run);
+            return run.status === "completed" && Number(run.response_count) > 0 &&
+                questionIds.length === Number(run.response_count);
+        });
+        $newTestBaselineRun.empty().append(
+            $("<option>").val("").text(completedRuns.length ? "Choose a completed test" : "No completed tests available")
+        );
+        completedRuns.forEach(function (run) {
+            $newTestBaselineRun.append(
+                $("<option>").val(run.run_id).text(
+                    run.run_name + " · " + run.response_count + " answer" +
+                    (Number(run.response_count) === 1 ? "" : "s") + " · " + savedTestDate(run.completed_at)
+                )
+            );
+        });
+        $newTestBaselineRun.prop("disabled", !completedRuns.length);
+        if (completedRuns.some(function (run) { return String(run.run_id) === selectedRunId; })) {
+            $newTestBaselineRun.val(selectedRunId);
+        }
+    }
+
+    function applySelectedBaseline() {
+        const baseline = selectedBaselineRun();
+        if (!baseline) {
+            $newTestBaselineSummary.prop("hidden", true).empty();
+            return;
+        }
+        const settings = newTestSettingsFromRun(baseline);
+        setSelectedNewTestQuestionIds(questionIdsFromRun(baseline));
+        $newTestRetrieval.val(settings.retrieval_method);
+        $newTestTopK.val(settings.top_k);
+        $newTestModel.val(settings.model);
+        $newTestTemperature.val(settings.temperature);
+        $newTestTopP.val(settings.top_p);
+        $newTestCorpusScope.val(settings.corpus.length ? "category_subset" : "full_current");
+        setSelectedNewTestCategories(settings.corpus);
+        $newTestExperimentKey.val(baseline.experiment_key || baseline.run_name);
+        $newTestName.val("Comparison with " + baseline.run_name);
+        renderSelectedBaselineSummary();
+    }
+
+    function renderSelectedBaselineSummary() {
+        const baseline = selectedBaselineRun();
+        if (!baseline) {
+            $newTestBaselineSummary.prop("hidden", true).empty();
+            return;
+        }
+        const settings = newTestSettingsFromRun(baseline);
+        const questionIds = questionIdsFromRun(baseline);
+        $newTestBaselineSummary.empty().append(
+            $("<strong>").text("Baseline: " + baseline.run_name),
+            $("<span>").text(
+                questionIds.length + " exact saved question" + (questionIds.length === 1 ? "" : "s") +
+                " · " + readable(settings.retrieval_method) + " · top-k " + settings.top_k +
+                " · " + settings.model + " · " + controlledSettingDisplay("corpus", settings.corpus)
+            )
+        ).prop("hidden", false);
+    }
+
+    function syncNewTestExperimentControls(copyBaseline) {
+        const mode = String($newTestExperimentMode.val() || "standalone");
+        const isComparison = mode === "comparison";
+        $newTestBaselineField.prop("hidden", !isComparison);
+        $newTestExperimentField.prop("hidden", mode === "standalone");
+        $newTestChangeField.prop("hidden", !isComparison);
+        if (copyBaseline && isComparison) {
+            applySelectedBaseline();
+        }
+        if (mode === "standalone") {
+            $newTestComparisonGuide.text(
+                "A standalone test is useful for a quick check. For report-ready evidence, first save a baseline and then create a comparison that changes one setting."
+            );
+        } else if (mode === "baseline") {
+            $newTestComparisonGuide.text(
+                "This test will become the reference point. Give the experiment a label; the comparison step will reuse its questions and unchanged settings."
+            );
+        } else {
+            $newTestComparisonGuide.text(
+                "Choose a baseline and one setting. The form copies and locks the other settings so the comparison stays interpretable."
+            );
+        }
+
+        const $controlledInputs = $newTestRetrieval
+            .add($newTestTopK)
+            .add($newTestModel)
+            .add($newTestTemperature)
+            .add($newTestTopP)
+            .add($newTestCorpusScope)
+            .add($newTestQuestionIds);
+        $controlledInputs.prop("disabled", false);
+        $newTestCategoryChoices.find("input").prop("disabled", false);
+        if (isComparison) {
+            $controlledInputs.prop("disabled", true);
+            const changed = String($newTestControlledVariable.val() || "");
+            const controlByVariable = {
+                retrieval_method: $newTestRetrieval,
+                top_k: $newTestTopK,
+                model: $newTestModel,
+                temperature: $newTestTemperature,
+                top_p: $newTestTopP,
+                corpus: $newTestCorpusScope,
+            };
+            if (controlByVariable[changed]) {
+                controlByVariable[changed].prop("disabled", false);
+            }
+            if (changed === "corpus") {
+                $newTestCategoryChoices.find("input").prop("disabled", false);
+            } else {
+                $newTestCategoryChoices.find("input").prop("disabled", true);
+            }
+            $newTestQuestionIds.prop("disabled", true);
+        }
+        const showCategories = $newTestCorpusScope.val() === "category_subset";
+        $newTestCategoryField.prop("hidden", !showCategories);
+        if (!isComparison) {
+            $newTestBaselineSummary.prop("hidden", true);
+        } else {
+            renderSelectedBaselineSummary();
+        }
     }
 
     function resetNewTestRunPreview(message) {
@@ -1448,6 +1985,8 @@ $(function () {
         const willOpen = $newTestRunForm.prop("hidden");
         $newTestRunForm.prop("hidden", !willOpen);
         if (willOpen) {
+            populateNewTestBaselines();
+            syncNewTestExperimentControls(false);
             if (!$newTestName.val().trim()) {
                 $newTestName.val(
                     "Test " + new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date()) +
@@ -1463,7 +2002,32 @@ $(function () {
         $newTestRunToggle.trigger("focus");
     });
 
-    $newTestRunForm.find("input, select").on("change input", function () {
+    $newTestExperimentMode.on("change", function () {
+        if ($newTestExperimentMode.val() === "comparison" && !$newTestBaselineRun.val()) {
+            $newTestControlledVariable.val("");
+        }
+        syncNewTestExperimentControls(false);
+    });
+
+    $newTestBaselineRun.on("change", function () {
+        $newTestControlledVariable.val("");
+        applySelectedBaseline();
+        syncNewTestExperimentControls(false);
+    });
+
+    $newTestControlledVariable.on("change", function () {
+        applySelectedBaseline();
+        syncNewTestExperimentControls(false);
+    });
+
+    $newTestCorpusScope.on("change", function () {
+        syncNewTestExperimentControls(false);
+    });
+
+    $newTestRunForm.on("change input", "input, select", function () {
+        if ($(this).hasClass("new-test-category-input")) {
+            requestedNewTestCategories = [];
+        }
         resetNewTestRunPreview();
     });
 
@@ -1474,8 +2038,10 @@ $(function () {
 
     $previewNewTestRun.on("click", function () {
         const payload = newTestRunPayload("preflight");
-        if (!payload.name || !payload.dataset_id) {
-            $newTestRunStatus.text("Give the test a name and wait for the Gold Standard to finish loading.");
+        const payloadFingerprint = JSON.stringify(payload);
+        const validationError = newTestValidationError(payload);
+        if (validationError) {
+            $newTestRunStatus.text(validationError);
             return;
         }
         $previewNewTestRun.prop("disabled", true).text("Checking…");
@@ -1488,6 +2054,10 @@ $(function () {
             data: JSON.stringify(payload),
         })
             .done(function (response) {
+                if (JSON.stringify(newTestRunPayload("preflight")) !== payloadFingerprint) {
+                    resetNewTestRunPreview("Settings changed while the preview was running. Preview the updated test again.");
+                    return;
+                }
                 const plan = response.data?.preflight;
                 if (!plan) {
                     $newTestRunStatus.text("The server returned an incomplete test preview.");
@@ -1496,10 +2066,18 @@ $(function () {
                 const estimated = plan.estimated_cost === null
                     ? "cost unavailable"
                     : "$" + compactNumber(plan.estimated_cost, 6) + " estimated";
+                const configuration = response.data?.configuration || {};
+                const comparisonNote = payload.experiment_mode === "comparison"
+                    ? " · one-variable comparison with " + selectedBaselineRun().run_name
+                    : payload.experiment_mode === "baseline"
+                        ? " · controlled baseline"
+                        : "";
                 $newTestRunStatus.text(
                     plan.response_count + " model call" + (Number(plan.response_count) === 1 ? "" : "s") +
                     " · " + plan.response_count + " new saved answer" + (Number(plan.response_count) === 1 ? "" : "s") +
-                    " · local 8 scored automatically · " + estimated
+                    " · " + (configuration.document_count || 0) + " source document" +
+                    (Number(configuration.document_count) === 1 ? "" : "s") +
+                    " · local 8 scored automatically · " + estimated + comparisonNote
                 );
                 $createNewTestRun.prop("hidden", false).data("preflight", plan);
             })
@@ -1521,6 +2099,11 @@ $(function () {
             return;
         }
         const payload = newTestRunPayload("create");
+        const validationError = newTestValidationError(payload);
+        if (validationError) {
+            resetNewTestRunPreview(validationError);
+            return;
+        }
         $createNewTestRun.prop("disabled", true).text("Generating…");
         $previewNewTestRun.prop("disabled", true);
         $newTestRunStatus.text("Generating and saving the test answers, then applying the local eight scores…");
@@ -2039,6 +2622,7 @@ $(function () {
         });
     });
 
+    loadApplicationHealth();
     loadDocuments();
     loadEvaluationDataset();
     activateWorkspaceView(window.location.hash.slice(1) || "overview", false);

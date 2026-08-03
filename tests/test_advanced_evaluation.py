@@ -70,7 +70,7 @@ def judge_output() -> JudgeRubricOutput:
 class AdvancedEvaluationTests(unittest.TestCase):
     def test_saved_run_local_preflight_separates_reuse_and_run(self) -> None:
         with patch(
-            "evaluate_saved_run.completed_result_exists",
+            "evaluate_saved_run.reusable_result_exists",
             side_effect=lambda _connection, _response_id, key: key == LOCAL_EVALUATOR_KEYS[0],
         ):
             preflight = build_local_preflight(object(), [19], force=False)
@@ -79,6 +79,8 @@ class AdvancedEvaluationTests(unittest.TestCase):
         self.assertEqual(1, preflight["reused_count"])
         self.assertEqual(7, preflight["application_count"])
         self.assertEqual(0, preflight["paid_application_count"])
+        store = (PROJECT_ROOT / "rag" / "evaluation_store.py").read_text(encoding="utf-8")
+        self.assertIn("result.status IN ('completed', 'skipped')", store)
 
     def test_ragas_llm_adapter_supplies_async_generation_for_sync_client(self) -> None:
         calls: list[tuple[str, object]] = []
@@ -130,6 +132,24 @@ class AdvancedEvaluationTests(unittest.TestCase):
         self.assertEqual("acceptable", execution.result.details["overall_decision"])
         self.assertEqual(0.00014, execution.result.estimated_cost)
         self.assertEqual(120, execution.total_tokens)
+
+    def test_judge_cost_includes_thinking_tokens(self) -> None:
+        settings = replace(
+            load_settings(),
+            evaluator_input_cost_per_million=1.0,
+            evaluator_output_cost_per_million=2.0,
+        )
+
+        def provider(_prompt: str, _settings: object) -> ProviderExecution:
+            return ProviderExecution(
+                judge_output(), '{"summary":"ok"}', 100, 20, 150, 30, "STOP"
+            )
+
+        execution = run_llm_judge(sample_input(), settings, provider)
+
+        self.assertEqual(0.0002, execution.result.estimated_cost)
+        self.assertEqual(30, execution.result.details["thinking_tokens"])
+        self.assertEqual(150, execution.total_tokens)
 
     def test_cost_is_unknown_without_usage_and_uses_configured_rates(self) -> None:
         settings = replace(

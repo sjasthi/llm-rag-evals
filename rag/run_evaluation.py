@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from dataclasses import asdict
 from dataclasses import replace
 
@@ -34,6 +35,34 @@ def _json_list(value: object) -> list[object]:
         return []
     parsed = json.loads(value) if isinstance(value, str) else value
     return list(parsed) if isinstance(parsed, list) else []
+
+
+def select_questions(
+    available_questions: list[dict[str, object]],
+    *,
+    limit: int | None,
+    question_ids: list[int] | None,
+) -> list[dict[str, object]]:
+    """Select a stable reviewed subset while preserving requested order."""
+    if not question_ids:
+        return available_questions[:limit] if limit is not None else available_questions
+
+    normalized_ids = [int(value) for value in question_ids]
+    if len(normalized_ids) != len(set(normalized_ids)):
+        raise ValueError("question_ids must not contain duplicates")
+    if limit is not None and limit != len(normalized_ids):
+        raise ValueError("limit must match the number of explicitly selected questions")
+
+    questions_by_id = {
+        int(question["question_id"]): question for question in available_questions
+    }
+    missing = [question_id for question_id in normalized_ids if question_id not in questions_by_id]
+    if missing:
+        raise ValueError(
+            "Selected questions are not active reviewed members of this dataset: "
+            + ", ".join(str(value) for value in missing)
+        )
+    return [questions_by_id[question_id] for question_id in normalized_ids]
 
 
 def evaluation_snapshot(
@@ -76,6 +105,7 @@ def create_run(
     change_from_baseline: str | None = None,
     corpus_variant_key: str = "full_current",
     categories: list[str] | None = None,
+    question_ids: list[int] | None = None,
     dry_run: bool = False,
     allow_paid: bool = False,
     allow_unknown_cost: bool = False,
@@ -86,8 +116,12 @@ def create_run(
         raise ValueError("dataset_id must be greater than zero")
     if not name.strip():
         raise ValueError("name cannot be empty")
+    if len(name.strip()) > 120:
+        raise ValueError("name must be 120 characters or fewer")
     if limit is not None and limit <= 0:
         raise ValueError("limit must be greater than zero")
+    if question_ids is not None and any(int(value) <= 0 for value in question_ids):
+        raise ValueError("question_ids must contain positive integers")
     if retrieval_method not in {"chroma_vector", "mysql_keyword"}:
         raise ValueError(f"Unsupported retrieval method {retrieval_method!r}")
     if top_k is not None and top_k <= 0:
@@ -102,6 +136,19 @@ def create_run(
         raise ValueError("max_responses must be greater than zero")
     if max_estimated_cost < 0:
         raise ValueError("max_estimated_cost cannot be negative")
+    if experiment_key is not None and len(experiment_key.strip()) > 120:
+        raise ValueError("experiment_key must be 120 characters or fewer")
+    if baseline_run_id is not None and baseline_run_id <= 0:
+        raise ValueError("baseline_run_id must be greater than zero")
+    if change_from_baseline is not None and len(change_from_baseline.strip()) > 500:
+        raise ValueError("change_from_baseline must be 500 characters or fewer")
+    if not corpus_variant_key.strip() or len(corpus_variant_key.strip()) > 120:
+        raise ValueError("corpus_variant must be between 1 and 120 characters")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,119}", corpus_variant_key.strip()):
+        raise ValueError("corpus_variant must use lowercase letters, numbers, underscores, or hyphens")
+    for category in categories or []:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,49}", category.strip()):
+            raise ValueError(f"Invalid source category {category!r}")
     base_settings = load_settings()
     settings = replace(
         base_settings,
@@ -113,6 +160,7 @@ def create_run(
     )
     selected_top_k = top_k or settings.retrieval_top_k
     normalized_categories = sorted({value.strip() for value in (categories or []) if value.strip()})
+    controlled_differences: list[str] = []
     with database_connection(settings) as connection:
         with connection.cursor(dictionary=True) as cursor:
             cursor.execute(
@@ -126,9 +174,12 @@ def create_run(
                    ORDER BY m.display_order""",
                 (dataset_id,),
             )
-            questions = cursor.fetchall()
-        if limit is not None:
-            questions = questions[:limit]
+            available_questions = cursor.fetchall()
+        questions = select_questions(
+            available_questions,
+            limit=limit,
+            question_ids=question_ids,
+        )
         if not questions:
             raise ValueError("The selected dataset has no reviewed active questions.")
         with connection.cursor(dictionary=True) as cursor:
@@ -140,10 +191,18 @@ def create_run(
             if not dataset:
                 raise ValueError("The selected evaluation dataset does not exist.")
             baseline = None
+            baseline_configuration: dict[str, object] = {}
             if baseline_run_id is not None:
                 cursor.execute(
-                    """SELECT run_id, dataset_id, experiment_key, status
-                       FROM evaluation_runs WHERE run_id=%s""",
+                    """SELECT run.run_id, run.dataset_id, run.experiment_key, run.status,
+                              run.run_configuration_json,
+                              settings.retrieval_method, settings.chat_model, settings.top_k,
+                              settings.temperature, settings.top_p,
+                              (SELECT COUNT(*) FROM rag_responses response
+                               WHERE response.run_id=run.run_id) AS response_count
+                       FROM evaluation_runs run
+                       JOIN model_settings settings ON settings.setting_id=run.setting_id
+                       WHERE run.run_id=%s""",
                     (baseline_run_id,),
                 )
                 baseline = cursor.fetchone()
@@ -157,10 +216,23 @@ def create_run(
                     raise ValueError(
                         "A comparison run must document change_from_baseline."
                     )
+                baseline_configuration_value = baseline.get("run_configuration_json")
+                if isinstance(baseline_configuration_value, str):
+                    baseline_configuration_value = json.loads(baseline_configuration_value)
+                if isinstance(baseline_configuration_value, dict):
+                    baseline_configuration = baseline_configuration_value
                 if experiment_key is None:
                     experiment_key = str(
                         baseline["experiment_key"] or f"baseline-{baseline_run_id}"
                     )
+                cursor.execute(
+                    """SELECT question_id
+                       FROM rag_responses
+                       WHERE run_id=%s AND question_id IS NOT NULL
+                       ORDER BY response_id""",
+                    (baseline_run_id,),
+                )
+                baseline_question_ids = [int(row["question_id"]) for row in cursor.fetchall()]
             elif change_from_baseline:
                 raise ValueError(
                     "change_from_baseline requires a declared baseline_run_id."
@@ -190,6 +262,62 @@ def create_run(
         manifest_hash = hashlib.sha256(
             json.dumps(manifest, sort_keys=True, default=str).encode("utf-8")
         ).hexdigest()
+        if baseline is not None:
+            selected_question_ids = [int(question["question_id"]) for question in questions]
+            baseline_response_count = int(baseline.get("response_count") or 0)
+            if baseline_response_count != len(questions):
+                raise ValueError(
+                    "A controlled comparison must use the same number of reviewed questions "
+                    f"as its baseline ({baseline_response_count})."
+                )
+            if baseline_question_ids != selected_question_ids:
+                raise ValueError(
+                    "A controlled comparison must use the exact ordered reviewed-question "
+                    "set saved by its baseline."
+                )
+            baseline_categories = sorted(
+                str(value) for value in (baseline_configuration.get("categories") or [])
+            )
+            baseline_manifest_hash = str(
+                baseline_configuration.get("corpus_manifest_hash") or ""
+            )
+            comparisons = {
+                "retrieval method": (
+                    str(baseline.get("retrieval_method") or ""),
+                    retrieval_method,
+                ),
+                "source chunks (top-k)": (
+                    int(baseline.get("top_k") or 0),
+                    int(selected_top_k),
+                ),
+                "answer model": (
+                    str(baseline.get("chat_model") or ""),
+                    settings.llm_chat_model,
+                ),
+                "temperature": (
+                    float(baseline.get("temperature") or 0.0),
+                    float(settings.llm_temperature),
+                ),
+                "top-p": (
+                    float(baseline.get("top_p") or 0.0),
+                    float(settings.llm_top_p),
+                ),
+            }
+            controlled_differences = [
+                label for label, (before, after) in comparisons.items()
+                if before != after
+            ]
+            corpus_changed = baseline_categories != normalized_categories
+            if baseline_manifest_hash and baseline_manifest_hash != manifest_hash:
+                corpus_changed = True
+            if corpus_changed:
+                controlled_differences.append("source category composition")
+            if len(controlled_differences) != 1:
+                observed = ", ".join(controlled_differences) if controlled_differences else "none"
+                raise ValueError(
+                    "A controlled comparison must change exactly one supported setting; "
+                    f"observed changes: {observed}."
+                )
         captured_code = code_provenance()
         per_response_cost = estimated_generation_application_cost(settings)
         estimated_cost = (
@@ -210,6 +338,7 @@ def create_run(
             ),
             "max_responses": max_responses,
             "max_estimated_cost": max_estimated_cost,
+            "controlled_differences": controlled_differences,
         }
         run_configuration = {
             "dataset": dataset,
@@ -232,6 +361,9 @@ def create_run(
             "document_count": len(manifest),
             "corpus_manifest_hash": manifest_hash,
             "documents": manifest,
+            "question_ids": [int(question["question_id"]) for question in questions],
+            "question_keys": [question.get("question_key") for question in questions],
+            "question_count": len(questions),
             "evaluators": DEFAULT_EVALUATORS,
             "code_provenance": captured_code,
             "preflight": preflight,
@@ -362,6 +494,10 @@ def main() -> None:
     )
     parser.add_argument("--corpus-variant", default="full_current")
     parser.add_argument("--categories", help="Comma-separated category subset.")
+    parser.add_argument(
+        "--question-ids",
+        help="Optional comma-separated exact reviewed question IDs in execution order.",
+    )
     parser.add_argument("--max-responses", type=int, default=5)
     parser.add_argument("--max-estimated-cost", type=float, default=1.0)
     parser.add_argument("--allow-paid", action="store_true")
@@ -404,6 +540,11 @@ def main() -> None:
             change_from_baseline=args.change_from_baseline,
             corpus_variant_key=args.corpus_variant,
             categories=[value.strip() for value in (args.categories or "").split(",") if value.strip()],
+            question_ids=[
+                int(value.strip())
+                for value in (args.question_ids or "").split(",")
+                if value.strip()
+            ] or None,
             dry_run=args.dry_run,
             allow_paid=args.allow_paid,
             allow_unknown_cost=args.allow_unknown_cost,

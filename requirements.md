@@ -171,7 +171,9 @@ without database or command-line access. The browser shall provide search,
 category/type filters, sorting, category grouping, and live document/chunk counts.
 
 The system shall allow users to delete or replace any active indexed document
-and to clear the full active index with explicit confirmation.
+and to clear the full active index with explicit confirmation. The Documents
+page shall also restore/re-index the bundled starting collection without
+terminal access while preserving separately uploaded documents.
 
 Current implementation adds live document/category/chunk counts, same-name
 replacement with an explicit Replace/Cancel conflict prompt, and confirmed
@@ -179,8 +181,9 @@ deletion for every active source. Replacement is
 staged as add-new then delete-old so a failed new ingestion does not discard the
 working version. Deletion removes the MySQL document/chunks and matching
 ChromaDB vectors and verifies that no selected-source vectors remain; uploaded
-files are also removed. Bundled seed files remain on
-disk only as recovery material after they are removed from the active index.
+files are also removed. Bundled seed files remain on disk as recovery material
+after they are removed from the active index, and the browser's **Restore
+bundled sources** action re-ingests that collection with current index settings.
 Add, delete, and replace operations embed or remove only the affected source;
 unchanged documents are not re-embedded.
 
@@ -258,10 +261,13 @@ The system should avoid answering questions that are not supported by the retrie
 
 ## 6.5 Gold Standard Test Set
 
-FP7 implementation status: dataset version 1.0 contains 25 reviewed questions
-with expected evidence, accepted answer variants, required facts, category,
-difficulty, answerability, reviewer notes, and versioned membership. The browser
-supports filtering and review-state management before controlled runs.
+Final dataset status: version 2.0 contains 50 reviewed questions with expected
+evidence, accepted answer variants, required facts, category, difficulty,
+answerability, reviewer notes, and versioned membership. The original
+25-question v1.0 file remains available for historical-run reproducibility.
+Provider-free tests verify that every answerable v2.0 evidence excerpt occurs
+in its cited bundled source. The browser supports filtering and review-state
+management before controlled runs.
 
 The system shall allow admin users to create and manage evaluation test questions.
 
@@ -343,10 +349,19 @@ to find or generate the answer.
 The browser shall expose a bounded New test run workflow for reviewed questions
 and a separate Score saved answers workflow for every saved test. Both shall
 preflight calls before execution. New tests shall accept an approved model,
-retrieval method, top-k, temperature, top-p, and question count. Saved-answer
+retrieval method, top-k, temperature, top-p, exact reviewed-question selection, and an optional
+source-category subset. The browser shall offer quick-test,
+controlled-baseline, and baseline-comparison modes. Comparison mode shall reuse
+the baseline's exact ordered question set, copy and lock unchanged settings, require
+exactly one declared change, and save the experiment/baseline/corpus
+relationship. The server shall reject comparisons that actually change zero
+or multiple supported settings or a different question set. The Evaluation view shall summarize whether
+reviewed questions, a controlled baseline, matched comparison results, human
+calibration, and report exports are available. Saved-answer
 scoring shall distinguish the provider-free local eight from the five
 model-backed methods, target the exact selected answer for all-13 scoring, reuse
-completed active-version results unless replacement is requested, and enforce
+completed or not-applicable active-version results unless replacement is
+requested, leave failed results eligible for retry, and enforce
 response/application/cost limits. Primary labels shall use user-facing question
 numbers rather than database response IDs. Each saved answer shall expose a
 direct Evaluate action that selects it as the exact all-13 target before
@@ -369,7 +384,9 @@ judge/model/prompt/library versions, applicability, raw output, token/API usage,
 runtime, estimated cost, and errors. Repeated judge attempts shall be preserved
 for variability analysis rather than overwritten. Human response review shall
 be stored separately from the review state of dataset questions. These
-requirements are implemented; empirical calibration remains experiment work.
+requirements are implemented. The final study includes seven responses with
+single-reviewer decisions as a descriptive calibration sample: six
+acceptable and one needs revision. It is not inter-rater evidence.
 
 Possible evaluation methods include:
 
@@ -472,8 +489,10 @@ completed tests. The secondary **Compare Runs** view provides interpretation
 rules, configuration/coverage evidence, run-scoped descriptive summaries,
 same-question/evaluator baseline deltas, and the live 13-evaluator catalog. It
 does not calculate an aggregate across unrelated metrics or a cross-run
-leaderboard from unmatched rows. Research conclusions stay pending until
-matched runs and human reviews exist.
+leaderboard from unmatched rows. Matched automated runs now exist; calibrated
+interpretation includes seven final-study human reviews. These single-reviewer
+overall decisions support descriptive calibration, not inter-rater or
+dimension-level agreement claims.
 
 The dashboard should show:
 
@@ -551,8 +570,14 @@ technical pages.
 
 The interface should be simple, clean, and easy to use.
 
+The header shall confirm application-data readiness instead of claiming the
+workspace is ready before its services respond. End-user failure messages shall
+recommend retrying or contacting the application administrator and shall not
+instruct ordinary users to configure MySQL, environment files, Python, or the
+codebase.
+
 The Evaluation view shall avoid unexplained empty panels, identify partial tests
-clearly (for example, `3 of 25 questions answered`), and group evaluator cards
+clearly (for example, `3 of 50 questions answered`), and group evaluator cards
 as Local metrics, LLM judge, and RAGAS, with Human review identified as
 supporting evidence. Gold Standard review controls shall explicitly explain
 that they verify the quality of the question, reference answer, and evidence;
@@ -675,7 +700,7 @@ The project will be considered successful if:
 * The system can run evaluation tests against expected answers.
 * The system compares at least two RAG evaluation methods.
 * The system stores evaluation results in MySQL.
-* At least 25 reviewed questions cover the current categories and answerability cases.
+* The final 50-question reviewed set covers the current categories and answerability cases.
 * TXT, text-based PDF, and DOCX documents can enter the common ingestion pipeline through the browser workflow.
 * The dashboard or report explains metric usefulness, metric disagreement, failure cases, and configuration results.
 * Every displayed evaluator score explains what it is based on, how it was
@@ -767,7 +792,7 @@ The following items are in scope:
 * Evaluation dashboard
 * Comparison of RAG approaches
 * Reports for business users and developers
-* At least 25 reviewed evaluation questions
+* A final versioned set of 50 reviewed evaluation questions
 * Metric-usefulness and metric-disagreement analysis
 * Controlled document-collection size or composition experiments
 
@@ -805,12 +830,18 @@ Resolved implementation decisions:
 * Determine recommended settings through controlled gold-standard experiments,
   changing one variable at a time and comparing the same metrics/questions,
   rather than asking ordinary users to guess the best values.
+* Implement that protocol as a guided browser baseline/comparison launcher;
+  users shall not need to know CLI flags, run IDs, database columns, or
+  environment-file settings to create a valid pair.
 * Treat chunk size, overlap, and embedding model as index-variant settings that
   require re-chunking/re-embedding; do not present them as safe per-answer
   controls against one shared active index.
 * Preserve the guarded preflight before all-13 execution even when the user
   starts from a per-answer Evaluate button, because up to five methods may call
   an external evaluator provider.
+* Export each saved run as portable JSON or long-form CSV so configuration,
+  answers, contexts, scores, attempts, human reviews, and valid matched
+  comparisons can be used in the final report without direct database access.
 
 Questions that can still be clarified with the professor:
 

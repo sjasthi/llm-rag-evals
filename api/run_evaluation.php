@@ -18,6 +18,22 @@ function runEvaluationResponse(int $status, array $payload): never
     exit;
 }
 
+function runEvaluationUserError(string $technicalError): string
+{
+    error_log('Saved-answer scoring process failed: ' . $technicalError);
+    $fallback = 'Scoring could not be completed. No saved answer was regenerated or removed. Try again or contact the application administrator.';
+    if (preg_match('/error:\s*([^\r\n]+)$/mi', $technicalError, $matches) === 1) {
+        $message = trim($matches[1]);
+        if (
+            strlen($message) <= 300
+            && preg_match('/api[ _-]?key|\.env|environment|traceback|mysql|database|python|chroma|gemini|file path|directory/i', $message) !== 1
+        ) {
+            return ucfirst($message);
+        }
+    }
+    return $fallback;
+}
+
 function runEvaluationCommand(array $payload): array
 {
     $runId = filter_var($payload['run_id'] ?? null, FILTER_VALIDATE_INT);
@@ -129,14 +145,9 @@ function runEvaluationCommand(array $payload): array
     $exitCode = (int) ($lastStatus['exitcode'] ?? $closeCode);
     if ($exitCode !== 0) {
         $technicalError = trim($stderr);
-        error_log('Saved-answer scoring process failed: ' . $technicalError);
-        $userError = 'Scoring could not be completed. No saved answer was regenerated or removed.';
-        if (preg_match('/error:\s*([^\r\n]+)$/mi', $technicalError, $matches) === 1) {
-            $userError = ucfirst(trim($matches[1]));
-        }
         runEvaluationResponse(422, [
             'ok' => false,
-            'error' => $userError,
+            'error' => runEvaluationUserError($technicalError),
         ]);
     }
     $result = json_decode($stdout, true, 32, JSON_THROW_ON_ERROR);
@@ -151,7 +162,11 @@ try {
         header('Allow: POST');
         runEvaluationResponse(405, ['ok' => false, 'error' => 'Use POST to evaluate a saved run.']);
     }
-    $payload = json_decode(file_get_contents('php://input') ?: '{}', true, 16, JSON_THROW_ON_ERROR);
+    try {
+        $payload = json_decode(file_get_contents('php://input') ?: '{}', true, 16, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        runEvaluationResponse(400, ['ok' => false, 'error' => 'Request body must contain valid JSON.']);
+    }
     if (!is_array($payload)) {
         runEvaluationResponse(400, ['ok' => false, 'error' => 'Request body must contain a JSON object.']);
     }

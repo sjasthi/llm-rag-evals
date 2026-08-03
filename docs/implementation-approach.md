@@ -209,8 +209,9 @@ The test set is central to the project. Evaluation results are not meaningful
 without stable questions and expected answers.
 
 The dataset size and evaluator count are separate concerns. The working dataset
-target remains at least 25 reviewed questions, while the evaluator study uses
+target is now complete at 50 reviewed v2.0 questions, while the evaluator study uses
 representative baseline and advanced methods against the same saved responses.
+The original 25-question v1.0 set remains tracked for historical reproducibility.
 The professor's reference lists eight broad options, not eight required
 advanced models.
 
@@ -232,8 +233,9 @@ Implement three primary browser areas:
 
 Implementation status: all definitions, execution paths, storage, score
 contracts, and guarded advanced-run support are complete. Paid advanced
-measurements and comparative conclusions are pending deliberate experiment
-execution.
+measurements and comparative conclusions were added through the bounded August
+3 final study. Seven selected responses now have single-reviewer overall human
+decisions for descriptive calibration.
 
 Implement evaluator families in phases. Start with inexpensive local methods:
 

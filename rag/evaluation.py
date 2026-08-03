@@ -20,7 +20,7 @@ from llm import REFUSAL_MESSAGE
 from settings import PROJECT_ROOT, load_settings
 
 
-DATASET_PATH = PROJECT_ROOT / "data" / "evaluation" / "metrostate_v1.json"
+DATASET_PATH = PROJECT_ROOT / "data" / "evaluation" / "metrostate_v2.json"
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
 

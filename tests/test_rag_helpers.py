@@ -17,9 +17,11 @@ sys.path.insert(0, str(PROJECT_ROOT / "rag"))
 from answer import answer_question  # noqa: E402
 from document_loader import DocumentLoadError, load_document  # noqa: E402
 from evaluation import (  # noqa: E402
+    DATASET_PATH,
     EvaluationInput,
     exact_contains,
     expected_source_accuracy,
+    load_seed,
     normalize_text,
     refusal_correctness,
     required_fact_coverage,
@@ -32,6 +34,7 @@ from ingest import build_loaded_document_chunks, chunk_text, stable_chroma_id  #
 from llm import (  # noqa: E402
     REFUSAL_MESSAGE,
     SYSTEM_INSTRUCTION,
+    MAX_GENERATION_OUTPUT_TOKENS,
     GenerationExecution,
     build_grounded_prompt,
     estimate_generation_cost,
@@ -39,7 +42,7 @@ from llm import (  # noqa: E402
     generate_with_gemini,
 )
 from query import SearchResult, lexical_score, retrieval_provenance  # noqa: E402
-from run_evaluation import evaluation_snapshot  # noqa: E402
+from run_evaluation import evaluation_snapshot, select_questions  # noqa: E402
 from provenance import code_provenance  # noqa: E402
 from settings import load_settings  # noqa: E402
 from vector_store import delete_source_chunks  # noqa: E402
@@ -106,6 +109,37 @@ class StableIdTests(unittest.TestCase):
             stable_chroma_id("data/example.txt", 2),
             stable_chroma_id("data/example.txt", 3),
         )
+
+
+class EvaluationQuestionSelectionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.questions = [
+            {"question_id": 11, "question_text": "first"},
+            {"question_id": 22, "question_text": "second"},
+            {"question_id": 33, "question_text": "third"},
+        ]
+
+    def test_default_selection_uses_dataset_order_and_limit(self) -> None:
+        selected = select_questions(self.questions, limit=2, question_ids=None)
+
+        self.assertEqual([11, 22], [question["question_id"] for question in selected])
+
+    def test_explicit_selection_preserves_requested_order(self) -> None:
+        selected = select_questions(self.questions, limit=2, question_ids=[33, 11])
+
+        self.assertEqual([33, 11], [question["question_id"] for question in selected])
+
+    def test_explicit_selection_rejects_duplicates(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must not contain duplicates"):
+            select_questions(self.questions, limit=2, question_ids=[11, 11])
+
+    def test_explicit_selection_rejects_nonmember(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not active reviewed members"):
+            select_questions(self.questions, limit=2, question_ids=[11, 99])
+
+    def test_explicit_selection_requires_matching_limit(self) -> None:
+        with self.assertRaisesRegex(ValueError, "limit must match"):
+            select_questions(self.questions, limit=1, question_ids=[11, 22])
 
 
 class DocumentLoaderTests(unittest.TestCase):
@@ -253,15 +287,15 @@ class GroundedAnswerTests(unittest.TestCase):
                 generator=fake_generator,
                 temperature=0.5,
                 top_p=0.7,
-                model="gemini-2.5-flash-lite",
+                model="gemini-3.1-flash-lite",
             )
 
-        self.assertEqual("gemini-2.5-flash-lite", result.model)
+        self.assertEqual("gemini-3.1-flash-lite", result.model)
         self.assertEqual(0.5, result.temperature)
         self.assertEqual(0.7, result.top_p)
         self.assertEqual(0.5, observed_settings[0].llm_temperature)
         self.assertEqual(0.7, observed_settings[0].llm_top_p)
-        self.assertEqual("gemini-2.5-flash-lite", observed_settings[0].llm_chat_model)
+        self.assertEqual("gemini-3.1-flash-lite", observed_settings[0].llm_chat_model)
 
     def test_answer_workflow_rejects_out_of_range_generation_settings(self) -> None:
         with self.assertRaisesRegex(ValueError, "temperature must be between"):
@@ -311,7 +345,12 @@ class GroundedAnswerTests(unittest.TestCase):
         self.assertIsNone(estimate_generation_cost(100, 20, unpriced))
         self.assertIsNone(estimated_generation_application_cost(unpriced))
         self.assertEqual(0.00014, estimate_generation_cost(100, 20, priced))
-        self.assertEqual(0.007024, estimated_generation_application_cost(priced))
+        self.assertEqual(
+            0.0002,
+            estimate_generation_cost(100, 20, priced, thinking_tokens=30),
+        )
+        self.assertEqual(2048, MAX_GENERATION_OUTPUT_TOKENS)
+        self.assertEqual(0.010096, estimated_generation_application_cost(priced))
 
     def test_gemini_requires_api_key(self) -> None:
         settings = replace(load_settings(), llm_api_key="")
@@ -397,6 +436,54 @@ class LocalEvaluatorTests(unittest.TestCase):
         self.assertEqual("failed", result.status)
         self.assertIn("controlled evaluator failure", result.error_message or "")
         self.assertIsNone(result.normalized_score)
+
+
+class EvaluationDatasetTests(unittest.TestCase):
+    def test_v2_dataset_has_fifty_unique_reviewed_questions(self) -> None:
+        dataset = load_seed()
+        questions = dataset["questions"]
+
+        self.assertEqual("2.0", dataset["version"])
+        self.assertEqual("reviewed", dataset["status"])
+        self.assertEqual(50, len(questions))
+        self.assertEqual(50, len({item["question"] for item in questions}))
+        self.assertEqual(47, sum(bool(item["is_answerable"]) for item in questions))
+        self.assertEqual(
+            {
+                "academic_calendar",
+                "admissions",
+                "financial_aid",
+                "graduation",
+                "policies",
+                "registration",
+                "student_support",
+                "tuition_fees",
+                "unanswerable",
+            },
+            {item["category"] for item in questions},
+        )
+
+    def test_reviewed_answerable_cases_quote_their_bundled_source(self) -> None:
+        for question_number, item in enumerate(load_seed()["questions"], start=1):
+            with self.subTest(question_number=question_number, question=item["question"]):
+                self.assertEqual("reviewed", item.get("review_status", "reviewed"))
+                if not item["is_answerable"]:
+                    self.assertIsNone(item["expected_source"])
+                    self.assertIsNone(item["expected_evidence"])
+                    continue
+
+                source = PROJECT_ROOT / item["expected_source"]
+                self.assertTrue(source.is_file(), f"Missing reviewed source: {source}")
+                self.assertIn(
+                    item["expected_evidence"],
+                    source.read_text(encoding="utf-8"),
+                    f"Question {question_number} evidence is not quoted from {source}",
+                )
+
+    def test_v1_dataset_remains_available_for_historical_runs(self) -> None:
+        original = load_seed(DATASET_PATH.with_name("metrostate_v1.json"))
+        self.assertEqual("1.0", original["version"])
+        self.assertEqual(25, len(original["questions"]))
 
 
 class EvaluationSnapshotTests(unittest.TestCase):

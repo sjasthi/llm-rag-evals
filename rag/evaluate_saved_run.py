@@ -9,7 +9,7 @@ from typing import Any
 
 from database import database_connection
 from evaluation import LOCAL_EVALUATORS, score_saved_response
-from evaluation_store import completed_result_exists
+from evaluation_store import reusable_result_exists
 from run_advanced_evaluation import (
     build_preflight as build_advanced_preflight,
     execute_plan as execute_advanced_plan,
@@ -30,13 +30,13 @@ def build_local_preflight(
     applications: list[dict[str, Any]] = []
     for response_id in response_ids:
         for evaluator_key in LOCAL_EVALUATOR_KEYS:
-            reuse = completed_result_exists(connection, response_id, evaluator_key) and not force
+            reuse = reusable_result_exists(connection, response_id, evaluator_key) and not force
             applications.append({
                 "response_id": response_id,
                 "evaluator": evaluator_key,
                 "action": "reuse" if reuse else "run",
                 "reason": (
-                    "A completed active-version result already exists."
+                    "A completed or not-applicable active-version result already exists."
                     if reuse
                     else "The local evaluator will be applied to the saved response."
                 ),

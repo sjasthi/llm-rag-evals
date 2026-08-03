@@ -48,10 +48,12 @@ after configuring pricing and a cap, users can submit a question, view the
 grounded answer and ranked source excerpts, and inspect the exact settings,
 model, usage, latency, saved-response, and retrieval-score provenance.
 
-FP7 is implemented and verified. The repository includes an
-idempotent, versioned 25-question reviewed dataset with expected answers, sources,
+FP7 is implemented and verified. The repository now includes an
+idempotent, versioned 50-question reviewed dataset with expected answers, sources,
 evidence, accepted variants, required facts, category, difficulty, and
-answerability metadata. The redesigned task-focused browser explains the full
+answerability metadata. Dataset v2.0 is the final 50-question set; the original
+25-question v1.0 file remains tracked so historical runs retain a reproducible
+answer key. The redesigned task-focused browser explains the full
 Documents -> Chat -> Gold Standard -> Evaluation workflow. Gold Standard cards
 expose cited answer-key evidence and manual review controls, while Evaluation shows test-run
 scope, user-facing question navigation, actionable earlier-attempt history, and
@@ -63,9 +65,10 @@ token F1, ROUGE-L, embedding semantic similarity, BERTScore, expected-source
 accuracy, and refusal correctness. A controlled runner generates each reviewed answer once, saves its
 exact contexts, and applies evaluators to that saved response. The first live
 three-question baseline completed successfully with 24 stored evaluator results.
-The 25 questions are reviewed test cases available to experiments; only three
-unique questions were executed in this bounded proof run. A complete
-25-question baseline remains a deliberate later experiment, not an FP7 claim.
+The 50 questions are reviewed test cases available to experiments; the early
+FP7 proof executed only three unique questions. The August 3 final study later
+executed six exact-question controlled conditions with five responses each. It
+is a bounded 30-response study, not a claim that all 50 questions were run.
 
 FP8 and FP9 application support is now implemented and locally verified. Five
 advanced definitions join the eight baselines: a versioned structured
@@ -94,9 +97,15 @@ across all completed stored tests; an expandable table also preserves the
 current-test and all-test means. Each saved answer has a direct **Evaluate**
 action that selects the exact all-13 target and performs a guarded preflight.
 The **New test run** form lets a browser-only user choose a bounded number of
-reviewed questions, approved model, retrieval method, top-k, temperature, and
-top-p; preview model calls/cost; and generate a saved test with its local-eight
-scores without using the terminal.
+reviewed questions, approved model, retrieval method, top-k, temperature,
+top-p, and full or category-scoped source collection; preview model calls/cost;
+and generate a saved test with its local-eight scores without using the
+terminal. A guided research mode can start a labeled baseline or choose a
+completed baseline and one variable to change. It copies the baseline's exact
+ordered questions and settings, locks everything except the chosen variable, records the
+relationship, and rejects zero-change or multi-change comparisons. A visible
+study checklist reports whether the Gold Standard, controlled baseline,
+matched comparison evidence, human calibration, and exports are ready.
 
 FP10 hardening is complete. New responses freeze the reviewed answer key,
 dataset version, exact retrieved source identity, raw ranking signals, retrieval
@@ -119,18 +128,60 @@ not a comparative finding. See the detailed
 [FP10 hardening record](docs/fp10-hardening.md), and
 [reference-repository comparison](docs/reference-repository-comparison.md).
 
+The August 2 final-readiness pass expanded the reviewed answer key to 50
+source-verified questions and added per-run JSON/CSV downloads containing run
+configuration, generated answers, retrieved-source provenance, canonical
+metric results, immutable attempts, human reviews, and valid matched
+comparisons. Automated tests verify that every answerable v2.0 case quotes
+evidence from its referenced bundled source.
+
+On August 3, the earlier user-space MySQL data directory was recovered intact,
+backed up, brought online without replacing it, checked against all seven
+schema migrations, and seeded with dataset v2.0. Historical documents, runs,
+responses, metric attempts, and the existing human review remain available.
+Provider-free HTTP smoke tests now cover application health, the document
+library, the Gold Standard, source preview, test/evaluator preflights, and both
+export formats. No model call was made during that recovery.
+
+The August 3 empirical continuation completed six controlled five-question
+runs across Chroma/MySQL retrieval, Chroma top-k 3/5/8, Gemini 2.5 Flash versus
+Gemini 3.1 Flash-Lite, and 27-document versus 20-document corpora. Thirty study
+responses have 250 canonical results; one matched hard case in the Chroma and
+MySQL runs has all five advanced methods. JSON/CSV exports for a selected run
+are available from the Evaluation page.
+
+A final provider-free scoring audit confirmed that all six study runs retain 40
+current local result rows, including two correct not-applicable/skipped results
+for the unanswerable question. The audit exposed and fixed a reuse edge case:
+completed and skipped current-version results are now reused, while failed
+results remain eligible for retry. Twelve genuine repeat audit attempts remain
+preserved in the immutable attempt history.
+
+The matrix also exposed two incomplete higher-top-k answers under the former
+512-token output/thinking budget. Future generation uses 2,048 tokens, rejects
+non-STOP completions, records thinking/finish metadata, and includes thinking
+tokens in cost estimates. The original responses remain unchanged as failure
+evidence. Independent review of five baseline answers and the two incomplete
+outputs marked six acceptable and one needs revision. Because one reviewer
+provided overall decisions rather than dimension-level scores, the result is
+descriptive calibration rather than inter-rater evidence.
+
+Two bounded `--no-save` Gemini 2.5 Flash checks then repeated the affected
+questions at top-k 5 and 8. Both produced complete answers under the new guard,
+with a combined configured cost estimate of $0.0032868, while the original
+incomplete study responses remained unchanged.
+
 ## Research Direction
 
 The project is not intended to declare one evaluation metric universally best.
-It will compare the specific usefulness and limitations of normalized matching,
+It compares the specific usefulness and limitations of normalized matching,
 semantic similarity, expected-source accuracy, refusal correctness,
 faithfulness/groundedness, answer relevance, latency, cost, and human review.
 
-Dataset version 1.0 contains 25 reviewed questions across the current Metro
-State categories, including answerable and unanswerable questions. A controlled
-experiment will compare a smaller or more focused
-document collection with the full collection to observe how added documents and
-similar distractors affect retrieval and metric behavior. See the
+Dataset version 2.0 contains 50 reviewed questions across the current Metro
+State categories, including answerable and unanswerable questions. The bounded
+final study compares a 20-document focused collection with the full 27-document
+collection and separately varies retrieval, top-k, and model. See the
 [research plan](docs/research-plan.md) for the detailed questions, experiments,
 interpretation rules, and FP6-FP10 roadmap.
 The [evaluation strategy](docs/evaluation-strategy.md) documents the evaluator
@@ -143,12 +194,12 @@ families, controlled protocol, trade-off questions, and research sequence.
 - MySQL
 - Python helper scripts for RAG ingestion and retrieval
 - ChromaDB for local vector storage using `all-MiniLM-L6-v2`
-- Gemini 2.5 Flash for the initial grounded answer implementation
+- Gemini 2.5 Flash and Gemini 3.1 Flash-Lite as approved grounded-answer options
 
 ## Prerequisites
 
-- PHP installed and available from the terminal
-- Python 3 installed and available from the terminal
+- PHP 8.1 or newer installed and available from the terminal
+- Python 3.10 or newer installed and available from the terminal
 - MySQL 8 installed and running
 - PHP PDO MySQL extension enabled
 - PHP Fileinfo extension enabled for MIME validation
@@ -159,12 +210,23 @@ requires a Gemini API key stored in the ignored `.env` file.
 
 ## Open the Frontend
 
+These commands are for the local deployment operator, not for an application
+user. Browser users should only need the application URL and should never need
+the repository, Python, database credentials, or a terminal.
+
 MySQL and PHP are separate processes. Start the installed MySQL server first;
-opening the PHP application does not start MySQL automatically. Then, from the
-project root, run:
+opening the PHP application does not start MySQL automatically. On the recovered
+Windows development machine, this safe launcher starts the existing user-space
+instance and refuses to initialize or replace data:
 
 ```powershell
 cd "C:\path\to\LLM RAG Evaluation Project"
+.\scripts\start-local-mysql.ps1
+```
+
+Then run the local web server:
+
+```powershell
 php -S 127.0.0.1:8000
 ```
 
@@ -177,6 +239,11 @@ http://127.0.0.1:8000/
 Expected result:
 
 - The RAG Evaluation Workspace page loads.
+- The header changes from **Checking application…** to **Application data
+  ready** after the server confirms that saved application data is reachable.
+  A failure is described as temporary application unavailability and directs
+  an end user to retry or contact the administrator; it does not expose
+  database configuration instructions.
 - Overview explains the Documents -> Chat -> Gold Standard -> Evaluation lifecycle
   and shows live corpus, category, chunk, reviewed-question, and evaluator counts.
 - Chat shows whether generation is enabled and exposes approved model, retrieval,
@@ -189,13 +256,16 @@ Expected result:
   has already been sent through a test run. A visible flow connects reviewed
   question -> same Chat pipeline -> saved answer -> metric results.
 - Evaluation previews and generates bounded new tests, then shows each saved
-  test's scope against the 25-question answer key, saved answers,
+  test's scope against the 50-question answer key, saved answers,
   generated/reference answers, evaluator signals, and retrieved
   evidence. Each response summarizes local, judge, RAGAS, and human-review
   status before the individual named metrics. The newest available response
   opens automatically. Every test includes **Score saved answers** with
   provider-free local-eight or exact-answer all-13 scope, reuse, call-count, and
-  cost information. Earlier interrupted attempts are collapsed separately.
+  cost information plus **Export JSON** and **Export CSV** downloads for report
+  analysis. Its guided baseline/comparison launcher and study checklist keep
+  the research workflow inside the application. Earlier interrupted attempts
+  are collapsed separately.
 - Documents uploads, organizes, replaces, deletes, or clears supported documents.
 - Compare Runs, reached from Evaluation, shows live configuration evidence, question-matched baseline
   deltas when valid pairs exist, run-scoped summaries, interpretation rules,
@@ -249,7 +319,10 @@ confirmed, all older active records with that filename are removed only after
 the new copy succeeds and the old vector deletion is verified.
 Deletion removes the selected MySQL record/chunks and matching Chroma vectors;
 uploaded files are also removed from storage. Bundled sources can be removed
-from the active index without deleting their tracked recovery files. Adding,
+from the active index without deleting their tracked recovery files. **Restore
+bundled sources** re-ingests the complete tracked starting collection with the
+current index settings while retaining browser uploads, so recovery does not
+require a terminal. Adding,
 deleting, or replacing one source changes only that source's chunks/vectors;
 the rest of the corpus is not re-embedded.
 
@@ -268,7 +341,9 @@ Edit `.env` with the local MySQL connection values. Before any model-backed
 execution, set the provider's current per-million token prices. Add
 `GEMINI_API_KEY` or `LLM_API_KEY` only when answer generation is needed, and
 leave `ALLOW_PAID_GENERATION=0` until a paid call is deliberately authorized.
-Start MySQL, then create the schema and ingest both storage layers:
+Start MySQL, then create the schema and ingest both storage layers. On a fresh
+installation this initializes application data; do not use it as a substitute
+for backing up recoverable historical runtime data:
 
 ```powershell
 python rag\ingest.py --init-schema
@@ -356,13 +431,16 @@ Run the Python unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 54 tests covering TXT/PDF/DOCX loading, empty and
+The current suite contains 66 tests covering TXT/PDF/DOCX loading, empty and
 binary input rejection, metadata-preserving chunking, stable IDs, retrieval
 reranking, grounded prompts, refusal instructions, answer orchestration, local
 evaluators, advanced evaluator mapping/applicability/cost/failure isolation,
 score contracts, immutable evaluation snapshots, retrieval provenance,
 unknown-cost handling, matched-comparison rules, verified vector cleanup, and
-frontend regressions for duplicate replacement and exact-answer evaluation.
+frontend regressions for duplicate replacement, exact-question controlled
+selection, thinking-token cost handling, and exact-answer evaluation,
+the 50-question dataset's source/evidence integrity, preservation of v1.0, and
+portable run exports.
 The provider-free checks also run in `.github/workflows/quality.yml` on pushes
 and pull requests; the workflow has no database credentials or provider keys.
 
@@ -415,8 +493,9 @@ review states control test-case eligibility:
 An experiment run then selects some or all reviewed questions and generates one
 saved response per selected question under fixed settings. The verified FP7
 proof used `--limit 3`, so it created three responses and eight evaluator
-results per response. Reviewing 25 test cases and executing three questions are
-therefore separate, intentional facts.
+results per response. The historical FP7 proof reviewed 25 v1.0 test cases and
+executed three questions. The current v2.0 answer key contains 50 reviewed
+cases; expanding the answer key does not imply that new model answers were run.
 
 ## FP8/FP9 Advanced Evaluation and Findings
 
@@ -440,8 +519,8 @@ application and estimated-cost caps. Configure evaluator provider/model and
 current per-million token prices in `.env`; zero price defaults mean "price not
 configured," not "free," and execution then remains blocked unless
 `--allow-unknown-cost` is also supplied. The runner can preserve 1-10 attempts
-per method and reuses a completed active-version result unless `--force` is
-specified.
+per method and reuses a completed or not-applicable active-version result unless
+`--force` is specified. Failed results remain eligible for an explicit retry.
 
 The RAGAS integration uses its modern collections API and pins
 `ragas==0.4.3`, `langchain-community==0.4.1`, and
@@ -544,7 +623,8 @@ Current local source set:
 - 8 document categories
 
 The browser adds upload, live document/category/chunk counts, search/filter/sort,
-same-name replacement, per-document deletion, Delete All, and server-side parsing
+same-name replacement, per-document deletion, Delete All, bundled-source
+restoration, and server-side parsing
 for TXT, text-based PDF, and DOCX documents. Uploaded
 files and generated vector data remain local runtime data and must not be
 committed.

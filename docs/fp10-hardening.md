@@ -84,6 +84,14 @@ It also labels gold-standard dependency, shows the active chunk count on
 Overview, and makes the complete document index searchable, filterable,
 replaceable, and removable from the browser.
 
+The August 2 browser-only follow-up adds quick, controlled-baseline, and
+saved-baseline-comparison modes to New test run. A comparison restores the
+baseline's exact ordered questions and settings, unlocks one declared variable, can vary
+source-category composition, and is rejected server-side unless exactly one
+supported difference is observed. Evaluation also derives a study-readiness
+checklist from the stored dataset, run, matched-pair, human-review, and export
+state.
+
 The July 21 professor-recording alignment adds an explicit Replace
 existing/Cancel upload conflict decision, exact-ID Chroma cleanup with a
 read-back stale-vector check, and Chat-preview invalidation after every
@@ -97,9 +105,9 @@ requires a separately rebuilt index.
 
 ## Verification
 
-Verified locally through July 21, 2026:
+Verified locally through August 2, 2026:
 
-- 54 provider-free Python unit/static tests pass, with the same checks defined
+- 59 provider-free Python unit/static tests pass, with the same checks defined
   in the GitHub Actions quality workflow;
 - all PHP files pass `php -l`;
 - `assets/js/app.js` passes `node --check`;
@@ -115,7 +123,10 @@ Verified locally through July 21, 2026:
 - baseline dry run freezes dataset/corpus/code/preflight data and leaves the run
   count unchanged; and
 - pricing-aware baseline and advanced dry runs report bounded estimates and
-  perform no writes or provider calls.
+  perform no writes or provider calls; and
+- dataset v2.0 contains 50 unique reviewed questions whose answerable evidence
+  excerpts are verified against bundled sources, while v1.0 remains available;
+  per-run JSON/CSV export is covered by the frontend regression suite.
 
 ## Authorized empirical proof (July 20, 2026)
 
@@ -141,11 +152,17 @@ Verified locally through July 21, 2026:
   Faithfulness `1.0`, Response Relevancy `0.9154`, Context Precision `1.0`, and
   Context Recall `1.0`. All earlier failures remain in immutable attempt history.
 
-## Remaining empirical work
+## Empirical continuation
 
-The current database still has three unique executed experiment questions, no
-declared question-matched baseline/comparison pair, five completed advanced
-results on only one response, and no current human reviews. Earlier failed
-attempts remain auditable. The next sound sequence is human calibration,
-expansion from 25 to the requested 50 reviewed questions, and matched
-retrieval/corpus runs before any claim about improvement or metric usefulness.
+The recovered database initially had only three unique questions in its first
+local baseline, no declared question-matched baseline/comparison pair, five
+advanced results on one response, and one human review. The August 3 final-study
+continuation closed that evidence gap with six controlled five-question
+conditions, matched retrieval/top-k/model/corpus comparisons, advanced scoring
+for the same hard question under Chroma and MySQL retrieval, and seven selected
+overall human decisions. Six reviewed responses were acceptable and one needed
+revision. This remains a descriptive single-reviewer calibration sample rather
+than inter-rater evidence, and earlier failed attempts remain auditable.
+Dataset v2.0 provides 50 reviewed, source-verified questions while preserving
+v1.0 for historical runs. Per-run JSON/CSV export is available for final
+analysis and reporting.

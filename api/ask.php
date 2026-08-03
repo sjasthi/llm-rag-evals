@@ -62,7 +62,7 @@ function requestConfiguration(array $payload): array
     $defaultModel = (string) envValue('LLM_CHAT_MODEL', 'gemini-2.5-flash');
     $allowedModels = array_values(array_unique(array_filter(array_map(
         'trim',
-        explode(',', (string) envValue('LLM_CHAT_MODELS', $defaultModel . ',gemini-2.5-flash-lite'))
+        explode(',', (string) envValue('LLM_CHAT_MODELS', $defaultModel . ',gemini-3.1-flash-lite'))
     ))));
     if (!in_array($defaultModel, $allowedModels, true)) {
         array_unshift($allowedModels, $defaultModel);
@@ -246,6 +246,6 @@ try {
     error_log('Ask endpoint failure: ' . $error->getMessage());
     jsonResponse(500, [
         'ok' => false,
-        'error' => 'The answer could not be generated. Check the server configuration and try again.',
+        'error' => 'The answer could not be generated. Try again or contact the application administrator.',
     ]);
 }

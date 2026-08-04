@@ -875,15 +875,20 @@ The initial MVP should include:
 
 ## 14. Future Enhancements
 
-Possible future enhancements include:
+The final submission already implements the human evaluation workflow,
+exportable reports, controlled run comparisons, and purpose-specific evaluator
+recommendations that appeared in the initial enhancement list.
 
-* More advanced RAG evaluation frameworks
-* More model providers
-* OCR for scanned PDFs and additional document formats
-* Visual charts for evaluation results
-* User feedback buttons
-* Human evaluation workflow
-* Exportable reports
-* Admin authentication
-* Side-by-side model comparison
-* Automated, purpose-specific recommendations with documented evidence
+Post-capstone research candidates are now:
+
+* Multimodal extraction and retrieval for pictures, charts, tables, diagrams,
+  and scanned pages
+* Bounded conversation history with query rewriting for follow-up questions
+* Session/user isolation, roles, and concurrency testing for multi-user RAG
+* Optional bounded agentic RAG for ambiguous or multi-hop questions
+* Background jobs for larger ingestion and evaluation workloads
+* More model providers when they support a controlled research comparison
+
+These are plans rather than implemented final-project requirements. Architecture,
+experiments, risks, and acceptance criteria are defined in the
+[post-capstone RAG research roadmap](docs/post-capstone-roadmap.md).

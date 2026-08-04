@@ -65,7 +65,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("ALLOW_PAID_GENERATION", ask_api)
         self.assertIn("--allow-paid", ask_api)
 
-    def test_chat_settings_are_visible_validated_and_forwarded(self) -> None:
+    def test_chat_settings_are_progressive_validated_and_forwarded(self) -> None:
         index = (PROJECT_ROOT / "index.php").read_text(encoding="utf-8")
         javascript = (PROJECT_ROOT / "assets" / "js" / "app.js").read_text(encoding="utf-8")
         ask_api = (PROJECT_ROOT / "api" / "ask.php").read_text(encoding="utf-8")
@@ -82,6 +82,10 @@ class FrontendRegressionTests(unittest.TestCase):
             self.assertIn(control_id, javascript)
         for command_flag in ("--model", "--retrieval", "--top-k", "--temperature", "--top-p", "--dry-run"):
             self.assertIn(command_flag, ask_api)
+        self.assertIn('class="chat-settings" id="chatAdvancedSettings"', index)
+        self.assertNotIn('class="chat-settings" id="chatAdvancedSettings" open', index)
+        self.assertIn("Using recommended setup:", javascript)
+        self.assertIn("modelDisplayName", javascript)
         self.assertIn("between 0.0 and 1.0", ask_api)
         self.assertIn("LLM_CHAT_MODELS", ask_api)
 
@@ -106,10 +110,37 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("applicationStatusPill", index)
         self.assertIn("api/health.php", javascript)
         self.assertIn("Application data unavailable", javascript)
+        self.assertIn('normalizedView === "report" ? "results" : normalizedView', javascript)
         self.assertNotIn("Verify the local database setup", javascript)
         self.assertIn("contact the application administrator", health_api)
         self.assertIn("Try again or contact the application administrator", ask_api)
         self.assertNotIn("Check the server configuration", ask_api)
+
+    def test_ui_foregrounds_the_evaluator_portfolio_research_question(self) -> None:
+        index = (PROJECT_ROOT / "index.php").read_text(encoding="utf-8")
+        javascript = (PROJECT_ROOT / "assets" / "js" / "app.js").read_text(encoding="utf-8")
+
+        self.assertIn("What is the best way to evaluate a RAG response?", index)
+        self.assertIn("Use a portfolio—not one universal score", index)
+        self.assertIn("No single evaluator is best for every response", index)
+        for method in ("Transparent local checks", "LLM judge and RAGAS", "Human review"):
+            self.assertIn(method, index)
+        for control_id in (
+            "goldStandardPurposeTitle",
+            "evaluatorGoalSelect",
+            "evaluatorGoalRecommendation",
+            "projectRecommendationTitle",
+        ):
+            self.assertIn(control_id, index)
+        self.assertIn("evaluatorGoalRecommendations", javascript)
+        self.assertIn("What do you need to learn about the answer?", index)
+        self.assertIn("With reviewed reference data", index)
+        self.assertIn("Without a reviewed answer", index)
+        self.assertIn("What the current saved evidence supports", index)
+        self.assertIn("Gold Standard required", javascript)
+        self.assertIn("Gold Standard optional", javascript)
+        self.assertNotIn('"Run " + comparison.comparison_run_id', javascript)
+        self.assertIn('text("Saved test")', javascript)
 
     def test_frontend_can_administer_the_active_index(self) -> None:
         index = (PROJECT_ROOT / "index.php").read_text(encoding="utf-8")
@@ -141,6 +172,8 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertNotIn("documentResponse(500, ['ok' => false, 'error' => $error->getMessage()])", documents_api)
         self.assertIn("--delete-all", admin)
         self.assertIn("Replace existing", index)
+        self.assertIn("Current text-only indexing", index)
+        self.assertIn("not OCR'd, chunked, or embedded", index)
         self.assertIn("delete_source_chunks", admin)
         self.assertIn("Vector cleanup verification failed", (PROJECT_ROOT / "rag" / "vector_store.py").read_text(encoding="utf-8"))
         self.assertGreaterEqual(javascript.count("resetAnswer();"), 4)
@@ -152,7 +185,7 @@ class FrontendRegressionTests(unittest.TestCase):
         endpoint = (PROJECT_ROOT / "api" / "run_evaluation.php").read_text(encoding="utf-8")
         runner = (PROJECT_ROOT / "rag" / "evaluate_saved_run.py").read_text(encoding="utf-8")
         evaluations_api = (PROJECT_ROOT / "api" / "evaluations.php").read_text(encoding="utf-8")
-        self.assertIn("Score and inspect saved answers", index)
+        self.assertIn("Choose the right checks for each saved answer", index)
         self.assertIn("evaluate-run-toggle", javascript)
         self.assertIn("evaluate-response-button", javascript)
         self.assertIn("Check what will run", javascript)
@@ -239,7 +272,7 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertIn("The form copies and locks the other settings", javascript)
         self.assertIn("newTestValidationError", javascript)
         self.assertIn("renderResearchReadiness", javascript)
-        self.assertIn("What still needs evidence?", index)
+        self.assertIn("Evidence available for the study", index)
         for command_flag in (
             "--experiment-key",
             "--baseline-run-id",
@@ -258,8 +291,11 @@ class FrontendRegressionTests(unittest.TestCase):
         api = (PROJECT_ROOT / "api" / "evaluations.php").read_text(encoding="utf-8")
 
         self.assertIn("Question \" + questionNumber + \" of", javascript)
-        self.assertIn("Earlier attempts needing attention", javascript)
-        self.assertIn('attentionRunCount === 1 ? " needs" : "s need"', javascript)
+        self.assertIn("Archived interrupted attempts", javascript)
+        self.assertIn("archived interrupted attempt", javascript)
+        self.assertIn("Local evaluation complete", javascript)
+        self.assertIn("localSkippedCount", javascript)
+        self.assertIn("local checks resolved", javascript)
         self.assertIn("Use Score saved answers to add the missing checks", javascript)
         self.assertNotIn("This setup attempt failed", javascript)
         self.assertNotIn('text("Response " + response.response_id', javascript)

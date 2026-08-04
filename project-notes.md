@@ -61,7 +61,7 @@ instructions.
 - Every saved test can be downloaded as JSON or long-form CSV for the final
   report. The export includes configuration, answers, contexts, metric results,
   immutable attempts, human reviews, and valid matched comparisons.
-- The provider-free suite now contains 66 passing tests, including source/evidence
+- The provider-free suite now contains 67 passing tests, including source/evidence
   integrity checks for all answerable v2.0 questions.
 - The historical user-space MySQL database was recovered intact and backed up
   before dataset v2.0 was seeded. Database-backed health, Documents,

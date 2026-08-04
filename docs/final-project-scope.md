@@ -322,6 +322,12 @@ directly improve the RAG evaluation outcome:
 - Exhaustive model leaderboard.
 - Training or fine-tuning a custom LLM.
 
+The final project review identified multimodal ingestion, conversation memory,
+multi-user isolation, and bounded agentic RAG as valuable follow-on research.
+They remain outside the submitted implementation rather than being silently
+added to its claims. See the [post-capstone RAG research roadmap](post-capstone-roadmap.md)
+for proposed architectures, experiments, and acceptance criteria.
+
 ## Recommended Final Demo
 
 The final demo should show:

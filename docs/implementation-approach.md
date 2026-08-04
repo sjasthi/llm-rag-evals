@@ -28,6 +28,12 @@ Do not initially copy:
 
 These features add complexity without proving the central project goal.
 
+The completed project preserves this focused baseline. Multimodal processing,
+bounded conversation context, multi-user isolation, and agentic retrieval are
+now documented as separately measurable post-capstone experiments in the
+[post-capstone RAG research roadmap](post-capstone-roadmap.md), not as missing
+requirements of the submitted application.
+
 For class demonstration, assume local development first and standard PHP/MySQL
 hosting if the professor wants to view the application through a hosted
 environment. This keeps the project focused on RAG evaluation rather than custom

@@ -10,6 +10,12 @@ integrate RAGAS alone, collect an arbitrary number of scores, or declare one
 universal winner. The project must explain what each evaluator measures, what
 the score is based on, what it misses, what it costs, and when it is useful.
 
+Accordingly, “best” is a purpose-based recommendation. Transparent local checks
+are best suited to inexpensive full-set screening; LLM-as-judge and RAGAS are
+best suited to deeper diagnosis of selected cases; human review is best suited
+to calibration, ambiguity, and higher-risk decisions. The supported conclusion
+is a layered portfolio, not a universal metric winner.
+
 The same saved RAG responses and retrieved contexts must be evaluated by every
 applicable evaluator. This controlled design makes disagreements meaningful:
 the answer, question, expected answer, expected source, and retrieved evidence

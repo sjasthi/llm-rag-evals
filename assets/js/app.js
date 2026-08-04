@@ -63,6 +63,11 @@ $(function () {
     const $experimentHumanReviewCount = $("#experimentHumanReviewCount");
     const $researchReadinessList = $("#researchReadinessList");
     const $evaluatorSummary = $("#evaluatorSummary");
+    const $evaluatorGoalSelect = $("#evaluatorGoalSelect");
+    const $evaluatorGoalPrimary = $("#evaluatorGoalPrimary");
+    const $evaluatorGoalSecondary = $("#evaluatorGoalSecondary");
+    const $evaluatorGoalCaution = $("#evaluatorGoalCaution");
+    const $evaluatorGoalReference = $("#evaluatorGoalReference");
     const $evaluationRunList = $("#evaluationRunList");
     const $evaluationResultDetail = $("#evaluationResultDetail");
     const $newTestRunToggle = $("#newTestRunToggle");
@@ -154,8 +159,9 @@ $(function () {
         $workspaceViews.each(function () {
             $(this).prop("hidden", $(this).data("viewPanel") !== normalizedView);
         });
+        const navigationView = normalizedView === "report" ? "results" : normalizedView;
         $navigation.find("[data-view]").each(function () {
-            const isActive = $(this).data("view") === normalizedView;
+            const isActive = $(this).data("view") === navigationView;
             $(this).toggleClass("active", isActive).attr("aria-current", isActive ? "page" : null);
         });
         if (updateHistory) {
@@ -281,18 +287,12 @@ $(function () {
             : (result.answer || "No answer was returned."));
         $answerMeta.empty();
         if (!previewOnly) {
-            addMeta("Provider", result.provider || "unknown");
-            addMeta("Model", result.model || "unknown");
+            addMeta("Model", modelDisplayName(result.model));
         }
-        addMeta("Retrieval", readable(result.retrieval_method, "unknown"));
-        addMeta("Top-k", String(result.top_k ?? "unknown"));
+        addMeta("Retrieval", retrievalDisplayName(result.retrieval_method));
+        addMeta("Sources retrieved", String(result.top_k ?? "unknown"));
         if (!previewOnly) {
-            addMeta("Temperature", String(result.temperature ?? "unknown"));
-            addMeta("Top-p", String(result.top_p ?? "unknown"));
             addMeta("Latency", String(result.latency_ms ?? "unknown") + " ms");
-        }
-        if (result.response_id !== null && result.response_id !== undefined) {
-            addMeta("Saved response", "#" + result.response_id);
         }
         if (result.persistence_error) {
             addMeta("Storage warning", result.persistence_error);
@@ -313,13 +313,14 @@ $(function () {
 
     function updateChatSettingsSummary() {
         const configuration = chatConfiguration();
-        const retrievalLabel = configuration.retrieval_method === "mysql_keyword"
-            ? "Keyword search"
-            : "Vector search";
+        const usesDefaults = $chatSettingsControls.toArray().every(function (control) {
+            return String($(control).val()) === String($(control).data("default"));
+        });
         $chatSettingsSummary.text(
-            configuration.model + " · " + retrievalLabel + " · " + configuration.top_k + " source chunk" +
-            (configuration.top_k === 1 ? "" : "s") + " · temperature " +
-            configuration.temperature.toFixed(1) + " · top-p " + configuration.top_p.toFixed(1)
+            (usesDefaults ? "Using recommended setup: " : "Using custom setup: ") +
+            modelDisplayName(configuration.model) + " · " +
+            retrievalDisplayName(configuration.retrieval_method) + " · " +
+            configuration.top_k + " source" + (configuration.top_k === 1 ? "" : "s")
         );
     }
 
@@ -429,7 +430,7 @@ $(function () {
         $duplicateDocumentPrompt.prop("hidden", true);
         $duplicateDocumentName.text("");
         $documentTitle.val(item.title);
-        $documentCategory.val(item.category);
+        $documentCategory.val(titleCaseLabel(item.category));
         $cancelReplaceButton.prop("hidden", false);
         $uploadDocumentButton.prop("disabled", false);
         $uploadDocumentButton.text("Replace and re-ingest");
@@ -445,7 +446,7 @@ $(function () {
         $documentCategoryFilter.find("option:not(:first)").remove();
         categories.forEach(function (category) {
             $documentCategoryFilter.append(
-                $("<option>").val(category).text(readable(category))
+                $("<option>").val(category).text(titleCaseLabel(category))
             );
         });
         if (categories.includes(currentCategory)) {
@@ -476,7 +477,7 @@ $(function () {
                 $checkbox.prop("checked", true);
             }
             $newTestCategoryChoices.append(
-                $("<label>").attr("for", checkboxId).append($checkbox, $("<span>").text(readable(category)))
+                $("<label>").attr("for", checkboxId).append($checkbox, $("<span>").text(titleCaseLabel(category)))
             );
         });
         syncNewTestExperimentControls(false);
@@ -502,7 +503,7 @@ $(function () {
         $newTestQuestionIds.empty();
         evaluationQuestions.forEach(function (question) {
             const number = Number(question.display_order) || Number(question.question_id);
-            const label = "Question " + number + " · " + readable(question.category) + " · " + question.question_text;
+            const label = "Question " + number + " · " + titleCaseLabel(question.category) + " · " + question.question_text;
             $newTestQuestionIds.append(
                 $("<option>").val(question.question_id).text(label)
             );
@@ -617,7 +618,7 @@ $(function () {
             grouped.forEach(function (items, groupName) {
                 const $group = $("<section>").addClass("document-group");
                 $group.append($("<div>").addClass("document-group-heading").append(
-                    $("<strong>").text(readable(groupName)),
+                    $("<strong>").text(titleCaseLabel(groupName)),
                     $("<span>").text(items.length + " document" + (items.length === 1 ? "" : "s"))
                 ));
                 const $stack = $("<div>").addClass("list-stack");
@@ -881,7 +882,14 @@ $(function () {
             $confirmDuplicateReplacement.trigger("focus");
             return;
         }
+        const categoryKey = normalizeCategoryKey($documentCategory.val());
+        if (categoryKey.length < 2 || categoryKey.length > 50) {
+            showDocumentMessage("Enter a category with at least two letters or numbers.", "danger");
+            $documentCategory.trigger("focus");
+            return;
+        }
         const formData = new FormData(this);
+        formData.set("category", categoryKey);
         $uploadDocumentButton.prop("disabled", true).text("Parsing and ingesting...");
         $cancelReplaceButton.prop("disabled", true);
         showDocumentMessage(
@@ -938,10 +946,13 @@ $(function () {
             const $item = $("<article>").addClass("evaluation-question");
             const $heading = $("<div>").addClass("evaluation-question-heading");
             $heading.append($("<strong>").text(question.display_order + ". " + question.question_text));
-            $heading.append($("<span>").addClass("status status-" + (question.review_status === "reviewed" ? "ready" : "planned")).text(question.review_status.replace("_", " ")));
+            $heading.append($("<span>").addClass("status status-" + (question.review_status === "reviewed" ? "ready" : "planned")).text(titleCaseLabel(question.review_status)));
             $item.append($heading);
             $item.append($("<p>").text(question.expected_answer));
-            $item.append($("<small>").text(question.category + " · " + question.difficulty + " · " + (Number(question.is_answerable) ? "answerable" : "unanswerable")));
+            $item.append($("<small>").text(
+                titleCaseLabel(question.category) + " · " + titleCaseLabel(question.difficulty) + " · " +
+                (Number(question.is_answerable) ? "Answerable" : "Unanswerable")
+            ));
             if (question.expected_source || question.expected_evidence) {
                 const $evidence = $("<details>").addClass("evaluation-reference");
                 $evidence.append($("<summary>").text("Review cited source evidence"));
@@ -980,6 +991,93 @@ $(function () {
         }
         return String(value).replaceAll("_", " ");
     }
+
+    function titleCaseLabel(value, fallback) {
+        return readable(value, fallback).replace(/\b\w/g, function (character) {
+            return character.toUpperCase();
+        });
+    }
+
+    function modelDisplayName(model) {
+        const labels = {
+            "gemini-2.5-flash": "Gemini 2.5 Flash — standard",
+            "gemini-3.1-flash-lite": "Gemini 3.1 Flash-Lite — faster",
+        };
+        return labels[String(model || "")] || titleCaseLabel(model, "Model not recorded");
+    }
+
+    function retrievalDisplayName(method) {
+        return {
+            mysql_keyword: "Keyword search",
+            chroma_vector: "Vector search",
+        }[String(method || "")] || titleCaseLabel(method, "Retrieval not recorded");
+    }
+
+    function normalizeCategoryKey(value) {
+        return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/&/g, " and ")
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+    }
+
+    const evaluatorGoalRecommendations = {
+        overall: {
+            primary: "Run the local eight across the full reviewed test set.",
+            secondary: "Use the LLM judge and RAGAS on representative, difficult, changed, or failing answers; add human review where methods disagree.",
+            caution: "Overall confidence comes from a profile of evidence. No single score proves that an answer is correct, complete, grounded, and useful.",
+            reference: "Gold Standard recommended: it supplies verified correctness, source, fact, and answerability expectations.",
+        },
+        correctness: {
+            primary: "Required-fact coverage plus the versioned LLM judge.",
+            secondary: "Use exact/accepted variants and semantic or BERTScore signals for regression, then human-review important disagreements.",
+            caution: "Similarity can remain high when one date or number is wrong; fact coverage can miss unsupported extra claims.",
+            reference: "Gold Standard required: correctness and completeness need a reviewed answer, facts, and evidence.",
+        },
+        grounding: {
+            primary: "RAGAS Faithfulness beside the exact retrieved source chunks.",
+            secondary: "Add the judge faithfulness rubric and human inspection for consequential claims.",
+            caution: "A response can be faithful to retrieved context that is itself irrelevant, incomplete, or outdated.",
+            reference: "Gold Standard optional for the primary check: Faithfulness uses the saved answer and contexts; reviewed evidence is still needed to judge correctness.",
+        },
+        retrieval: {
+            primary: "Expected-source accuracy, including the saved source rank.",
+            secondary: "Add RAGAS Context Precision for ranking/noise and Context Recall for missing evidence; inspect the chunks directly.",
+            caution: "Finding the expected document does not prove that the selected passage was sufficient or used correctly.",
+            reference: "Gold Standard required in this project: retrieval claims use an expected source, answer, and verified evidence.",
+        },
+        relevance: {
+            primary: "RAGAS Response Relevancy.",
+            secondary: "Add correctness and faithfulness evidence so a direct but false answer is not rewarded.",
+            caution: "Relevance only shows that the response addresses the question; it does not prove truth or grounding.",
+            reference: "Gold Standard optional for the primary check: Response Relevancy compares the question and saved answer.",
+        },
+        refusal: {
+            primary: "Refusal correctness against the reviewed answerability label.",
+            secondary: "Add the LLM judge refusal rubric and human review for ambiguous or high-risk questions.",
+            caution: "A correct refusal decision does not measure the quality of an answerable response.",
+            reference: "Gold Standard required: the evaluator needs a reviewed decision about whether the corpus can answer the question.",
+        },
+        regression: {
+            primary: "Apply all eight local methods to every saved answer.",
+            secondary: "Run advanced methods only on changed, below-threshold, difficult, or sampled cases, then calibrate with human review.",
+            caution: "Project thresholds are review flags, not factual verdicts; inspect every flagged response and its evidence.",
+            reference: "Gold Standard recommended: repeatable regression needs a stable reviewed test set and frozen run configuration.",
+        },
+    };
+
+    function renderEvaluatorGoalRecommendation() {
+        const recommendation = evaluatorGoalRecommendations[String($evaluatorGoalSelect.val() || "overall")] ||
+            evaluatorGoalRecommendations.overall;
+        $evaluatorGoalPrimary.text(recommendation.primary);
+        $evaluatorGoalSecondary.text(recommendation.secondary);
+        $evaluatorGoalCaution.text(recommendation.caution);
+        $evaluatorGoalReference.text(recommendation.reference);
+    }
+
+    $evaluatorGoalSelect.on("change", renderEvaluatorGoalRecommendation);
+    renderEvaluatorGoalRecommendation();
 
     function compactNumber(value, digits) {
         const number = Number(value);
@@ -1121,9 +1219,16 @@ $(function () {
         $findingMatchedComparisons.empty();
         (findings.matched_comparisons || []).forEach(function (comparison) {
             const delta = Number(comparison.mean_delta);
+            const comparisonRun = (data.runs || []).find(function (run) {
+                return Number(run.run_id) === Number(comparison.comparison_run_id);
+            });
+            const baselineRun = (data.runs || []).find(function (run) {
+                return Number(run.run_id) === Number(comparison.baseline_run_id);
+            });
             const $card = $("<article>").addClass("matched-comparison-card");
             $card.append($("<span>").text(
-                "Run " + comparison.comparison_run_id + " vs " + comparison.baseline_run_id
+                (comparisonRun?.run_name || "Comparison test") + " compared with " +
+                (baselineRun?.run_name || "saved baseline")
             ));
             $card.append($("<strong>").text(comparison.display_name));
             $card.append($("<b>").text(
@@ -1152,21 +1257,21 @@ $(function () {
                 ? Math.round((Number(run.response_count) / Number(run.dataset_question_count)) * 100)
                 : 0;
             $card.append($("<div>").addClass("finding-run-title").append(
-                $("<span>").text("Run " + run.run_id),
+                $("<span>").text("Saved test"),
                 $("<strong>").text(run.run_name),
-                $("<em>").addClass("run-status run-status-" + run.status).text(run.status)
+                $("<em>").addClass("run-status run-status-" + run.status).text(titleCaseLabel(run.status))
             ));
             $card.append($("<p>").text(
-                readable(run.retrieval_method, "retrieval unknown") + " retrieval · top " + run.top_k +
-                " · " + (run.response_count || 0) + "/" + (run.dataset_question_count || evaluationDatasetQuestionCount) +
-                " responses (" + coverage + "% coverage)"
+                retrievalDisplayName(run.retrieval_method) + " · " + run.top_k + " retrieved sources · " +
+                (run.response_count || 0) + "/" + (run.dataset_question_count || evaluationDatasetQuestionCount) +
+                " answers (" + coverage + "% test-set coverage)"
             ));
             const $facts = $("<dl>").addClass("finding-run-facts");
             [
                 ["Test purpose", run.experiment_key || "not labeled"],
-                ["Corpus", run.corpus_variant_key || "full corpus"],
+                ["Source collection", titleCaseLabel(run.corpus_variant_key, "Full corpus")],
                 ["Completed checks", (run.completed_result_count || 0) + " completed"],
-                ["Stored status rows", (run.result_count || 0) + " total"],
+                ["Recorded method statuses", (run.result_count || 0) + " total"],
                 ["Evaluator attempts", (run.evaluator_attempt_count || 0) + " retained"],
                 ["Skipped / failed", (run.evaluator_skipped_count || 0) + " / " + (run.evaluator_error_count || 0)],
                 ["Evaluator runtime", compactNumber((Number(run.evaluator_runtime_ms) || 0) / 1000, 2) + " s"],
@@ -1271,7 +1376,7 @@ $(function () {
                 $experimentRunCount.text(readyRunCount);
                 $experimentRunCountNote.text(
                     attentionRunCount
-                        ? attentionRunCount + " earlier attempt" + (attentionRunCount === 1 ? " needs" : "s need") + " attention"
+                        ? attentionRunCount + " archived interrupted attempt" + (attentionRunCount === 1 ? "" : "s")
                         : "completed batches"
                 );
                 $evaluationDatasetSummary.text(
@@ -1288,7 +1393,7 @@ $(function () {
                 const categories = [...new Set(evaluationQuestions.map(function (question) { return question.category; }))].sort();
                 $evaluationCategoryFilter.find("option:not(:first)").remove();
                 categories.forEach(function (value) {
-                    $evaluationCategoryFilter.append($("<option>").val(value).text(value.replaceAll("_", " ")));
+                    $evaluationCategoryFilter.append($("<option>").val(value).text(titleCaseLabel(value)));
                 });
                 renderEvaluationQuestions();
                 renderEvaluationRuns(evaluationRuns, data.responses || [], data.findings || {});
@@ -1367,25 +1472,37 @@ $(function () {
 
     function runScoringState(run, runResponses) {
         const responseCount = runResponses.length;
-        const recorded = runResponses.reduce(function (total, response) {
-            return total + (Number(response.result_count) || 0);
+        const completed = runResponses.reduce(function (total, response) {
+            return total + (Number(response.completed_result_count) || 0);
+        }, 0);
+        const skipped = runResponses.reduce(function (total, response) {
+            return total + (Number(response.skipped_result_count) || 0);
+        }, 0);
+        const failed = runResponses.reduce(function (total, response) {
+            return total + (Number(response.failed_result_count) || 0);
         }, 0);
         const localCompleted = runResponses.reduce(function (total, response) {
             return total + (Number(response.local_completed_count) || 0);
         }, 0);
+        const localSkipped = runResponses.reduce(function (total, response) {
+            return total + (Number(response.local_skipped_count) || 0);
+        }, 0);
+        const localFailed = runResponses.reduce(function (total, response) {
+            return total + (Number(response.local_failed_count) || 0);
+        }, 0);
         if (run.status !== "completed") {
             return {
-                label: recorded ? "Earlier attempt" : "Needs scoring",
+                label: "Archived attempt",
                 className: "run-status-attention",
             };
         }
-        if (responseCount && recorded >= responseCount * 13) {
-            return { label: "All 13 available", className: "run-status-completed" };
+        if (responseCount && !failed && completed + skipped >= responseCount * 13) {
+            return { label: "Full evaluator set available", className: "run-status-completed" };
         }
-        if (responseCount && localCompleted >= responseCount * 8) {
-            return { label: "Local 8 available", className: "run-status-local" };
+        if (responseCount && !localFailed && localCompleted + localSkipped >= responseCount * 8) {
+            return { label: "Local evaluation complete", className: "run-status-local" };
         }
-        return { label: "Partially scored", className: "run-status-attention" };
+        return { label: "Local evaluation incomplete", className: "run-status-attention" };
     }
 
     function renderRunCard(run, responses, findings) {
@@ -1393,13 +1510,16 @@ $(function () {
             return String(response.run_id) === String(run.run_id);
         });
         const responseCount = runResponses.length;
-        const recordedCount = runResponses.reduce(function (total, response) {
-            return total + (Number(response.result_count) || 0);
+        const localCompletedCount = runResponses.reduce(function (total, response) {
+            return total + (Number(response.local_completed_count) || 0);
+        }, 0);
+        const localSkippedCount = runResponses.reduce(function (total, response) {
+            return total + (Number(response.local_skipped_count) || 0);
         }, 0);
         const completedCount = runResponses.reduce(function (total, response) {
             return total + (Number(response.completed_result_count) || 0);
         }, 0);
-        const expectedSlots = responseCount * evaluatorCatalog.length;
+        const localExpectedSlots = responseCount * 8;
         const state = runScoringState(run, runResponses);
         const $run = $("<article>").addClass("evaluation-run").attr("data-run-id", run.run_id);
         const $runHeading = $("<div>").addClass("evaluation-run-heading");
@@ -1407,9 +1527,16 @@ $(function () {
         $runHeading.append($("<span>").addClass("run-status " + state.className).text(state.label));
         $run.append($runHeading);
         $run.append($("<h3>").text(run.run_name));
+        const localResolvedCount = localCompletedCount + localSkippedCount;
+        let coverageText = localResolvedCount + " of " + localExpectedSlots + " local checks resolved";
+        if (state.className === "run-status-completed") {
+            coverageText = "full evaluator coverage recorded";
+        } else if (state.className === "run-status-local") {
+            coverageText += (localSkippedCount ? " · " + localSkippedCount + " not applicable" : "") +
+                " · advanced checks optional";
+        }
         $run.append($("<span>").addClass("evaluation-run-meta").text(
-            responseCount + " saved answer" + (responseCount === 1 ? "" : "s") + " · " +
-            recordedCount + " of " + expectedSlots + " method results saved"
+            responseCount + " saved answer" + (responseCount === 1 ? "" : "s") + " · " + coverageText
         ));
         $run.append($("<p>").addClass("evaluation-run-scope").text(
             "Saved scope: " + responseCount + " answer" + (responseCount === 1 ? "" : "s") +
@@ -1422,7 +1549,7 @@ $(function () {
             });
             $run.append($("<p>").addClass("evaluation-run-experiment").text(
                 "Controlled comparison" + (run.experiment_key ? " · " + run.experiment_key : "") +
-                " · baseline: " + (baseline ? baseline.run_name : "saved test " + run.baseline_run_id) +
+                " · baseline: " + (baseline ? baseline.run_name : "selected saved baseline") +
                 (configuration.change_from_baseline ? " · changed: " + configuration.change_from_baseline : "")
             ));
         } else if (run.experiment_key) {
@@ -1442,16 +1569,16 @@ $(function () {
         if (run.status !== "completed") {
             $run.append($("<p>").addClass("evaluation-run-warning").text(
                 responseCount
-                    ? "The original test stopped early, but its saved answer is still available. Use Score saved answers to add the missing checks."
-                    : "The original test stopped before it saved an answer. It is preserved only as technical history."
+                    ? "This archived test stopped early, but its saved answer is still available. Use Score saved answers to add the missing checks."
+                    : "This archived test stopped before it saved an answer. It is preserved only as technical history."
             ));
         }
 
         const $settings = $("<details>").addClass("run-settings");
         $settings.append($("<summary>").text("Settings and technical record"));
         $settings.append($("<p>").text(
-            readable(run.retrieval_method, "unknown") + " retrieval · " +
-            readable(run.chat_model, "unknown model") + " · top-k " + readable(run.top_k, "unknown") +
+            retrievalDisplayName(run.retrieval_method) + " · " +
+            modelDisplayName(run.chat_model) + " · retrieved sources " + readable(run.top_k, "unknown") +
             " · temperature " + readable(run.temperature, "unknown") +
             " · top-p " + readable(run.top_p, "unknown") + " · sources: " +
             controlledSettingDisplay("corpus", Array.isArray(configuration.categories) ? configuration.categories : []) +
@@ -1651,10 +1778,10 @@ $(function () {
         if (attentionRuns.length) {
             const $history = $("<details>").addClass("run-attention-history");
             $history.append($("<summary>").text(
-                "Earlier attempts needing attention (" + attentionRuns.length + ")"
+                "Archived interrupted attempts (" + attentionRuns.length + ")"
             ));
             $history.append($("<p>").text(
-                "These records are kept for research history. A saved answer can still be inspected or scored; an attempt with no answer cannot be recovered."
+                "These records are preserved for an honest audit trail and do not indicate that the current application is incomplete. Saved answers can still be inspected or scored."
             ));
             const $historyRuns = $("<div>").addClass("run-attention-list");
             attentionRuns.forEach(function (run) {
@@ -1663,7 +1790,14 @@ $(function () {
             $history.append($historyRuns);
             $evaluationRunList.append($history);
         }
-        let $responseToOpen = $evaluationRunList.find(".evaluation-response-button").first();
+        const preferredRun = readyRuns.slice().sort(function (left, right) {
+            return (Number(right.human_review_count) || 0) - (Number(left.human_review_count) || 0) ||
+                (Number(right.completed_result_count) || 0) - (Number(left.completed_result_count) || 0) ||
+                Number(right.run_id) - Number(left.run_id);
+        })[0];
+        let $responseToOpen = preferredRun
+            ? $evaluationRunList.find('.evaluation-run[data-run-id="' + preferredRun.run_id + '"] .evaluation-response-button').first()
+            : $evaluationRunList.find(".evaluation-response-button").first();
         if (currentEvaluationResponseId) {
             const $current = $evaluationRunList.find(".evaluation-response-button").filter(function () {
                 return Number($(this).data("responseId")) === currentEvaluationResponseId;
@@ -1680,7 +1814,7 @@ $(function () {
 
     const controlledVariableLabels = {
         retrieval_method: "Retrieval method",
-        top_k: "Source chunks (top-k)",
+        top_k: "Number of retrieved sources",
         model: "Answer model",
         temperature: "Temperature",
         top_p: "Top-p",
@@ -1753,10 +1887,13 @@ $(function () {
 
     function controlledSettingDisplay(key, value) {
         if (key === "corpus") {
-            return value.length ? value.map(readable).join(", ") : "all active documents";
+            return value.length ? value.map(titleCaseLabel).join(", ") : "all active documents";
         }
         if (key === "retrieval_method") {
-            return readable(value);
+            return retrievalDisplayName(value);
+        }
+        if (key === "model") {
+            return modelDisplayName(value);
         }
         return String(value);
     }
@@ -1990,7 +2127,7 @@ $(function () {
             if (!$newTestName.val().trim()) {
                 $newTestName.val(
                     "Test " + new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date()) +
-                    " · " + readable($newTestRetrieval.val()) + " · top-k " + $newTestTopK.val()
+                    " · " + retrievalDisplayName($newTestRetrieval.val()) + " · " + $newTestTopK.val() + " sources"
                 );
             }
             $newTestName.trigger("focus");

@@ -1,10 +1,10 @@
 # UX Design
 
-Implementation status: the task-focused shell, configurable Chat, provider-free
+Implementation status: the task-focused shell, progressive-disclosure Chat, provider-free
 source preview, guided baseline/comparison launcher, study-readiness checklist,
 status-first Evaluation inspector, score contracts, human-review workflow,
 portable run exports, and evidence-first run comparison described
-below are implemented as of August 2, 2026. The July 20 simplification pass renamed the user-facing
+below are implemented as of August 3, 2026. The July 20 simplification pass renamed the user-facing
 sections around tasks while retaining the richer experiment data model behind
 them.
 
@@ -69,14 +69,18 @@ it part of the first-time user's required path.
 
 The user-facing model is:
 
-1. Gold Standard contains the test answer key: a reviewed question, expected
+1. Overview states the research question: which evaluation method is most
+   useful for a specific RAG-response failure and decision?
+2. Gold Standard contains the test answer key: a reviewed question, expected
    answer, and expected evidence.
-2. A test run sends several reviewed questions through the same retrieval and
+3. A test run sends several reviewed questions through the same retrieval and
    generation pipeline used by Chat, with one fixed configuration.
-3. Evaluation stores each generated answer, its retrieved sources, and separate
+4. Evaluation stores each generated answer, its retrieved sources, and separate
    metric statuses for every answered question.
-4. Compare Runs only claims a difference when the same questions and the same
+5. Compare Runs only claims a difference when the same questions and the same
    quality check exist in both runs.
+6. Conclusions use a portfolio: local checks screen broadly, LLM judge/RAGAS
+   diagnose selected cases, and human review calibrates disagreements.
 
 “Dataset” and “experiment” remain valid research/database terms, but they are
 not used as unexplained primary navigation labels. Chat history is never the
@@ -92,9 +96,10 @@ asking a question, managing documents, and viewing evaluations.
 ### Ask a Question
 
 Uses a focused question form. The result area displays the answer first,
-followed by source citations and retrieved chunks. Users can choose vector or
-keyword retrieval, top-k, temperature, and top-p in the browser. A settings
-summary makes the active configuration visible, Reset Defaults restores the
+followed by source citations and retrieved chunks. Recommended defaults keep
+the normal path simple. Researchers can expand Advanced settings to choose
+vector or keyword retrieval, top-k, temperature, top-p, and an approved model.
+A plain-language summary makes the active configuration visible, Reset Defaults restores the
 environment-backed choices, and Preview Sources runs retrieval without a paid
 model call. Answer generation remains disabled unless the local paid-call guard
 is explicitly enabled.
@@ -229,7 +234,23 @@ to infer it from database fields:
   active source, verified vector cleanup, and a confirmed Delete All. Successful
   corpus changes clear an already-rendered Chat source preview.
 - Overview includes the live active chunk count and Chat includes an
-  allowlisted model selector.
+  allowlisted model selector inside collapsed Advanced settings.
+- Evaluation visibly recommends a three-layer evaluator portfolio rather than
+  a universal combined grade. Local-complete tests no longer look unfinished
+  merely because optional advanced methods were not run, interrupted records
+  are labeled as archived audit history, and the evidence-rich completed test
+  is selected first.
+- Human-facing labels replace category slugs, primary run IDs, and raw model or
+  retrieval identifiers; exact IDs remain in expandable technical provenance.
+- Gold Standard explains why reviewed references are needed for correctness,
+  fact, retrieval, and refusal claims while distinguishing the two available
+  reference-free RAGAS checks.
+- Evaluation includes a goal-first decision guide. A visitor chooses overall
+  confidence, correctness/completeness, grounding, retrieval, relevance,
+  refusal, or low-cost regression and receives a recommended starting method,
+  complementary evidence, limitation, and Gold Standard dependency.
+- Compare Runs states both the evaluator-process recommendation and the bounded
+  current RAG default beside the evidence scope and limitations that support it.
 - Previously tiny audit text is raised to a readable floor, secondary colors
   have stronger contrast, disclosure controls have larger targets, keyboard
   focus is visible, browser Back/Forward navigation works across workspace
@@ -289,6 +310,11 @@ text-based PDF, and DOCX files. It shows the selected filename and size before
 submission, an elapsed parsing/ingestion state, and specific validation or
 parser errors. Successful ingestion updates the list and dashboard counts
 without a page reload.
+
+The form now states the text-only capability boundary before upload: embedded
+pictures, charts, and scanned pages remain in the source file but are not OCR'd,
+chunked, or embedded. This prevents a successful DOCX/PDF upload from implying
+that its visual content is searchable.
 
 Replacement identifies which document will be replaced and regenerates only
 its chunks and embeddings. Selecting a duplicate filename first presents a

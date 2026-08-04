@@ -218,7 +218,9 @@ Implementation requirements:
 
 Recommended Python libraries are `pypdf` for text-based PDFs and
 `python-docx` for DOCX files. Scanned-image OCR is a later enhancement unless
-the professor explicitly requires it.
+separately required. The final review requested a researched multimodal plan,
+not a late change to the completed text-only baseline; that plan is recorded in
+the [post-capstone roadmap](post-capstone-roadmap.md).
 
 ## FP6-FP10 Research Roadmap
 

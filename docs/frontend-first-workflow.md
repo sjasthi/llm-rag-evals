@@ -8,8 +8,9 @@ The main navigation now describes user tasks:
 
 1. **Overview** shows active documents, categories, chunks, gold-standard
    questions, and evaluator count.
-2. **Chat** answers an arbitrary question with recommended defaults and optional
-   approved model/retrieval/generation controls.
+2. **Chat** answers an arbitrary question with recommended defaults. Approved
+   model/retrieval/generation controls remain available in a collapsed Advanced
+   settings panel for research comparisons.
 3. **Documents** administers the active retrieval corpus.
 4. **Gold Standard** reviews questions, expected answers, expected evidence,
    required facts, and answerability labels.
@@ -24,6 +25,11 @@ operator documentation rather than end-user error copy.
 ## Document lifecycle
 
 The active index is incremental. Rebuilding unrelated documents is unnecessary:
+
+The upload form explicitly distinguishes storage from indexing. Pictures and
+charts remain in an active source file, but the submitted ingestion path indexes
+only extracted text; scanned pages without a text layer require a future OCR or
+multimodal workflow.
 
 | User action | MySQL | ChromaDB | Source files |
 | --- | --- | --- | --- |
@@ -92,6 +98,20 @@ rows, sampled human review, and portable exports. It points the user to the
 next missing action rather than requiring a database query or documentation
 cross-check.
 
+The page also states the recommended evaluator portfolio: run transparent local
+checks across every response, apply the LLM judge and RAGAS to representative,
+difficult, or failing cases, and use human review to calibrate disagreements.
+This answers “which evaluator is better?” by purpose instead of inventing one
+universal grade from unlike measurements.
+
+A goal-first selector makes that choice concrete inside the browser. It maps
+correctness/completeness, grounding, retrieval, relevance, refusal, overall
+confidence, and low-cost regression needs to a primary method, complementary
+evidence, a limitation, and whether reviewed Gold Standard data is required.
+The Gold Standard page explains the same dependency from the answer-key side,
+and Compare Runs exposes the current bounded recommendation with its study
+scope instead of requiring a report to explain the conclusion.
+
 The scoring preflight reports saved answers, methods to apply, results to reuse,
 external applications, and estimated cost before execution. Evaluation does not
 regenerate the saved answer. A new retrieval/model configuration requires a new
@@ -100,8 +120,10 @@ controlled run so its answer and contexts are not confused with old evidence.
 Database primary keys are implementation details. The browser labels answers
 as `Question 1 of 3`, while response/run IDs appear only inside expandable
 technical provenance. Completed tests are listed first. Interrupted historical
-attempts are collapsed under **Earlier attempts needing attention** and explain
-whether a saved answer can still be scored.
+attempts are collapsed under **Archived interrupted attempts** and explicitly
+identified as audit history rather than unfinished current work. A completed
+test with the strongest existing human-review and automatic-evaluation coverage
+opens first.
 
 Every evaluator card shows the selected answer's isolated score beside the
 cumulative mean for that same evaluator across all completed saved tests. An

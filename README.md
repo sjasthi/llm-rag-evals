@@ -9,7 +9,32 @@ repeatable evidence about what different RAG evaluation metrics measure, where
 they are useful, where they disagree, and how document-collection size and
 composition affect retrieval and evaluation results.
 
-## Current Status
+The central research question is: **What is the best way to evaluate a RAG
+response?** Here, “best” means the most useful evidence for a particular
+failure and decision—not one universal evaluator or a combined score. The
+implemented workflow uses transparent local checks for broad screening,
+LLM-as-judge and RAGAS for targeted diagnosis, and human review to calibrate
+ambiguous cases and evaluator disagreements.
+
+## Final Submission Snapshot
+
+| Area | Final repository evidence |
+| --- | --- |
+| Knowledge base | 27 bundled Metro State documents, 77 baseline chunks, browser TXT/text-based-PDF/DOCX administration, and verified replacement cleanup |
+| Answer pipeline | Shared source-grounded Chat/test-run path with vector or keyword retrieval and guarded Gemini generation |
+| Gold Standard | 50 reviewed v2.0 questions across nine categories, including three unanswerable cases |
+| Evaluation | Eight local metrics, one structured LLM judge, four RAGAS metrics, and a separate human-review rubric |
+| Final study | Six controlled conditions, 30 saved responses, portable exports, matched baseline comparisons, and documented generalization limits |
+| Quality gates | 67 provider-free tests, PHP lint, JavaScript syntax checking, dependency validation, and GitHub Actions |
+
+The submitted application is intentionally a text-only, single-turn, shared
+local research workspace with a fixed retrieve-then-generate answer path. It
+does not claim to interpret embedded pictures/charts, remember earlier Chat
+turns, isolate multiple users, or run an autonomous retrieval agent. Those
+boundaries and a researched extension plan are documented in the
+[post-capstone RAG research roadmap](docs/post-capstone-roadmap.md).
+
+## Implementation Record and Final Evidence
 
 FP6 implements browser document administration and normalized multi-format
 ingestion. Administrators can upload and list TXT, text-based PDF, and DOCX
@@ -39,9 +64,9 @@ by sending retrieved context to Gemini, returning a grounded answer with
 sources, and saving the response and retrieved contexts in MySQL.
 
 The PHP Chat interface uses that workflow through a server-side JSON endpoint.
-The browser exposes an approved-model selector, retrieval method, number of
-source chunks, temperature, and top-p instead of requiring `.env` edits for
-every question. A provider-free
+Ordinary users can ask a question with the recommended setup; an expandable
+Advanced settings panel exposes the approved-model selector, retrieval method,
+number of source chunks, temperature, and top-p for controlled research. A provider-free
 source preview makes those retrieval choices inspectable even while paid
 generation is paused. When a local operator deliberately enables generation
 after configuring pricing and a cap, users can submit a question, view the
@@ -56,7 +81,7 @@ answerability metadata. Dataset v2.0 is the final 50-question set; the original
 answer key. The redesigned task-focused browser explains the full
 Documents -> Chat -> Gold Standard -> Evaluation workflow. Gold Standard cards
 expose cited answer-key evidence and manual review controls, while Evaluation shows test-run
-scope, user-facing question navigation, actionable earlier-attempt history, and
+scope, user-facing question navigation, archived interrupted-attempt history, and
 an automatically populated answer inspector. Internal response IDs are shown
 only inside expandable technical provenance. The additive
 schema stores evaluator definitions plus heterogeneous raw per-response results.
@@ -244,32 +269,43 @@ Expected result:
   A failure is described as temporary application unavailability and directs
   an end user to retry or contact the administrator; it does not expose
   database configuration instructions.
-- Overview explains the Documents -> Chat -> Gold Standard -> Evaluation lifecycle
-  and shows live corpus, category, chunk, reviewed-question, and evaluator counts.
-- Chat shows whether generation is enabled and exposes approved model, retrieval,
-  top-k, temperature, and top-p settings. Preview Sources performs retrieval without
+- Overview states the evaluator-selection research question, explains the
+  Documents -> Chat -> Gold Standard -> Evaluation lifecycle, and shows live
+  corpus, category, chunk, reviewed-question, and evaluator counts.
+- Chat shows whether generation is enabled and keeps approved model, retrieval,
+  top-k, temperature, and top-p controls in a collapsed Advanced settings panel.
+  Preview Sources performs retrieval without
   a model call; Ask displays a Gemini answer only after the operator opts in.
   The page explains that controlled evaluation runs call this same retrieval and
   answer pipeline.
 - Gold Standard shows the reviewed answer-key questions, cited evidence, filters, and manual
   review status. `Reviewed` means source-verified; it does not mean the question
   has already been sent through a test run. A visible flow connects reviewed
-  question -> same Chat pipeline -> saved answer -> metric results.
-- Evaluation previews and generates bounded new tests, then shows each saved
+  question -> same Chat pipeline -> saved answer -> metric results. An in-page
+  decision guide explains which checks require reviewed reference data and what
+  can still be assessed without a gold answer.
+- Evaluation presents the recommended layered evaluator portfolio, previews and
+  generates bounded new tests, then shows each saved
   test's scope against the 50-question answer key, saved answers,
   generated/reference answers, evaluator signals, and retrieved
   evidence. Each response summarizes local, judge, RAGAS, and human-review
-  status before the individual named metrics. The newest available response
-  opens automatically. Every test includes **Score saved answers** with
+  status before the individual named metrics. The completed test with the
+  strongest existing human/automatic evidence opens automatically. Every test
+  includes **Score saved answers** with
   provider-free local-eight or exact-answer all-13 scope, reuse, call-count, and
   cost information plus **Export JSON** and **Export CSV** downloads for report
   analysis. Its guided baseline/comparison launcher and study checklist keep
   the research workflow inside the application. Earlier interrupted attempts
-  are collapsed separately.
+  are collapsed separately. A goal selector recommends methods for overall
+  confidence, correctness/completeness, grounding, retrieval, relevance,
+  refusal, or low-cost regression and states the complementary evidence and
+  limitation for each choice.
 - Documents uploads, organizes, replaces, deletes, or clears supported documents.
-- Compare Runs, reached from Evaluation, shows live configuration evidence, question-matched baseline
+- Compare Runs, reached from Evaluation, states why no single evaluator is
+  universally best, then shows live configuration evidence, question-matched baseline
   deltas when valid pairs exist, run-scoped summaries, interpretation rules,
-  and the score contract for all 13 evaluators.
+  and the score contract for all 13 evaluators. It separately states the current
+  bounded project recommendation, supporting evidence, and generalization limits.
 
 The sections have deliberately different jobs:
 
@@ -313,7 +349,9 @@ applies the provider-free local eight. **Score saved answers** posts to
 
 The Documents form uses `api/documents.php`. Uploaded files must be UTF-8 TXT,
 text-based PDF, or DOCX and no larger than 10 MB. Scanned PDFs without
-extractable text and encrypted PDFs are rejected. A same-name upload first asks
+extractable text and encrypted PDFs are rejected. Embedded pictures and charts
+remain inside the stored source file but are not OCR'd, chunked, or embedded by
+the submitted text-only ingestion path. A same-name upload first asks
 the user to replace the existing document or cancel. After replacement is
 confirmed, all older active records with that filename are removed only after
 the new copy succeeds and the old vector deletion is verified.
@@ -431,7 +469,7 @@ Run the Python unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 66 tests covering TXT/PDF/DOCX loading, empty and
+The current suite contains 67 tests covering TXT/PDF/DOCX loading, empty and
 binary input rejection, metadata-preserving chunking, stable IDs, retrieval
 reranking, grounded prompts, refusal instructions, answer orchestration, local
 evaluators, advanced evaluator mapping/applicability/cost/failure isolation,
@@ -608,6 +646,8 @@ Current safe example values are stored in:
 - [Evaluator strategy and controlled protocol](docs/evaluation-strategy.md)
 - [FP8/FP9 implementation record and reproduction guide](docs/fp8-fp9-implementation.md)
 - [FP10 hardening record](docs/fp10-hardening.md)
+- [Post-capstone multimodal, conversational, multi-user, and agentic RAG roadmap](docs/post-capstone-roadmap.md)
+- [Reference-repository comparison](docs/reference-repository-comparison.md)
 - [Original project notes](project-notes.md)
 
 ## Source Documents

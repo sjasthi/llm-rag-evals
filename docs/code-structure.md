@@ -1,19 +1,19 @@
 # Code Structure and Conventions
 
-## Proposed Directory Structure
+## Repository Structure
 
 ```text
 llm-rag-evals/
+|-- .github/
+|   `-- workflows/
 |-- index.php
 |-- requirements.md
 |-- README.md
 |-- assets/
 |   |-- css/
-|   |-- js/
-|   `-- images/
+|   `-- js/
 |-- config/
 |-- includes/
-|-- pages/
 |-- api/
 |   |-- ask.php
 |   |-- documents.php
@@ -22,13 +22,13 @@ llm-rag-evals/
 |   |-- run_evaluation.php
 |   `-- test_runs.php
 |-- database/
-|   |-- migrations/
-|   `-- seeds/
-|-- src/
-|   |-- Database/
-|   |-- Documents/
-|   |-- Rag/
-|   `-- Evaluation/
+|   |-- schema.sql
+|   `-- migrations/
+|-- data/
+|   |-- evaluation/
+|   `-- metrostate_documents/
+|-- demo/
+|-- docs/
 |-- rag/
 |   |-- chroma/
 |   |-- admin.py
@@ -55,22 +55,27 @@ llm-rag-evals/
 |   |-- uploads/
 |   `-- logs/
 |-- tests/
-`-- docs/
+`-- .env.example
 ```
 
-Directories should be added when their first real file is implemented; empty
-placeholder directories are unnecessary.
+Only implemented, tracked directories are shown. Runtime uploads, logs,
+embeddings, environment secrets, and private presentation notes are excluded by
+Git.
 
 ## Responsibilities
 
 - `assets/`: browser-delivered styles, scripts, and images.
 - `config/`: configuration loading; secrets remain in ignored environment files.
 - `includes/`: reusable page layout such as header, navigation, and footer.
-- `pages/`: page controllers/templates reached through the web interface.
 - `api/`: validated PHP endpoints used by jQuery or other asynchronous
   requests, including Ask, document upload/management, and evaluation runs.
 - `database/`: versioned schema changes and non-sensitive sample data.
-- `src/`: application and domain logic, separated from page markup.
+- `data/`: the tracked Metro State source corpus and versioned evaluation
+  datasets used to reproduce the baseline.
+- `demo/`: small non-sensitive tracked fixtures; private live-presentation
+  files remain locally ignored.
+- `docs/`: requirements, architecture, UX, research evidence, and the
+  post-capstone extension roadmap.
 - `rag/`: Python helper layer for TXT/PDF/DOCX text extraction,
   MySQL/ChromaDB ingestion, embeddings, retrieval, grounded answer generation,
   and evaluation metrics/experiments.

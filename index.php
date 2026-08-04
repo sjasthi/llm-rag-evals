@@ -13,6 +13,16 @@ function h(string $value): string
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
+function modelDisplayName(string $model): string
+{
+    $labels = [
+        'gemini-2.5-flash' => 'Gemini 2.5 Flash — standard',
+        'gemini-3.1-flash-lite' => 'Gemini 3.1 Flash-Lite — faster',
+    ];
+
+    return $labels[$model] ?? ucwords(str_replace(['-', '_'], ' ', $model));
+}
+
 function sourceDocumentStats(string $documentRoot): array
 {
     if (!is_dir($documentRoot)) {
@@ -101,20 +111,20 @@ require __DIR__ . '/includes/header.php';
             <section class="workspace-section workspace-view" id="overview" data-view-panel="overview">
                 <div class="section-title-row hero-overview">
                     <div>
-                        <span class="panel-kicker">The research loop</span>
-                        <h2>Answer, inspect, compare, learn.</h2>
+                        <span class="panel-kicker">Core research question</span>
+                        <h2>What is the best way to evaluate a RAG response?</h2>
                         <p>
-                            Every response is paired with the source chunks that informed it. That gives you a clear trail from question to evidence to evaluation result.
+                            Use this workspace to decide how much confidence an answer deserves and which checks fit the risk. It compares transparent local checks, model-based judges, RAGAS, and human review without forcing unlike signals into one universal grade.
                         </p>
                         <div class="hero-actions">
                             <a class="btn btn-primary" href="#ask">Ask a source-backed question</a>
-                            <a class="btn btn-outline-light" href="#results">Explore saved runs</a>
+                            <a class="btn btn-outline-light" href="#results">Inspect evaluator evidence</a>
                         </div>
                     </div>
                     <div class="research-signal" aria-label="Current project stage">
                         <span>Current workflow</span>
                         <strong>04</strong>
-                        <small>Documents · chat · gold standard · evaluation</small>
+                        <small>Generate · screen · diagnose · calibrate</small>
                         <div class="signal-bar"><span></span></div>
                     </div>
                 </div>
@@ -183,23 +193,31 @@ require __DIR__ . '/includes/header.php';
                             required
                             placeholder="Example: When does Fall 2026 registration begin?"
                         ></textarea>
-                        <fieldset class="chat-settings" aria-describedby="chatSettingsHelp">
-                            <div class="chat-settings-heading">
-                                <div>
-                                    <legend>Optional advanced settings</legend>
-                                    <p id="chatSettingsHelp">Most people can keep the recommended defaults. Researchers can change one setting at a time when comparing behavior.</p>
+                        <details class="chat-settings" id="chatAdvancedSettings">
+                            <summary>
+                                <span>
+                                    <strong>Advanced settings</strong>
+                                    <small id="chatSettingsSummary" aria-live="polite">Using the recommended setup</small>
+                                </span>
+                            </summary>
+                            <fieldset class="chat-settings-body" aria-describedby="chatSettingsHelp">
+                                <legend class="visually-hidden">Advanced answer settings</legend>
+                                <div class="chat-settings-heading">
+                                    <div>
+                                        <strong>Research controls</strong>
+                                        <p id="chatSettingsHelp">Most people can keep the recommended defaults. For a controlled comparison, change one setting at a time.</p>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-secondary" id="resetChatSettings" type="button">Reset defaults</button>
                                 </div>
-                                <button class="btn btn-sm btn-outline-secondary" id="resetChatSettings" type="button">Reset defaults</button>
-                            </div>
-                            <div class="chat-settings-grid">
+                                <div class="chat-settings-grid">
                                 <label>
                                     <span>Answer model</span>
                                     <select class="form-select" id="chatModel" data-default="<?= h($chatModel) ?>">
                                         <?php foreach ($chatModelOptions as $model): ?>
-                                            <option value="<?= h($model) ?>" <?= $chatModel === $model ? 'selected' : '' ?>><?= h($model) ?><?= $chatModel === $model ? ' · current' : '' ?></option>
+                                            <option value="<?= h($model) ?>" <?= $chatModel === $model ? 'selected' : '' ?>><?= h(modelDisplayName($model)) ?><?= $chatModel === $model ? ' · recommended' : '' ?></option>
                                         <?php endforeach; ?>
                                     </select>
-                                    <small>Select a deployment-approved model without editing backend code.</small>
+                                    <small>Choose an approved answer model. The standard option is recommended.</small>
                                 </label>
                                 <label>
                                     <span>Retrieval</span>
@@ -236,12 +254,13 @@ require __DIR__ . '/includes/header.php';
                                     </select>
                                     <small>Controls how broad the model's word choices can be.</small>
                                 </label>
-                            </div>
-                            <div class="chat-settings-footer">
-                                <span id="chatSettingsSummary" aria-live="polite"></span>
-                                <small>Chunking: <?= h((string) $chunkSize) ?> characters with <?= h((string) $chunkOverlap) ?> overlap</small>
-                            </div>
-                        </fieldset>
+                                </div>
+                                <div class="chat-settings-footer">
+                                    <span>These settings are saved with the answer.</span>
+                                    <small>Index preparation: <?= h((string) $chunkSize) ?>-character passages with <?= h((string) $chunkOverlap) ?>-character overlap</small>
+                                </div>
+                            </fieldset>
+                        </details>
                         <div class="d-flex flex-wrap gap-2 mt-3">
                             <button class="btn btn-primary" id="askButton" type="submit" <?= $paidGenerationEnabled ? '' : 'disabled' ?>>
                                 Ask question
@@ -309,6 +328,10 @@ require __DIR__ . '/includes/header.php';
                     <form class="upload-dropzone" id="documentUploadForm" enctype="multipart/form-data">
                         <strong>Add source material</strong>
                         <span>TXT, text-based PDF, or DOCX · server-side validation · maximum 10 MB</span>
+                        <p class="document-ingestion-scope">
+                            <strong>Current text-only indexing:</strong>
+                            Embedded pictures, charts, and scanned pages remain in the source file but are not OCR'd, chunked, or embedded.
+                        </p>
                         <label class="form-label" for="documentFile">Document</label>
                         <input
                             class="form-control"
@@ -329,10 +352,12 @@ require __DIR__ . '/includes/header.php';
                                     class="form-control"
                                     id="documentCategory"
                                     name="category"
-                                    pattern="[a-z0-9][a-z0-9_-]{1,49}"
-                                    placeholder="student_support"
+                                    pattern="[A-Za-z0-9][A-Za-z0-9 &amp;_-]{1,49}"
+                                    maxlength="50"
+                                    placeholder="Student support"
                                     required
                                 >
+                                <small class="form-text">Use a short label such as Student support or Academic calendar.</small>
                             </div>
                         </div>
                         <input id="replaceDocumentId" name="replace_document_id" type="hidden">
@@ -431,6 +456,31 @@ require __DIR__ . '/includes/header.php';
                             <div><dt>Draft</dt><dd>Still being prepared and excluded from runs.</dd></div>
                         </dl>
                     </div>
+                    <section class="gold-standard-purpose" aria-labelledby="goldStandardPurposeTitle">
+                        <div class="gold-standard-purpose-heading">
+                            <span>Why this page is useful</span>
+                            <strong id="goldStandardPurposeTitle">Reviewed examples turn “looks good” into a testable claim</strong>
+                            <p>A trusted answer key tells the application what correct, complete, well-sourced, and appropriately refused behavior should look like.</p>
+                        </div>
+                        <div class="gold-standard-purpose-grid">
+                            <article>
+                                <span>With reviewed reference data</span>
+                                <strong>Test correctness, missing facts, retrieval, and refusal behavior</strong>
+                                <p>Required-fact coverage, expected-source accuracy, the LLM judge, and reference-based RAGAS checks can compare a saved response with verified expectations.</p>
+                            </article>
+                            <article>
+                                <span>Without a reviewed answer</span>
+                                <strong>Grounding and relevance can still be checked—but correctness cannot be proven</strong>
+                                <p>RAGAS Faithfulness can compare an answer with its retrieved sources, and Response Relevancy can compare it with the question.</p>
+                            </article>
+                            <article>
+                                <span>What the user does here</span>
+                                <strong>Approve representative questions before using them in a repeatable test</strong>
+                                <p>Review the expected answer and cited evidence, then create a saved test under Evaluation.</p>
+                                <a href="#results">Go to Evaluation</a>
+                            </article>
+                        </div>
+                    </section>
                     <div class="evaluation-toolbar">
                         <label for="evaluationCategoryFilter">Category</label>
                         <select class="form-select form-select-sm" id="evaluationCategoryFilter">
@@ -450,9 +500,9 @@ require __DIR__ . '/includes/header.php';
                 <section class="panel results-panel workspace-view" id="results" data-view-panel="results" hidden>
                     <div class="panel-header">
                         <div>
-                            <span class="panel-kicker">Saved-answer evaluation</span>
-                            <h2>Score and inspect saved answers</h2>
-                            <p>Choose a saved test, apply any missing scoring methods, and inspect each answer beside its reviewed reference and retrieved evidence.</p>
+                            <span class="panel-kicker">Response evaluation</span>
+                            <h2>Choose the right checks for each saved answer</h2>
+                            <p>Compare transparent local checks, an LLM judge, RAGAS, and human review to see what each method catches, misses, and costs.</p>
                         </div>
                         <div class="panel-header-actions">
                             <span class="status status-ready">Saved evidence</span>
@@ -496,7 +546,7 @@ require __DIR__ . '/includes/header.php';
                                     <select class="form-select form-select-sm" id="newTestControlledVariable">
                                         <option value="">Choose the setting</option>
                                         <option value="retrieval_method">Retrieval method</option>
-                                        <option value="top_k">Source chunks (top-k)</option>
+                                        <option value="top_k">Number of retrieved sources</option>
                                         <option value="model">Answer model</option>
                                         <option value="temperature">Temperature</option>
                                         <option value="top_p">Top-p</option>
@@ -522,7 +572,7 @@ require __DIR__ . '/includes/header.php';
                                 <span>Model</span>
                                 <select class="form-select form-select-sm" id="newTestModel">
                                     <?php foreach ($chatModelOptions as $modelOption): ?>
-                                        <option value="<?= h($modelOption) ?>" <?= $modelOption === $chatModel ? 'selected' : '' ?>><?= h($modelOption) ?></option>
+                                        <option value="<?= h($modelOption) ?>" <?= $modelOption === $chatModel ? 'selected' : '' ?>><?= h(modelDisplayName($modelOption)) ?></option>
                                     <?php endforeach; ?>
                                 </select>
                             </label>
@@ -534,7 +584,7 @@ require __DIR__ . '/includes/header.php';
                                 </select>
                             </label>
                             <label>
-                                <span>Source chunks (top-k)</span>
+                                <span>Number of retrieved sources</span>
                                 <input class="form-control form-control-sm" id="newTestTopK" type="number" min="1" max="10" step="1" value="<?= h((string) $defaultTopK) ?>">
                             </label>
                             <label>
@@ -562,7 +612,7 @@ require __DIR__ . '/includes/header.php';
                         </div>
                         <small>
                             Current index: <?= h((string) $chunkSize) ?>-character chunks with <?= h((string) $chunkOverlap) ?>-character overlap.
-                            Retrieval, model, top-k, temperature, top-p, and source categories can vary here. Testing another chunk size requires rebuilding a separate index with consistent settings so every answer uses one consistent corpus.
+                            Retrieval, model, source count, temperature, top-p, and source categories can vary here. Testing another chunk size requires rebuilding a separate index with consistent settings so every answer uses one consistent corpus.
                         </small>
                         <div class="new-test-run-actions">
                             <button class="btn btn-sm btn-outline-primary" id="previewNewTestRun" type="button">Preview test</button>
@@ -583,7 +633,7 @@ require __DIR__ . '/includes/header.php';
                             <small id="experimentRunCountNote">completed batches</small>
                         </article>
                         <article>
-                            <span>Evaluation methods</span>
+                            <span>Automatic methods</span>
                             <strong id="evaluatorCount">—</strong>
                             <small>8 local + 1 judge + 4 RAGAS</small>
                         </article>
@@ -593,10 +643,70 @@ require __DIR__ . '/includes/header.php';
                             <small>current rubric decisions</small>
                         </article>
                     </div>
+                    <section class="evaluator-portfolio" aria-labelledby="evaluatorPortfolioTitle">
+                        <div class="evaluator-portfolio-heading">
+                            <span>Best-supported approach</span>
+                            <strong id="evaluatorPortfolioTitle">Use a portfolio—not one universal score</strong>
+                            <p>The most useful method depends on the failure you need to detect and the decision you need to make.</p>
+                        </div>
+                        <div class="evaluator-portfolio-grid">
+                            <article>
+                                <span>1 · Screen every response</span>
+                                <strong>Transparent local checks</strong>
+                                <p>Quickly flag missing sources, required facts, refusal behavior, and answer similarity across the full test set.</p>
+                            </article>
+                            <article>
+                                <span>2 · Diagnose selected cases</span>
+                                <strong>LLM judge and RAGAS</strong>
+                                <p>Inspect completeness, grounding, context quality, and relevance on representative, difficult, or failing answers.</p>
+                            </article>
+                            <article>
+                                <span>3 · Calibrate disagreements</span>
+                                <strong>Human review</strong>
+                                <p>Resolve ambiguous cases and check whether automatic scores match the quality decisions people actually make.</p>
+                            </article>
+                        </div>
+                    </section>
+                    <section class="evaluator-decision-guide" aria-labelledby="evaluatorDecisionTitle">
+                        <div class="evaluator-decision-heading">
+                            <div>
+                                <span>Evaluator decision guide</span>
+                                <strong id="evaluatorDecisionTitle">What do you need to learn about the answer?</strong>
+                                <p>Choose the decision first. The application will recommend a starting method and the evidence needed to avoid a misleading conclusion.</p>
+                            </div>
+                            <label for="evaluatorGoalSelect">
+                                <span>Evaluation goal</span>
+                                <select class="form-select" id="evaluatorGoalSelect">
+                                    <option value="overall">Overall confidence</option>
+                                    <option value="correctness">Correctness and completeness</option>
+                                    <option value="grounding">Grounding and hallucination</option>
+                                    <option value="retrieval">Retrieval quality</option>
+                                    <option value="relevance">Answer relevance</option>
+                                    <option value="refusal">Correct refusal behavior</option>
+                                    <option value="regression">Low-cost regression testing</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="evaluator-decision-result" id="evaluatorGoalRecommendation" aria-live="polite">
+                            <article>
+                                <span>Start with</span>
+                                <strong id="evaluatorGoalPrimary">Loading recommendation…</strong>
+                            </article>
+                            <article>
+                                <span>Add when needed</span>
+                                <strong id="evaluatorGoalSecondary">Loading complementary evidence…</strong>
+                            </article>
+                            <article>
+                                <span>Interpretation</span>
+                                <strong id="evaluatorGoalCaution">Loading limitations…</strong>
+                            </article>
+                        </div>
+                        <p class="evaluator-goal-reference" id="evaluatorGoalReference"></p>
+                    </section>
                     <section class="research-readiness" aria-labelledby="researchReadinessTitle">
                         <div>
                             <span>Study checklist</span>
-                            <strong id="researchReadinessTitle">What still needs evidence?</strong>
+                            <strong id="researchReadinessTitle">Evidence available for the study</strong>
                         </div>
                         <ul id="researchReadinessList" aria-live="polite">
                             <li>Loading the current study evidence…</li>
@@ -656,33 +766,64 @@ require __DIR__ . '/includes/header.php';
                 <section class="panel panel-large workspace-view" id="report" data-view-panel="report" hidden>
                     <div class="panel-header">
                         <div>
-                            <span class="panel-kicker">Run comparison</span>
-                            <h2>Compare matching results</h2>
-                            <p>Compare the same questions and scores across configurations, then inspect disagreements and failures before drawing a conclusion.</p>
+                            <span class="panel-kicker">Evaluator comparison</span>
+                            <h2>Compare what each evaluation method reveals</h2>
+                            <p>Compare the same saved questions across configurations, then inspect where local checks, model-based checks, and human review agree or disagree.</p>
                         </div>
                         <div class="panel-header-actions">
-                            <span class="status status-ready">Evidence live</span>
+                            <span class="status status-ready">Saved evidence</span>
                             <a class="btn btn-sm btn-outline-secondary" href="#results">Back to evaluation</a>
                         </div>
                     </div>
 
                     <div class="findings-summary-grid">
                         <article>
-                            <span>Local methods</span>
+                            <span>Transparent local checks</span>
                             <strong id="findingBaselineCount">—</strong>
                             <small>transparent diagnostic signals</small>
                         </article>
                         <article>
-                            <span>Model-backed methods</span>
+                            <span>Model-based checks</span>
                             <strong id="findingAdvancedCount">—</strong>
                             <small>RAGAS and rubric judge</small>
                         </article>
                         <article>
-                            <span>Human reviews</span>
+                            <span>Human decisions</span>
                             <strong id="findingHumanCount">—</strong>
                             <small>current human-review decisions</small>
                         </article>
                     </div>
+
+                    <section class="evaluator-conclusion" aria-labelledby="evaluatorConclusionTitle">
+                        <span>Research conclusion</span>
+                        <strong id="evaluatorConclusionTitle">No single evaluator is best for every response.</strong>
+                        <p>Use local checks for broad, repeatable regression coverage; the LLM judge and RAGAS for targeted diagnosis; and human review to calibrate disagreements and uncertain thresholds.</p>
+                    </section>
+
+                    <section class="project-recommendation" aria-labelledby="projectRecommendationTitle">
+                        <div class="project-recommendation-heading">
+                            <span>What the current saved evidence supports</span>
+                            <strong id="projectRecommendationTitle">A practical evaluator process and a bounded application default</strong>
+                        </div>
+                        <div class="project-recommendation-grid">
+                            <article>
+                                <span>How to evaluate answers</span>
+                                <strong>Local eight for every response; advanced methods and human review for selected cases</strong>
+                                <p>This balances coverage, transparency, diagnostic depth, provider cost, and calibration.</p>
+                            </article>
+                            <article>
+                                <span>Current RAG default</span>
+                                <strong>Vector search with three retrieved sources</strong>
+                                <p>It preserved expected sources, reviewed facts, and refusal behavior while using fewer tokens than the larger source counts in this study.</p>
+                            </article>
+                        </div>
+                        <ul class="project-evidence-list">
+                            <li><strong>Scope:</strong> six configurations × the same five reviewed questions; not a universal benchmark.</li>
+                            <li><strong>Retrieval:</strong> vector and keyword search tied on the five cases, so no universal retriever winner is claimed.</li>
+                            <li><strong>Cost signal:</strong> five and eight sources used 46% and 102% more tokens than three without improving expected-source rank.</li>
+                            <li><strong>Human evidence:</strong> the final calibration sample used one reviewer, so no inter-rater claim is made.</li>
+                        </ul>
+                    </section>
 
                     <section class="findings-rules" aria-labelledby="findingsRulesTitle">
                         <div class="subsection-heading">

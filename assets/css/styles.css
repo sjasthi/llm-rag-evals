@@ -368,16 +368,38 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
 .chat-card { grid-column: 1; grid-row: 3; padding: 1rem; background: var(--paper-muted); border: 1px solid var(--line); border-radius: 0.85rem; }
 .chat-settings {
     min-width: 0;
-    padding: 0.9rem;
+    padding: 0;
     margin: 0.9rem 0 0;
+    overflow: hidden;
     background: #fff;
     border: 1px solid var(--line);
     border-radius: 0.75rem;
 }
+.chat-settings > summary {
+    gap: 0.75rem;
+    justify-content: space-between;
+    padding: 0.75rem 0.9rem;
+    list-style: none;
+}
+.chat-settings > summary::-webkit-details-marker { display: none; }
+.chat-settings > summary::after {
+    flex: 0 0 auto;
+    color: var(--blue);
+    font-size: 0.66rem;
+    font-weight: 850;
+    content: "Show";
+}
+.chat-settings[open] > summary::after { content: "Hide"; }
+.chat-settings > summary > span,
+.chat-settings > summary strong,
+.chat-settings > summary small { display: block; }
+.chat-settings > summary strong { color: var(--forest-900); font-size: 0.78rem; }
+.chat-settings > summary small { margin-top: 0.15rem; color: var(--muted); font-size: 0.67rem; line-height: 1.35; }
+.chat-settings-body { min-width: 0; padding: 0.1rem 0.9rem 0.9rem; margin: 0; border: 0; }
 .chat-settings-heading,
 .chat-settings-footer,
 .panel-header-actions { display: flex; gap: 0.75rem; align-items: flex-start; justify-content: space-between; }
-.chat-settings-heading legend { float: none; width: auto; padding: 0; margin: 0; color: var(--forest-900); font-size: 0.82rem; font-weight: 850; }
+.chat-settings-heading > div > strong { display: block; color: var(--forest-900); font-size: 0.82rem; font-weight: 850; }
 .chat-settings-heading p { margin: 0.18rem 0 0; color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
 .chat-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin-top: 0.8rem; }
 .chat-settings-grid label { min-width: 0; }
@@ -423,7 +445,9 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
 .upload-dropzone { grid-column: 1; padding: 1rem; background: var(--paper-muted); border: 1px dashed var(--line-strong); border-radius: 0.85rem; }
 .upload-dropzone > strong, .upload-dropzone > span { display: block; }
 .upload-dropzone > strong { color: var(--forest-900); }
-.upload-dropzone > span { margin: 0.2rem 0 0.9rem; color: var(--muted); font-size: 0.68rem; }
+.upload-dropzone > span { margin: 0.2rem 0 0.4rem; color: var(--muted); font-size: 0.68rem; }
+.document-ingestion-scope { padding: 0.55rem 0.65rem; margin: 0 0 0.9rem; color: var(--muted); background: #fff8ee; border-left: 3px solid var(--orange); border-radius: 0.45rem; font-size: 0.63rem; line-height: 1.45; }
+.document-ingestion-scope strong { color: var(--forest-800); }
 .document-list { grid-column: 2; min-width: 0; margin-top: 0 !important; }
 .document-library-heading { display: flex; gap: 0.75rem; align-items: center; justify-content: space-between; margin-bottom: 0.7rem; }
 .document-library-heading small { display: block; margin-top: 0.18rem; color: var(--muted); font-size: 0.65rem; }
@@ -460,6 +484,21 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
 .evaluation-status-guide div { padding: 0.55rem; background: rgba(255, 255, 255, 0.75); border: 1px solid #dce6ca; border-radius: 0.55rem; }
 .evaluation-status-guide dt { color: var(--forest-800); font-size: 0.68rem; }
 .evaluation-status-guide dd { margin: 0.15rem 0 0; color: var(--muted); font-size: 0.64rem; }
+
+.gold-standard-purpose { padding: 0.9rem; margin-bottom: 0.85rem; background: #fff8ee; border: 1px solid #efd7b4; border-radius: 0.8rem; }
+.gold-standard-purpose-heading span,
+.gold-standard-purpose-heading strong { display: block; }
+.gold-standard-purpose-heading span { color: var(--orange); font-size: 0.61rem; font-weight: 900; letter-spacing: 0.07em; text-transform: uppercase; }
+.gold-standard-purpose-heading strong { margin-top: 0.2rem; color: var(--forest-900); font-family: Georgia, "Times New Roman", serif; font-size: 1.02rem; }
+.gold-standard-purpose-heading p { max-width: 55rem; margin: 0.25rem 0 0; color: var(--muted); font-size: 0.7rem; line-height: 1.5; }
+.gold-standard-purpose-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.55rem; margin-top: 0.7rem; }
+.gold-standard-purpose-grid article { min-width: 0; padding: 0.7rem; background: #fff; border: 1px solid #eadfce; border-radius: 0.6rem; }
+.gold-standard-purpose-grid span,
+.gold-standard-purpose-grid strong { display: block; }
+.gold-standard-purpose-grid span { color: var(--blue); font-size: 0.59rem; font-weight: 900; text-transform: uppercase; }
+.gold-standard-purpose-grid strong { margin-top: 0.25rem; color: var(--forest-800); font-size: 0.72rem; line-height: 1.4; }
+.gold-standard-purpose-grid p { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.66rem; line-height: 1.45; }
+.gold-standard-purpose-grid a { display: inline-block; margin-top: 0.4rem; color: var(--blue); font-size: 0.68rem; font-weight: 850; }
 
 .evaluation-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; padding: 0.75rem; margin-bottom: 0.85rem; background: var(--paper-muted); border: 1px solid var(--line); border-radius: 0.75rem; }
 .evaluation-toolbar label { margin: 0; color: var(--forest-700); font-size: 0.67rem; font-weight: 850; }
@@ -533,6 +572,37 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
 .research-readiness a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.12rem; }
 .research-readiness .readiness-ready { color: #315c3d; background: #edf5e9; }
 .research-readiness .readiness-next { color: #75441f; background: var(--orange-soft); }
+
+.evaluator-portfolio { padding: 0.85rem; margin-top: 0.7rem; background: #f7f9f2; border: 1px solid #d8e2c7; border-radius: 0.75rem; }
+.evaluator-portfolio-heading span,
+.evaluator-portfolio-heading strong { display: block; }
+.evaluator-portfolio-heading span { color: var(--orange); font-size: 0.59rem; font-weight: 900; letter-spacing: 0.07em; text-transform: uppercase; }
+.evaluator-portfolio-heading strong { margin-top: 0.2rem; color: var(--forest-900); font-family: Georgia, "Times New Roman", serif; font-size: 1.05rem; font-weight: 600; }
+.evaluator-portfolio-heading p { max-width: 50rem; margin: 0.25rem 0 0; color: var(--muted); font-size: 0.68rem; line-height: 1.5; }
+.evaluator-portfolio-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.55rem; margin-top: 0.7rem; }
+.evaluator-portfolio-grid article { min-width: 0; padding: 0.65rem; background: #fff; border: 1px solid var(--line); border-radius: 0.6rem; }
+.evaluator-portfolio-grid span,
+.evaluator-portfolio-grid strong { display: block; }
+.evaluator-portfolio-grid span { color: var(--blue); font-size: 0.58rem; font-weight: 900; text-transform: uppercase; }
+.evaluator-portfolio-grid strong { margin-top: 0.25rem; color: var(--forest-800); font-size: 0.72rem; }
+.evaluator-portfolio-grid p { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.64rem; line-height: 1.45; }
+
+.evaluator-decision-guide { padding: 0.9rem; margin-top: 0.7rem; background: #fff; border: 1px solid #cddbea; border-left: 4px solid var(--blue); border-radius: 0.75rem; }
+.evaluator-decision-heading { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(13rem, 0.7fr); gap: 1rem; align-items: end; }
+.evaluator-decision-heading > div > span,
+.evaluator-decision-heading > div > strong { display: block; }
+.evaluator-decision-heading > div > span { color: var(--blue); font-size: 0.59rem; font-weight: 900; letter-spacing: 0.07em; text-transform: uppercase; }
+.evaluator-decision-heading > div > strong { margin-top: 0.2rem; color: var(--forest-900); font-family: Georgia, "Times New Roman", serif; font-size: 1.02rem; }
+.evaluator-decision-heading > div > p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.68rem; line-height: 1.45; }
+.evaluator-decision-heading label > span { display: block; margin-bottom: 0.25rem; color: var(--forest-800); font-size: 0.65rem; font-weight: 850; }
+.evaluator-decision-heading .form-select { font-size: 0.7rem; }
+.evaluator-decision-result { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.55rem; margin-top: 0.75rem; }
+.evaluator-decision-result article { min-width: 0; padding: 0.65rem; background: #f5f8fb; border: 1px solid #dce5ed; border-radius: 0.55rem; }
+.evaluator-decision-result span,
+.evaluator-decision-result strong { display: block; }
+.evaluator-decision-result span { color: var(--orange); font-size: 0.58rem; font-weight: 900; text-transform: uppercase; }
+.evaluator-decision-result strong { margin-top: 0.25rem; color: var(--forest-800); font-size: 0.68rem; line-height: 1.45; }
+.evaluator-goal-reference { padding: 0.45rem 0.55rem; margin: 0.55rem 0 0; color: var(--forest-700); font-size: 0.66rem; font-weight: 750; line-height: 1.45; background: var(--lime-soft); border-radius: 0.45rem; }
 
 .evaluation-boundary { display: grid; grid-template-columns: minmax(15rem, 0.55fr) minmax(0, 1.45fr); gap: 0.4rem 1rem; align-items: center; padding: 0.75rem 0.85rem; margin-top: 0.7rem; color: #fff; background: var(--forest-800); border-radius: 0.7rem; }
 .evaluation-boundary strong { font-size: 0.7rem; }
@@ -748,6 +818,27 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
 .findings-summary-grid span { color: #b9cdc1; font-size: 0.61rem; font-weight: 800; text-transform: uppercase; }
 .findings-summary-grid strong { margin: 0.2rem 0; color: var(--lime); font-family: Georgia, "Times New Roman", serif; font-size: 1.65rem; font-weight: 500; }
 .findings-summary-grid small { color: #d0ddd5; font-size: 0.6rem; }
+.evaluator-conclusion { padding: 0.85rem 0.9rem; margin-top: 0.85rem; color: #fff; background: linear-gradient(115deg, var(--forest-900), var(--forest-800)); border-left: 4px solid var(--lime); border-radius: 0.75rem; }
+.evaluator-conclusion span,
+.evaluator-conclusion strong { display: block; }
+.evaluator-conclusion span { color: var(--lime); font-size: 0.59rem; font-weight: 900; letter-spacing: 0.07em; text-transform: uppercase; }
+.evaluator-conclusion strong { margin-top: 0.25rem; font-family: Georgia, "Times New Roman", serif; font-size: 1rem; }
+.evaluator-conclusion p { max-width: 54rem; margin: 0.3rem 0 0; color: #d6e2da; font-size: 0.68rem; line-height: 1.5; }
+.project-recommendation { padding: 0.9rem; margin-top: 0.85rem; background: #fff8ee; border: 1px solid #ead4b4; border-radius: 0.75rem; }
+.project-recommendation-heading span,
+.project-recommendation-heading strong { display: block; }
+.project-recommendation-heading span { color: var(--orange); font-size: 0.59rem; font-weight: 900; letter-spacing: 0.07em; text-transform: uppercase; }
+.project-recommendation-heading strong { margin-top: 0.2rem; color: var(--forest-900); font-family: Georgia, "Times New Roman", serif; font-size: 1rem; }
+.project-recommendation-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; margin-top: 0.7rem; }
+.project-recommendation-grid article { min-width: 0; padding: 0.7rem; background: #fff; border: 1px solid #eadfce; border-radius: 0.6rem; }
+.project-recommendation-grid span,
+.project-recommendation-grid strong { display: block; }
+.project-recommendation-grid span { color: var(--blue); font-size: 0.58rem; font-weight: 900; text-transform: uppercase; }
+.project-recommendation-grid strong { margin-top: 0.25rem; color: var(--forest-800); font-size: 0.73rem; line-height: 1.4; }
+.project-recommendation-grid p { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.66rem; line-height: 1.45; }
+.project-evidence-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem 1rem; padding: 0; margin: 0.65rem 0 0; list-style: none; }
+.project-evidence-list li { color: var(--muted); font-size: 0.65rem; line-height: 1.45; }
+.project-evidence-list strong { color: var(--forest-800); }
 .findings-rules, .findings-section { margin-top: 0.9rem; padding: 0.9rem; background: #fff; border: 1px solid var(--line); border-radius: 0.75rem; }
 .findings-rules ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; padding: 0; margin: 0; list-style: none; counter-reset: finding-rule; }
 .findings-rules li { position: relative; min-height: 3.2rem; padding: 0.6rem 0.6rem 0.6rem 2.2rem; color: var(--muted); font-size: 0.66rem; line-height: 1.4; background: var(--paper-muted); border-radius: 0.55rem; counter-increment: finding-rule; }
@@ -815,6 +906,9 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
     .document-library-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .new-test-run-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .research-readiness { grid-template-columns: 1fr; }
+    .evaluator-portfolio-grid { grid-template-columns: 1fr; }
+    .gold-standard-purpose-grid, .evaluator-decision-result { grid-template-columns: 1fr; }
+    .evaluator-decision-heading { grid-template-columns: 1fr; align-items: start; }
     .evaluation-boundary { grid-template-columns: 1fr; }
     .experiment-guide { display: block; }
     .experiment-guide strong, .experiment-guide p { margin-top: 0.2rem; }
@@ -843,7 +937,7 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
     .chat-settings-heading, .chat-settings-footer { align-items: stretch; flex-direction: column; }
     .chat-settings-heading .btn { align-self: flex-start; }
     .chat-settings-footer > small { max-width: none; text-align: left; }
-    .evaluation-status-guide, .experiment-summary-grid, .research-readiness ul, .response-method-summary, .evaluation-run-list, .evaluation-score-list, .findings-summary-grid, .finding-run-grid, .finding-metric-catalog, .findings-rules ol, .metric-dependency-guide, .document-library-toolbar { grid-template-columns: 1fr; }
+    .evaluation-status-guide, .experiment-summary-grid, .research-readiness ul, .response-method-summary, .evaluation-run-list, .evaluation-score-list, .findings-summary-grid, .finding-run-grid, .finding-metric-catalog, .findings-rules ol, .metric-dependency-guide, .document-library-toolbar, .project-recommendation-grid, .project-evidence-list { grid-template-columns: 1fr; }
     .new-test-run-grid { grid-template-columns: 1fr; }
     .new-test-run-grid .new-test-name-field, .new-test-run-grid .new-test-wide-field { grid-column: auto; }
     .new-test-run-heading { align-items: stretch; flex-direction: column; }

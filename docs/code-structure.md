@@ -50,6 +50,7 @@ llm-rag-evals/
 |   |-- vector_store.py
 |   `-- requirements.txt
 |-- scripts/
+|   |-- provider_free_smoke.py
 |   `-- start-local-mysql.ps1
 |-- storage/
 |   |-- uploads/
@@ -65,7 +66,8 @@ Git.
 ## Responsibilities
 
 - `assets/`: browser-delivered styles, scripts, and images.
-- `config/`: configuration loading; secrets remain in ignored environment files.
+- `config/`: configuration loading; explicit process/CI values override the
+  ignored local `.env` file, and secrets remain untracked.
 - `includes/`: reusable page layout such as header, navigation, and footer.
 - `api/`: validated PHP endpoints used by jQuery or other asynchronous
   requests, including Ask, document upload/management, and evaluation runs.
@@ -79,9 +81,10 @@ Git.
 - `rag/`: Python helper layer for TXT/PDF/DOCX text extraction,
   MySQL/ChromaDB ingestion, embeddings, retrieval, grounded answer generation,
   and evaluation metrics/experiments.
-- `scripts/`: operator-only local runtime helpers. Browser users never need
-  this directory; `start-local-mysql.ps1` safely starts the existing recovered
-  user-space MySQL instance and refuses to initialize or replace data.
+- `scripts/`: operator and CI runtime helpers. `start-local-mysql.ps1` safely
+  starts an existing user-space MySQL instance and refuses to initialize or
+  replace data. `provider_free_smoke.py` verifies the seeded MySQL, Chroma, and
+  PHP stack without invoking generation or model-backed evaluation.
 
 FP7 uses `rag/evaluation.py` for versioned dataset seeding, local evaluator
 implementations, and saved-response scoring. FP8/FP9 add:

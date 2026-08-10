@@ -313,8 +313,10 @@ reproducibility/cost safeguards, matched-comparison rules, accessibility,
 provider-free CI, documentation, the 50-question v2.0 answer key, portable run
 exports, and FP10 demonstration/checkoff preparation are complete. The August 3
 matrix, evidence exports, evidence-based report draft, and presentation outline
-are also complete, along with the seven-response human-calibration sample. Final
-presentation delivery, commit/push, and the release tag remain pending.
+are also complete, along with the seven-response human-calibration sample. The
+tested application and report evidence are committed to the repository;
+repository review/delivery and an optional course release tag are the remaining
+delivery steps.
 
 - Stabilize the application and reproducible experiment procedure.
 - Finalize findings, limitations, and future-research questions.

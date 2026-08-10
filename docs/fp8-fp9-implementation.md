@@ -1,5 +1,9 @@
 # FP8 and FP9 Implementation Record
 
+> **Status:** Historical implementation and reproduction record. Later FP10 and
+> final-study work is summarized in the README and
+> [Final Study Report](final-study-report.md).
+
 ## Status and Boundary
 
 FP8 and FP9 application support was implemented and locally verified on July
@@ -317,8 +321,9 @@ New schema/migration elements include:
 
 ## Verification Completed
 
-- 34 Python unit/static regression tests passed at the FP8/FP9 checkpoint; the
-  August 3 final-readiness suite now contains 60 provider-free tests.
+- 34 Python unit/static regression tests passed at the FP8/FP9 checkpoint, and
+  the August 3 checkpoint reached 60. The current final repository suite contains
+  70 provider-free tests after evidence-integrity coverage was added.
 - All PHP files pass syntax lint.
 - Browser JavaScript passes `node --check`.
 - At the July v1.0 checkpoint, the Dataset API returned 25 questions and 13

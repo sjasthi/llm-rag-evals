@@ -1,5 +1,9 @@
 # FP10 Hardening Record
 
+> **Status:** Historical hardening and verification record. The hardened
+> behavior is part of the submitted application; final empirical conclusions
+> are in [Final Study Report](final-study-report.md).
+
 ## Scope
 
 This pass turns the FP8/FP9 application into a more defensible research

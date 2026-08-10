@@ -1,5 +1,9 @@
 # Original Project Notes
 
+> **Status:** Historical source notes retained for traceability. The questions
+> below record the initial problem framing; implemented decisions are described
+> in [Final Project Scope](docs/final-project-scope.md) and the README.
+
 ## Document lifecycle use cases
 
 Basic use case: 50 documents have been RAG-indexed and the chatbot works.

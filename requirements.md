@@ -1,5 +1,9 @@
 # LLM RAG Evaluations Web Application
 
+> **Status:** Final submission requirements baseline. The implemented boundary
+> is recorded in [Final Project Scope](docs/final-project-scope.md), and the
+> completed study is reported in [Final Study Report](docs/final-study-report.md).
+
 ## 1. Project Overview
 
 The goal of this project is to build a web-based research application for evaluating Retrieval-Augmented Generation (RAG) approaches using Metrostate documents as the example knowledge base. The application is the experimental instrument; the final contribution includes what the experiments teach about metric usefulness, failure modes, and the effects of document-collection size and composition.
@@ -810,7 +814,7 @@ The following items are out of scope for the initial version:
 
 ---
 
-## 12. Decisions and Remaining Questions
+## 12. Submission Decisions and Post-Capstone Questions
 
 Resolved implementation decisions:
 
@@ -843,7 +847,8 @@ Resolved implementation decisions:
   answers, contexts, scores, attempts, human reviews, and valid matched
   comparisons can be used in the final report without direct database access.
 
-Questions that can still be clarified with the professor:
+The submission does not depend on the questions below. They are retained as
+possible post-capstone product or research decisions:
 
 1. Should the project port more from RagWorks or Student Compass?
 2. Should the final app require user login, or can it be a simple admin/user interface without authentication?

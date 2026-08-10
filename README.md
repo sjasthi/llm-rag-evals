@@ -38,6 +38,8 @@ the author's local database or private working directory:
   six complete JSON exports with checksums.
 - [Final presentation outline](docs/final-presentation-outline.md): a concise
   ten-slide narrative and live-demo order.
+- [Final presentation script](docs/final-presentation-script.md): complete
+  10–12 minute speaker notes, demo cues, and likely-question answers.
 - [Evaluation strategy](docs/evaluation-strategy.md): the score contracts and
   controlled comparison rules behind the report.
 - [Post-capstone roadmap](docs/post-capstone-roadmap.md): clearly separated
@@ -705,6 +707,7 @@ unfinished work.
 - [Final study report](docs/final-study-report.md)
 - [Final study application exports and checksums](data/evaluation/final-study/README.md)
 - [Final presentation outline and demo order](docs/final-presentation-outline.md)
+- [Final presentation script and likely-question answers](docs/final-presentation-script.md)
 
 ### Current Product and Research References
 

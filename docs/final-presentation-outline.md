@@ -1,5 +1,7 @@
 # Final Presentation Outline
 
+Full speaker notes: [Final Capstone Presentation Script](final-presentation-script.md).
+
 Target length: 10–12 minutes plus questions. Keep the application open on the
 Overview page, with MySQL already started by `scripts/start-local-mysql.ps1`.
 

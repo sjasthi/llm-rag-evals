@@ -1,5 +1,9 @@
 # RAG Evaluation Strategy
 
+> **Status:** Final evaluation-method and controlled-protocol reference. The
+> protocol has been executed; results and limitations are in
+> [Final Study Report](final-study-report.md).
+
 ## Working Research Objective
 
 The professor-provided reference presents eight broad evaluation options; it
@@ -277,17 +281,16 @@ Implementation status (August 2, 2026): reproducibility/cost hardening,
 question-matched Findings, accessibility, provider-free validation, CI, the
 50-question v2.0 answer key, portable run exports, and demo/checkoff materials
 are complete. The bounded automated matrix, empirical recommendations, complete
-exports, report draft, and presentation outline were added August 3. Human
+exports, final report, and presentation outline were added August 3. Human
 calibration and bounded live validation of the two output-budget fixes are also
 complete. The report and portable final-study evidence are now part of the
-repository; repository review/delivery and an optional course release tag are
-the remaining delivery steps.
+default branch. The optional course release tag is release bookkeeping, not a
+missing submission deliverable.
 
-- Repeat key runs for reproducibility and document environment/version details.
-- Finalize findings, recommendations by use case/stakeholder, and limitations.
-- Prepare a demonstration that teaches why evaluator scores differ.
-- Deliver the final report, setup/reproduction guide, presentation, and tagged
-  release.
+The FP10 plan called for repeated reproducibility checks, finalized findings,
+a teaching-oriented demonstration, and repository-visible delivery. Those
+outputs are now represented by the final report, evidence exports, presentation
+outline, setup instructions, and green full-stack quality gate.
 
 ## Implementation Principles
 

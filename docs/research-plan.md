@@ -1,5 +1,9 @@
 # RAG Evaluation Research Plan
 
+> **Status:** Executed capstone research plan retained as a methodological
+> record. Current findings and recommendations are in
+> [Final Study Report](final-study-report.md).
+
 ## Research Framing
 
 This capstone is both a working web application and a research project. The web
@@ -312,16 +316,15 @@ Implementation status (August 2, 2026): application stabilization,
 reproducibility/cost safeguards, matched-comparison rules, accessibility,
 provider-free CI, documentation, the 50-question v2.0 answer key, portable run
 exports, and FP10 demonstration/checkoff preparation are complete. The August 3
-matrix, evidence exports, evidence-based report draft, and presentation outline
+matrix, evidence exports, evidence-based final report, and presentation outline
 are also complete, along with the seven-response human-calibration sample. The
-tested application and report evidence are committed to the repository;
-repository review/delivery and an optional course release tag are the remaining
-delivery steps.
+tested application and report evidence are committed to the default branch.
+An optional course release tag is not required to understand or reproduce the
+submitted work.
 
-- Stabilize the application and reproducible experiment procedure.
-- Finalize findings, limitations, and future-research questions.
-- Demonstrate how evidence leads to recommendations.
-- Deliver setup documentation, final report, presentation, and tagged release.
+The FP10 plan called for application stabilization, reproducible experiments,
+final findings and limitations, an evidence-led demonstration, and repository
+delivery. These outputs are complete and linked from the README's reviewer path.
 
 ## Interpretation Rules
 

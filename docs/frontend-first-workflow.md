@@ -1,5 +1,9 @@
 # Frontend-First Workflow and July 20 Requirements
 
+> **Status:** Historical requirements and implementation record. The described
+> workflow is implemented; current screenshots and reviewer links are in the
+> README.
+
 ## Product position
 
 The deployed user is assumed to have no source-code, terminal, or database

@@ -1,5 +1,9 @@
 # Recommended Implementation Approach
 
+> **Status:** Historical design recommendation retained to explain early
+> architecture choices. The current implemented structure is documented in
+> [Code Structure and Conventions](code-structure.md).
+
 ## What to Reuse From the Reference Projects
 
 The reference repositories should be treated as examples of workflows and data,

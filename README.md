@@ -693,33 +693,56 @@ Current safe example values are stored in:
 .env.example
 ```
 
-## Planning Documents
+## Documentation Index
 
-- [Requirements](requirements.md)
+The reviewer path near the top of this README is the shortest route through the
+submission. The expanded index below separates current deliverables from
+historical planning and future research so older records are not mistaken for
+unfinished work.
+
+### Final Deliverables and Evidence
+
+- [Final study report](docs/final-study-report.md)
+- [Final study application exports and checksums](data/evaluation/final-study/README.md)
+- [Final presentation outline and demo order](docs/final-presentation-outline.md)
+
+### Current Product and Research References
+
+- [Final requirements baseline](requirements.md)
 - [Final project scope](docs/final-project-scope.md)
-- [FP3-FP10 project plan](docs/fp3-project-plan.md)
+- [Evaluator strategy and controlled protocol](docs/evaluation-strategy.md)
+- [Executed RAG evaluation research plan](docs/research-plan.md)
 - [UX design](docs/ux-design.md)
 - [Code structure and conventions](docs/code-structure.md)
-- [Recommended implementation approach](docs/implementation-approach.md)
-- [RAG evaluation research plan](docs/research-plan.md)
-- [Evaluator strategy and controlled protocol](docs/evaluation-strategy.md)
-- [FP8/FP9 implementation record and reproduction guide](docs/fp8-fp9-implementation.md)
-- [FP10 hardening record](docs/fp10-hardening.md)
-- [Final study report](docs/final-study-report.md)
-- [Final study application exports](data/evaluation/final-study/README.md)
-- [Final presentation outline](docs/final-presentation-outline.md)
-- [Post-capstone multimodal, conversational, multi-user, and agentic RAG roadmap](docs/post-capstone-roadmap.md)
-- [Reference-repository comparison](docs/reference-repository-comparison.md)
+
+### Historical Planning and Implementation Records
+
+These files explain how the system evolved. Their dated plans and checkpoint
+counts are preserved as history; they are not the current submission status.
+
 - [Original project notes](project-notes.md)
+- [Initial recommended implementation approach](docs/implementation-approach.md)
+- [FP3-FP10 iteration plan](docs/fp3-project-plan.md)
+- [Frontend-first July 20 workflow record](docs/frontend-first-workflow.md)
+- [FP8/FP9 implementation and reproduction record](docs/fp8-fp9-implementation.md)
+- [FP10 hardening record](docs/fp10-hardening.md)
+- [Reference-repository comparison](docs/reference-repository-comparison.md)
+
+### Background and Post-Capstone Research
+
+- [Professor-provided evaluation options and trade-offs](rag_chatbot_evaluations.md)
+- [RAG architectural patterns](rag_architectural_patterns.md)
+- [Agentic RAG patterns and reference architecture](rag-agentic-patterns-and-architecture.md)
+- [Post-capstone multimodal, conversational, multi-user, and agentic RAG roadmap](docs/post-capstone-roadmap.md)
 
 ## Source Documents
 
-The initial Metro State document dataset is stored in
+The bundled Metro State document dataset is stored in
 `data/metrostate_documents/`. These files were copied from the Student Compass
-reference repository's `documents/` folder and will be used for ingestion,
-retrieval, and evaluation work.
+reference repository's `documents/` folder and provide the reproducible corpus
+for ingestion, retrieval, and evaluation.
 
-Current local source set:
+Bundled source set:
 
 - 27 text documents
 - 8 document categories

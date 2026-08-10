@@ -1,5 +1,9 @@
 # Reference Repository Comparison
 
+> **Status:** Point-in-time reference analysis, not a list of unfinished
+> submission requirements. The current submitted state is summarized in the
+> README and [Final Study Report](final-study-report.md).
+
 Reviewed July 20 and rechecked August 3, 2026 against the public `main` branches of:
 
 - [RAGWorks](https://github.com/sjasthi/ragworks), commit
@@ -114,8 +118,8 @@ human reviews, and matched comparisons.
 The project is ahead of the examples as a research instrument and behind
 StudentCompass as a conventional chatbot product. That is a reasonable trade
 for the stated business-manager/developer audience. The reviewed question set,
-controlled automated matrix, portable exports, report draft, and presentation
+controlled automated matrix, portable exports, final report, and presentation
 outline are now complete, together with a seven-response descriptive human
-calibration sample. The most valuable next work is final editing and
-submission/release packaging; additional reviewers would strengthen future
-inter-rater analysis but are not represented as completed evidence here.
+calibration sample. Additional reviewers and repeated study runs would strengthen
+future inter-rater and reproducibility analysis but are not represented as
+completed evidence here.

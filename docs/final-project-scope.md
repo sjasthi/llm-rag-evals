@@ -1,5 +1,9 @@
 # Final Project Scope
 
+> **Status:** Final submitted scope. The required application boundary is
+> implemented, and its completed study evidence is documented in
+> [Final Study Report](final-study-report.md).
+
 ## Project Name
 
 LLM RAG Evaluation Project
@@ -58,16 +62,16 @@ completed LLM-judge result, and four completed current RAGAS results while
 retaining earlier adapter/dependency/quota failures in attempt history; it did
 not produce a human calibration set or matched final experiment. The August 3
 continuation now adds six completed exact-question controlled conditions,
-matched advanced evidence, portable final-study exports, and an empirical
-report/recommendation draft. Seven selected final-study responses now have
+matched advanced evidence, portable final-study exports, and the empirical
+final report and recommendations. Seven selected final-study responses now have
 single-reviewer overall human decisions for descriptive calibration. The
 final-readiness pass adds the
 source-verified 50-question v2.0 Gold Standard while preserving v1.0 and adds
 per-run JSON/CSV evidence downloads for the final report.
 
-## Final Product Goal
+## Submitted Product
 
-By the final submission, the application should let a user:
+The submitted application lets a user:
 
 1. Upload and manage TXT, text-based PDF, and DOCX Metro State documents.
 2. Ask questions against those documents.

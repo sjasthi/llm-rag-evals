@@ -1,5 +1,9 @@
 # FP3-FP10 Project Plan
 
+> **Status:** Historical iteration plan. FP3-FP10 implementation is complete;
+> use the README and [Final Study Report](final-study-report.md) for the current
+> submitted state.
+
 ## Project Deadline
 
 The project must be completed by August 3, 2026. Each iteration should produce a
@@ -65,12 +69,12 @@ follow-up retries completed all four RAGAS metrics after correcting the adapter
 and provider-extra dependency. Human calibration, matched experiments, final
 empirical recommendations, and their supporting evidence are now complete.
 The final report, presentation outline, and portable study evidence are part of
-the repository. Repository review/delivery and an optional course release tag
-remain delivery work.
+the default branch. An optional course release tag is release bookkeeping, not
+unfinished implementation or evidence work.
 
 Final-readiness status (August 3, 2026): dataset v2.0 now contains 50 reviewed,
 source-verified questions while v1.0 remains intact, every saved run has
-portable JSON/CSV evidence downloads, and all 60 provider-free tests pass. The
+portable JSON/CSV evidence downloads, and all 70 provider-free tests pass. The
 historical user-space MySQL instance was recovered and backed up; the v2 seed,
 MySQL retrieval, and database-backed browser/API smoke tests pass without model
 calls. It is not an automatic Windows service, so the local operator launcher

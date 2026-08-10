@@ -34,6 +34,15 @@ function loadEnv(?string $path = null): array
         }
 
         $value = trim($value, "\"'");
+        $processValue = getenv($key);
+        if ($processValue !== false) {
+            // Match python-dotenv's override=false behavior: deployment and CI
+            // environment variables take precedence over the local file.
+            $values[$key] = (string) $processValue;
+            $_ENV[$key] = (string) $processValue;
+            continue;
+        }
+
         $values[$key] = $value;
         $_ENV[$key] = $value;
         putenv($key . '=' . $value);

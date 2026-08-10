@@ -64,7 +64,9 @@ One bounded paid proof produced a completed LLM-judge result; authorized
 follow-up retries completed all four RAGAS metrics after correcting the adapter
 and provider-extra dependency. Human calibration, matched experiments, final
 empirical recommendations, and their supporting evidence are now complete.
-Presentation delivery and release tagging remain delivery work.
+The final report, presentation outline, and portable study evidence are part of
+the repository. Repository review/delivery and an optional course release tag
+remain delivery work.
 
 Final-readiness status (August 3, 2026): dataset v2.0 now contains 50 reviewed,
 source-verified questions while v1.0 remains intact, every saved run has

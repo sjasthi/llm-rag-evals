@@ -25,7 +25,51 @@ ambiguous cases and evaluator disagreements.
 | Gold Standard | 50 reviewed v2.0 questions across nine categories, including three unanswerable cases |
 | Evaluation | Eight local metrics, one structured LLM judge, four RAGAS metrics, and a separate human-review rubric |
 | Final study | Six controlled conditions, 30 saved responses, portable exports, matched baseline comparisons, and documented generalization limits |
-| Quality gates | 67 provider-free tests, PHP lint, JavaScript syntax checking, dependency validation, and GitHub Actions |
+| Quality gates | 70 provider-free tests, PHP/JavaScript/dependency/configuration checks, a seeded MySQL/Chroma/PHP smoke test, and GitHub Actions |
+
+## Start Here for Repository Review
+
+The repository itself contains the final deliverables; a reviewer does not need
+the author's local database or private working directory:
+
+- [Final study report](docs/final-study-report.md): design, results, failure
+  analysis, recommendations, verification, and limitations.
+- [Application-generated final-study evidence](data/evaluation/final-study/README.md):
+  six complete JSON exports with checksums.
+- [Final presentation outline](docs/final-presentation-outline.md): a concise
+  ten-slide narrative and live-demo order.
+- [Evaluation strategy](docs/evaluation-strategy.md): the score contracts and
+  controlled comparison rules behind the report.
+- [Post-capstone roadmap](docs/post-capstone-roadmap.md): clearly separated
+  future multimodal, conversational, multi-user, and agentic research.
+
+A fresh setup rebuilds the source corpus and reviewed Gold Standard, but it
+does not silently import historical runtime rows. The tracked JSON exports are
+the portable record of the completed final-study runs and can be inspected
+directly from GitHub without reproducing paid model calls.
+
+![RAG Observatory overview](docs/screenshots/overview.png)
+
+<details>
+<summary>Open the current browser interface gallery</summary>
+
+### Documents
+
+![Document administration](docs/screenshots/documents.png)
+
+### Gold Standard
+
+![Reviewed Gold Standard](docs/screenshots/gold-standard.png)
+
+### Evaluation
+
+![Saved-answer evaluation](docs/screenshots/evaluation.png)
+
+### Compare Runs
+
+![Question-matched evaluator comparison](docs/screenshots/compare-runs.png)
+
+</details>
 
 The submitted application is intentionally a text-only, single-turn, shared
 local research workspace with a fixed retrieve-then-generate answer path. It
@@ -469,7 +513,7 @@ Run the Python unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 67 tests covering TXT/PDF/DOCX loading, empty and
+The current suite contains 70 tests covering TXT/PDF/DOCX loading, empty and
 binary input rejection, metadata-preserving chunking, stable IDs, retrieval
 reranking, grounded prompts, refusal instructions, answer orchestration, local
 evaluators, advanced evaluator mapping/applicability/cost/failure isolation,
@@ -477,10 +521,23 @@ score contracts, immutable evaluation snapshots, retrieval provenance,
 unknown-cost handling, matched-comparison rules, verified vector cleanup, and
 frontend regressions for duplicate replacement, exact-question controlled
 selection, thinking-token cost handling, and exact-answer evaluation,
-the 50-question dataset's source/evidence integrity, preservation of v1.0, and
-portable run exports.
+the 50-question dataset's source/evidence integrity, preservation of v1.0,
+portable run exports, and the completeness/safety of the six tracked
+final-study evidence files.
 The provider-free checks also run in `.github/workflows/quality.yml` on pushes
-and pull requests; the workflow has no database credentials or provider keys.
+and pull requests. CI creates an ephemeral MySQL service and Chroma index,
+ingests the 27 bundled documents, seeds the 50-question Gold Standard, starts
+PHP, and verifies the application APIs plus source preview. It uses no provider
+key and cannot perform paid generation or evaluation. A separate PHP regression
+check confirms that explicit CI/deployment variables take precedence over a
+local `.env` file.
+
+To repeat only the live-stack portion after starting the local MySQL and PHP
+services:
+
+```powershell
+python scripts\provider_free_smoke.py --base-url http://127.0.0.1:8000
+```
 
 ## FP7 Evaluation Foundation
 
@@ -625,6 +682,8 @@ partial provenance rather than assigned invented historical values.
 ## Configuration
 
 Copy `.env.example` to `.env` for local database values and the Gemini key.
+Explicit process/CI environment variables take precedence over values in this
+local file on both the PHP and Python paths.
 
 Do not commit `.env`.
 
@@ -646,6 +705,9 @@ Current safe example values are stored in:
 - [Evaluator strategy and controlled protocol](docs/evaluation-strategy.md)
 - [FP8/FP9 implementation record and reproduction guide](docs/fp8-fp9-implementation.md)
 - [FP10 hardening record](docs/fp10-hardening.md)
+- [Final study report](docs/final-study-report.md)
+- [Final study application exports](data/evaluation/final-study/README.md)
+- [Final presentation outline](docs/final-presentation-outline.md)
 - [Post-capstone multimodal, conversational, multi-user, and agentic RAG roadmap](docs/post-capstone-roadmap.md)
 - [Reference-repository comparison](docs/reference-repository-comparison.md)
 - [Original project notes](project-notes.md)

@@ -12,6 +12,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_NAME: llm_rag_evals
+      DB_USER: root
+      DB_PASSWORD: root
+      CHROMA_COLLECTION: metrostate_documents
+      EMBEDDING_MODEL: all-MiniLM-L6-v2
+      ALLOW_PAID_GENERATION: "0"
+      ALLOW_PAID_EVALUATION: "0"
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -23,11 +47,17 @@ jobs:
           cache: pip
           cache-dependency-path: rag/requirements.txt
 
+      - name: Expose project Python to PHP
+        shell: bash
+        run: |
+          python -c 'import sys; print("PYTHON_BIN=" + sys.executable)' >> "$GITHUB_ENV"
+          echo "CHROMA_PATH=$RUNNER_TEMP/chroma" >> "$GITHUB_ENV"
+
       - name: Install Python dependencies
         run: python -m pip install -r rag/requirements.txt
 
       - name: Compile Python sources
-        run: python -m compileall -q rag tests
+        run: python -m compileall -q rag tests scripts
 
       - name: Run provider-free tests
         run: python -m unittest discover -s tests -v
@@ -46,5 +76,24 @@ jobs:
         shell: bash
         run: find . -type f -name '*.php' -not -path './.venv/*' -print0 | xargs -0 -n1 php -l
 
+      - name: Verify PHP environment precedence
+        run: php tests/php_env_precedence.php
+
       - name: Check browser JavaScript syntax
         run: node --check assets/js/app.js
+
+      - name: Build provider-free MySQL and Chroma fixture
+        run: |
+          python rag/ingest.py --init-schema --json
+          python rag/evaluation.py --seed --json
+
+      - name: Smoke-test the seeded PHP application
+        shell: bash
+        run: |
+          php -S 127.0.0.1:8000 > "$RUNNER_TEMP/php-server.log" 2>&1 &
+          php_pid=$!
+          trap 'kill "$php_pid" 2>/dev/null || true' EXIT
+          if ! python scripts/provider_free_smoke.py --base-url http://127.0.0.1:8000; then
+            sed -n '1,240p' "$RUNNER_TEMP/php-server.log"
+            exit 1
+          fi

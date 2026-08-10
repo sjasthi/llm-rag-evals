@@ -279,7 +279,9 @@ question-matched Findings, accessibility, provider-free validation, CI, the
 are complete. The bounded automated matrix, empirical recommendations, complete
 exports, report draft, and presentation outline were added August 3. Human
 calibration and bounded live validation of the two output-budget fixes are also
-complete. Final delivery and release tagging remain pending.
+complete. The report and portable final-study evidence are now part of the
+repository; repository review/delivery and an optional course release tag are
+the remaining delivery steps.
 
 - Repeat key runs for reproducibility and document environment/version details.
 - Finalize findings, recommendations by use case/stakeholder, and limitations.

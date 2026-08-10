@@ -730,9 +730,9 @@ counts are preserved as history; they are not the current submission status.
 
 ### Background and Post-Capstone Research
 
-- [Professor-provided evaluation options and trade-offs](rag_chatbot_evaluations.md)
-- [RAG architectural patterns](rag_architectural_patterns.md)
-- [Agentic RAG patterns and reference architecture](rag-agentic-patterns-and-architecture.md)
+- [Professor-provided evaluation options and trade-offs](docs/research/rag_chatbot_evaluations.md)
+- [RAG architectural patterns](docs/research/rag_architectural_patterns.md)
+- [Agentic RAG patterns and reference architecture](docs/research/rag-agentic-patterns-and-architecture.md)
 - [Post-capstone multimodal, conversational, multi-user, and agentic RAG roadmap](docs/post-capstone-roadmap.md)
 
 ## Source Documents

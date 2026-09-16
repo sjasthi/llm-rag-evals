@@ -1,0 +1,14 @@
+[FP1] 9/15
+RAG application to answer questions by prospective/current students of Metrostate.
+What is RAG? What is multi-model RAG?
+
+Major enhancement = RAGging the images and videos
+
+Take the help of AI/LLM to analyze the current repo.
+Deploy it and play with it (XAMPP/HTDOCS)
+
+[FP2] Come up with a plan to do the major enhancement
+identify some documents that has images
+Prototype how to RAG those documents
+Evaluate multiple approaches
+

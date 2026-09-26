@@ -2,7 +2,7 @@
 
 > **Status:** Historical source notes retained for traceability. The questions
 > below record the initial problem framing; implemented decisions are described
-> in [Final Project Scope](docs/final-project-scope.md) and the README.
+> in [Final Project Scope](docs/V1 docs/final-project-scope.md) and the README.
 
 ## Document lifecycle use cases
 

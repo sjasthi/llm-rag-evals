@@ -5,7 +5,7 @@
 Prepared August 3, 2026. This report is evidence-complete for the bounded
 automated study and its seven-response single-reviewer human sample.
 
-Repository evidence: [final-study JSON exports](../data/evaluation/final-study/README.md)
+Repository evidence: [final-study JSON exports](../../data/evaluation/final-study/README.md)
 and [evaluator contracts](evaluation-strategy.md).
 
 ## Executive Summary
@@ -75,7 +75,7 @@ The application freezes the dataset/question snapshot, ordered contexts,
 document manifest and hashes, retrieval algorithm, model settings, code and
 dependency versions, usage, cost status, evaluator attempts, and failures for
 each new run. The six completed exports and their checksums are tracked in the
-[final-study evidence directory](../data/evaluation/final-study/README.md).
+[final-study evidence directory](../../data/evaluation/final-study/README.md).
 
 ## Controlled Study Design
 
@@ -351,4 +351,4 @@ not-applicable current-version results while leaving failures retryable.
 - Current Gemini API pricing:
   <https://ai.google.dev/gemini-api/docs/pricing>.
 - [Detailed evaluator contracts and study protocol](evaluation-strategy.md).
-- [Complete application-generated evidence and checksums](../data/evaluation/final-study/README.md).
+- [Complete application-generated evidence and checksums](../../data/evaluation/final-study/README.md).

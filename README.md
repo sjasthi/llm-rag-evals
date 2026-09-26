@@ -32,15 +32,15 @@ ambiguous cases and evaluator disagreements.
 The repository itself contains the final deliverables; a reviewer does not need
 the author's local database or private working directory:
 
-- [Final study report](docs/final-study-report.md): design, results, failure
+- [Final study report](docs/V1 docs/final-study-report.md): design, results, failure
   analysis, recommendations, verification, and limitations.
 - [Application-generated final-study evidence](data/evaluation/final-study/README.md):
   six complete JSON exports with checksums.
-- [Final presentation outline](docs/final-presentation-outline.md): a concise
+- [Final presentation outline](docs/V1 docs/final-presentation-outline.md): a concise
   ten-slide narrative and live-demo order.
-- [Evaluation strategy](docs/evaluation-strategy.md): the score contracts and
+- [Evaluation strategy](docs/V1 docs/evaluation-strategy.md): the score contracts and
   controlled comparison rules behind the report.
-- [Post-capstone roadmap](docs/post-capstone-roadmap.md): clearly separated
+- [Post-capstone roadmap](docs/V1 docs/post-capstone-roadmap.md): clearly separated
   future multimodal, conversational, multi-user, and agentic research.
 
 A fresh setup rebuilds the source corpus and reviewed Gold Standard, but it
@@ -76,7 +76,7 @@ local research workspace with a fixed retrieve-then-generate answer path. It
 does not claim to interpret embedded pictures/charts, remember earlier Chat
 turns, isolate multiple users, or run an autonomous retrieval agent. Those
 boundaries and a researched extension plan are documented in the
-[post-capstone RAG research roadmap](docs/post-capstone-roadmap.md).
+[post-capstone RAG research roadmap](docs/V1 docs/post-capstone-roadmap.md).
 
 ## Implementation Record and Final Evidence
 
@@ -193,9 +193,9 @@ both failures remain in immutable attempt history. After the fixes, bounded
 retries completed all four RAGAS metrics. The free tier required a cooldown
 between the last two metrics. This is a pipeline validation for one response,
 not a comparative finding. See the detailed
-[FP8/FP9 implementation record](docs/fp8-fp9-implementation.md),
-[FP10 hardening record](docs/fp10-hardening.md), and
-[reference-repository comparison](docs/reference-repository-comparison.md).
+[FP8/FP9 implementation record](docs/V1 docs/fp8-fp9-implementation.md),
+[FP10 hardening record](docs/V1 docs/fp10-hardening.md), and
+[reference-repository comparison](docs/V1 docs/reference-repository-comparison.md).
 
 The August 2 final-readiness pass expanded the reviewed answer key to 50
 source-verified questions and added per-run JSON/CSV downloads containing run
@@ -251,9 +251,9 @@ Dataset version 2.0 contains 50 reviewed questions across the current Metro
 State categories, including answerable and unanswerable questions. The bounded
 final study compares a 20-document focused collection with the full 27-document
 collection and separately varies retrieval, top-k, and model. See the
-[research plan](docs/research-plan.md) for the detailed questions, experiments,
+[research plan](docs/V1 docs/research-plan.md) for the detailed questions, experiments,
 interpretation rules, and FP6-FP10 roadmap.
-The [evaluation strategy](docs/evaluation-strategy.md) documents the evaluator
+The [evaluation strategy](docs/V1 docs/evaluation-strategy.md) documents the evaluator
 families, controlled protocol, trade-off questions, and research sequence.
 
 ## Technology Stack
@@ -702,18 +702,18 @@ unfinished work.
 
 ### Final Deliverables and Evidence
 
-- [Final study report](docs/final-study-report.md)
+- [Final study report](docs/V1 docs/final-study-report.md)
 - [Final study application exports and checksums](data/evaluation/final-study/README.md)
-- [Final presentation outline and demo order](docs/final-presentation-outline.md)
+- [Final presentation outline and demo order](docs/V1 docs/final-presentation-outline.md)
 
 ### Current Product and Research References
 
 - [Final requirements baseline](requirements.md)
-- [Final project scope](docs/final-project-scope.md)
-- [Evaluator strategy and controlled protocol](docs/evaluation-strategy.md)
-- [Executed RAG evaluation research plan](docs/research-plan.md)
-- [UX design](docs/ux-design.md)
-- [Code structure and conventions](docs/code-structure.md)
+- [Final project scope](docs/V1 docs/final-project-scope.md)
+- [Evaluator strategy and controlled protocol](docs/V1 docs/evaluation-strategy.md)
+- [Executed RAG evaluation research plan](docs/V1 docs/research-plan.md)
+- [UX design](docs/V1 docs/ux-design.md)
+- [Code structure and conventions](docs/V1 docs/code-structure.md)
 
 ### Historical Planning and Implementation Records
 
@@ -721,19 +721,19 @@ These files explain how the system evolved. Their dated plans and checkpoint
 counts are preserved as history; they are not the current submission status.
 
 - [Original project notes](project-notes.md)
-- [Initial recommended implementation approach](docs/implementation-approach.md)
-- [FP3-FP10 iteration plan](docs/fp3-project-plan.md)
-- [Frontend-first July 20 workflow record](docs/frontend-first-workflow.md)
-- [FP8/FP9 implementation and reproduction record](docs/fp8-fp9-implementation.md)
-- [FP10 hardening record](docs/fp10-hardening.md)
-- [Reference-repository comparison](docs/reference-repository-comparison.md)
+- [Initial recommended implementation approach](docs/V1 docs/implementation-approach.md)
+- [FP3-FP10 iteration plan](docs/V1 docs/fp3-project-plan.md)
+- [Frontend-first July 20 workflow record](docs/V1 docs/frontend-first-workflow.md)
+- [FP8/FP9 implementation and reproduction record](docs/V1 docs/fp8-fp9-implementation.md)
+- [FP10 hardening record](docs/V1 docs/fp10-hardening.md)
+- [Reference-repository comparison](docs/V1 docs/reference-repository-comparison.md)
 
 ### Background and Post-Capstone Research
 
 - [Professor-provided evaluation options and trade-offs](docs/research/rag_chatbot_evaluations.md)
 - [RAG architectural patterns](docs/research/rag_architectural_patterns.md)
 - [Agentic RAG patterns and reference architecture](docs/research/rag-agentic-patterns-and-architecture.md)
-- [Post-capstone multimodal, conversational, multi-user, and agentic RAG roadmap](docs/post-capstone-roadmap.md)
+- [Post-capstone multimodal, conversational, multi-user, and agentic RAG roadmap](docs/V1 docs/post-capstone-roadmap.md)
 
 ## Source Documents
 

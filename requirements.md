@@ -1,8 +1,8 @@
 # LLM RAG Evaluations Web Application
 
 > **Status:** Final submission requirements baseline. The implemented boundary
-> is recorded in [Final Project Scope](docs/final-project-scope.md), and the
-> completed study is reported in [Final Study Report](docs/final-study-report.md).
+> is recorded in [Final Project Scope](docs/V1 docs/final-project-scope.md), and the
+> completed study is reported in [Final Study Report](docs/V1 docs/final-study-report.md).
 
 ## 1. Project Overview
 
@@ -896,4 +896,4 @@ Post-capstone research candidates are now:
 
 These are plans rather than implemented final-project requirements. Architecture,
 experiments, risks, and acceptance criteria are defined in the
-[post-capstone RAG research roadmap](docs/post-capstone-roadmap.md).
+[post-capstone RAG research roadmap](docs/V1 docs/post-capstone-roadmap.md).

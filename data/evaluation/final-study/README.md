@@ -25,7 +25,7 @@ Runs 9 and 11 are intentionally absent because they were unsuccessful audit
 records rather than completed comparison conditions. Run 9 used a retired
 model deployment name; run 11 reached the provider's free-tier request limit.
 Their failure modes are documented in the
-[final study report](../../../docs/final-study-report.md).
+[final study report](../../../docs/V1%20docs/final-study-report.md).
 
 ## SHA-256 checksums
 

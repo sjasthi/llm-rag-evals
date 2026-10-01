@@ -30,6 +30,14 @@ class PDFImage:
     width: int
     height: int
 
+@dataclass(frozen=True)
+class PDFTable:
+    """A table discovered within a PDF."""
+
+    page_number: int
+    table_index: int
+    rows: tuple[tuple[str, ...], ...]
+
 def process_pdf(
     path: Path,
     settings: Settings | None = None,
@@ -42,13 +50,24 @@ def process_pdf(
         raise ValueError(f"PDF file does not exist: {path}")
 
     elements: list[DocumentElement] = []
+    processed_image_xrefs: set[int] = set()
 
     with pymupdf.open(path) as document:
         for page_index, page in enumerate(document):
             page_number = page_index + 1
 
-            # Extract normal text.
-            text = page.get_text("text").strip()
+            # Detect tables on the page.
+            found_tables = page.find_tables()
+            table_rects = [
+                pymupdf.Rect(table.bbox)
+                for table in found_tables.tables
+            ]
+
+            # Extract normal text while excluding table regions.
+            text = extract_text_outside_tables(
+                page,
+                table_rects,
+            ).strip()
 
             if text:
                 elements.append(
@@ -61,6 +80,30 @@ def process_pdf(
                     )
                 )
 
+            # Convert detected tables into structured document elements.
+            for table in found_tables.tables:
+                extracted_rows = table.extract()
+
+                normalized_rows = tuple(
+                    tuple((cell or "").strip() for cell in row)
+                    for row in extracted_rows
+                )
+
+                table_text = table_to_text(normalized_rows)
+
+                if not table_text:
+                    continue
+
+                elements.append(
+                    DocumentElement(
+                        content_type="table",
+                        content=table_text,
+                        page_number=page_number,
+                        element_index=len(elements) + 1,
+                        extraction_method="pymupdf_table",
+                    )
+                )
+
             # Detect and process embedded images.
             page_images = page.get_images(full=True)
 
@@ -69,6 +112,11 @@ def process_pdf(
 
                 if settings is None:
                     continue
+
+                if xref in processed_image_xrefs:
+                    continue
+
+                processed_image_xrefs.add(xref)
 
                 image_data = document.extract_image(xref)
 
@@ -135,6 +183,38 @@ def find_pdf_images(path: Path) -> list[PDFImage]:
 
     return images
 
+def find_pdf_tables(path: Path) -> list[PDFTable]:
+    """Find and extract structured tables from a PDF."""
+
+    path = path.resolve()
+
+    if not path.is_file():
+        raise ValueError(f"PDF file does not exist: {path}")
+
+    tables: list[PDFTable] = []
+
+    with pymupdf.open(path) as document:
+        for page_index, page in enumerate(document):
+            page_tables = page.find_tables()
+
+            for table_index, table in enumerate(page_tables.tables, start=1):
+                extracted_rows = table.extract()
+
+                normalized_rows = tuple(
+                    tuple((cell or "").strip() for cell in row)
+                    for row in extracted_rows
+                )
+
+                tables.append(
+                    PDFTable(
+                        page_number=page_index + 1,
+                        table_index=table_index,
+                        rows=normalized_rows,
+                    )
+                )
+
+    return tables
+
 def extract_pdf_image(
     path: Path,
     xref: int,
@@ -153,3 +233,48 @@ def extract_pdf_image(
         raise ValueError(f"Could not extract PDF image with xref {xref}.")
 
     return image_data["image"], image_data["ext"]
+
+def table_to_text(rows: tuple[tuple[str, ...], ...]) -> str:
+    """Convert structured table rows into searchable Markdown-style text."""
+
+    if not rows:
+        return ""
+
+    header = rows[0]
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join("---" for _ in header) + " |",
+    ]
+
+    for row in rows[1:]:
+        lines.append("| " + " | ".join(row) + " |")
+
+    return "\n".join(lines)
+
+def extract_text_outside_tables(
+    page: pymupdf.Page,
+    table_rects: list[pymupdf.Rect],
+) -> str:
+    """Extract page text while excluding text located inside tables."""
+
+    blocks = page.get_text("blocks")
+    text_parts: list[str] = []
+
+    for block in blocks:
+        x0, y0, x1, y1, text = block[:5]
+        block_rect = pymupdf.Rect(x0, y0, x1, y1)
+
+        inside_table = any(
+            block_rect.intersects(table_rect)
+            for table_rect in table_rects
+        )
+
+        if inside_table:
+            continue
+
+        cleaned_text = text.strip()
+
+        if cleaned_text:
+            text_parts.append(cleaned_text)
+
+    return "\n\n".join(text_parts)

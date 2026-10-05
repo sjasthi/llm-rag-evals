@@ -56,11 +56,29 @@ def process_pdf(
         for page_index, page in enumerate(document):
             page_number = page_index + 1
 
+            vector_candidate = has_meaningful_vector_content(page)
+
             # Detect tables on the page.
             found_tables = page.find_tables()
+
+            valid_tables = []
+
+            for table in found_tables.tables:
+                extracted_rows = table.extract()
+
+                normalized_rows = tuple(
+                    tuple((cell or "").strip() for cell in row)
+                    for row in extracted_rows
+                )
+
+                if not is_likely_real_table(normalized_rows):
+                    continue
+
+                valid_tables.append((table, normalized_rows))
+
             table_rects = [
                 pymupdf.Rect(table.bbox)
-                for table in found_tables.tables
+                for table, _ in valid_tables
             ]
 
             # Extract normal text while excluding table regions.
@@ -80,15 +98,8 @@ def process_pdf(
                     )
                 )
 
-            # Convert detected tables into structured document elements.
-            for table in found_tables.tables:
-                extracted_rows = table.extract()
-
-                normalized_rows = tuple(
-                    tuple((cell or "").strip() for cell in row)
-                    for row in extracted_rows
-                )
-
+            # Convert validated tables into structured document elements.
+            for table, normalized_rows in valid_tables:
                 table_text = table_to_text(normalized_rows)
 
                 if not table_text:
@@ -149,6 +160,34 @@ def process_pdf(
                         extraction_model=analysis.model,
                     )
                 )
+            if vector_candidate and settings is not None:
+                try:
+                    rendered_page = render_page_for_visual_analysis(page)
+
+                    analysis = analyze_visual(
+                        rendered_page,
+                        "png",
+                        settings,
+                    )
+
+                except Exception as error:
+                    print(
+                        f"Warning: vector visual extraction failed on page "
+                        f"{page_number}: {error}"
+                    )
+
+                else:
+                    if analysis.content_type in {"chart", "diagram"}:
+                        elements.append(
+                            DocumentElement(
+                                content_type=analysis.content_type,
+                                content=analysis.content,
+                                page_number=page_number,
+                                element_index=len(elements) + 1,
+                                extraction_method="gemini_vision_page_render",
+                                extraction_model=analysis.model,
+                            )
+                        )
 
     return elements
 
@@ -278,3 +317,84 @@ def extract_text_outside_tables(
             text_parts.append(cleaned_text)
 
     return "\n\n".join(text_parts)
+
+def has_meaningful_vector_content(
+    page: pymupdf.Page,
+    *,
+    minimum_drawings: int = 5,
+) -> bool:
+    """Return whether a page contains substantial vector-drawn content."""
+
+    drawings = page.get_drawings()
+
+    if len(drawings) < minimum_drawings:
+        return False
+
+    page_area = page.rect.width * page.rect.height
+
+    if page_area <= 0:
+        return False
+
+    drawing_rects = [
+        drawing.get("rect")
+        for drawing in drawings
+        if drawing.get("rect") is not None
+    ]
+
+    if not drawing_rects:
+        return False
+
+    combined_rect = pymupdf.Rect(drawing_rects[0])
+
+    for rect in drawing_rects[1:]:
+        combined_rect |= pymupdf.Rect(rect)
+
+    drawing_area = combined_rect.width * combined_rect.height
+    coverage_ratio = drawing_area / page_area
+
+    return coverage_ratio >= 0.10
+
+def render_page_for_visual_analysis(
+    page: pymupdf.Page,
+    *,
+    scale: float = 2.0,
+) -> bytes:
+    """Render a PDF page as PNG bytes for visual analysis."""
+
+    matrix = pymupdf.Matrix(scale, scale)
+
+    pixmap = page.get_pixmap(
+        matrix=matrix,
+        alpha=False,
+    )
+
+    return pixmap.tobytes("png")
+
+def is_likely_real_table(
+    rows: tuple[tuple[str, ...], ...],
+) -> bool:
+    """Return whether extracted rows contain enough structure to represent a table."""
+
+    if len(rows) < 2:
+        return False
+
+    column_count = max((len(row) for row in rows), default=0)
+
+    if column_count < 2:
+        return False
+
+    total_cells = sum(len(row) for row in rows)
+
+    if total_cells == 0:
+        return False
+
+    populated_cells = sum(
+        1
+        for row in rows
+        for cell in row
+        if cell.strip()
+    )
+
+    populated_ratio = populated_cells / total_cells
+
+    return populated_ratio >= 0.25

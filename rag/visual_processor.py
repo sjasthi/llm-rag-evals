@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from google import genai
 from google.genai import types
 
-from rag.settings import Settings
+from settings import Settings
 
+import time
 
 MAX_VISUAL_OUTPUT_TOKENS = 1024
 
@@ -89,27 +90,56 @@ def analyze_visual(
 
     client = genai.Client(api_key=settings.llm_api_key)
 
+    max_attempts = 3
+
     try:
-        response = client.models.generate_content(
-            model=settings.llm_chat_model,
-            contents=[
-                types.Part.from_bytes(
-                    data=image_bytes,
-                    mime_type=mime_type,
-                ),
-                (
-                    "Begin your response with exactly one classification line "
-                    "using this format: TYPE: image, TYPE: chart, "
-                    "TYPE: diagram, TYPE: scanned_page, or TYPE: other. "
-                    "Then provide the useful searchable content."
-                ),
-            ],
-            config=types.GenerateContentConfig(
-                system_instruction=VISUAL_SYSTEM_INSTRUCTION,
-                temperature=0.0,
-                max_output_tokens=MAX_VISUAL_OUTPUT_TOKENS,
-            ),
-        )
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = client.models.generate_content(
+                    model=settings.llm_chat_model,
+                    contents=[
+                        types.Part.from_bytes(
+                            data=image_bytes,
+                            mime_type=mime_type,
+                        ),
+                        (
+                            "Begin your response with exactly one classification line "
+                            "using this format: TYPE: image, TYPE: chart, "
+                            "TYPE: diagram, TYPE: scanned_page, or TYPE: other. "
+                            "Then provide the useful searchable content."
+                        ),
+                    ],
+                    config=types.GenerateContentConfig(
+                        system_instruction=VISUAL_SYSTEM_INSTRUCTION,
+                        temperature=0.0,
+                        max_output_tokens=MAX_VISUAL_OUTPUT_TOKENS,
+                    ),
+                )
+
+                break
+
+            except Exception as error:
+                error_text = str(error).lower()
+
+                is_temporary_error = (
+                        "503" in error_text
+                        or "unavailable" in error_text
+                        or "high demand" in error_text
+                )
+
+                if not is_temporary_error or attempt == max_attempts:
+                    raise
+
+                wait_seconds = attempt * 2
+
+                print(
+                    f"Warning: Gemini visual analysis attempt "
+                    f"{attempt} failed temporarily. "
+                    f"Retrying in {wait_seconds} seconds..."
+                )
+
+                time.sleep(wait_seconds)
+
     finally:
         client.close()
 

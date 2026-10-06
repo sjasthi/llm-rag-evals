@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from rag.pdf_processor import DocumentElement
+from pdf_processor import DocumentElement
 
 
 

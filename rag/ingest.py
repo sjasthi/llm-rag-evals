@@ -13,6 +13,8 @@ from typing import Any
 from document_loader import DocumentLoadError, LoadedDocument, SUPPORTED_TYPES, load_document
 from settings import PROJECT_ROOT, load_settings
 
+from chunking import chunk_element
+from pdf_processor import process_pdf
 
 DEFAULT_SOURCE_DIR = PROJECT_ROOT / "data" / "metrostate_documents"
 
@@ -27,6 +29,14 @@ class Chunk:
     chroma_id: str
     source_type: str = "txt"
     original_filename: str = ""
+
+    # V2 multimodal provenance.
+    page_number: int | None = None
+    element_index: int | None = None
+    element_chunk_index: int | None = None
+    content_type: str = "text"
+    extraction_method: str | None = None
+    extraction_model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -75,15 +85,98 @@ def stable_chroma_id(source_path: str, chunk_index: int) -> str:
     path_hash = hashlib.sha256(source_path.encode("utf-8")).hexdigest()[:20]
     return f"doc-{path_hash}-chunk-{chunk_index:04d}"
 
+def build_pdf_chunks(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> list[Chunk]:
+    """Build content-aware retrieval chunks from a PDF."""
+
+    settings = load_settings()
+
+    elements = process_pdf(
+        document_path,
+        settings,
+    )
+
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    chunks: list[Chunk] = []
+    document_chunk_index = 0
+
+    for element in elements:
+        element_chunks = chunk_element(
+            element,
+            max_chars=chunk_size,
+        )
+
+        for element_chunk in element_chunks:
+            chunks.append(
+                Chunk(
+                    source_path=source_path,
+                    category=category,
+                    chunk_index=document_chunk_index,
+                    text=element_chunk.content,
+                    source_hash=source_hash,
+                    chroma_id=stable_chroma_id(
+                        source_path,
+                        document_chunk_index,
+                    ),
+                    source_type="pdf",
+                    original_filename=document_path.name,
+                    page_number=element_chunk.page_number,
+                    element_index=element_chunk.element_index,
+                    element_chunk_index=element_chunk.chunk_index,
+                    content_type=element_chunk.content_type,
+                    extraction_method=element_chunk.extraction_method,
+                    extraction_model=element_chunk.extraction_model,
+                )
+            )
+
+            document_chunk_index += 1
+
+    if not chunks:
+        raise ValueError(
+            f"No retrieval chunks could be created from PDF: "
+            f"{document_path.name}"
+        )
+
+    return chunks
 
 def build_chunks(source_dir: Path, chunk_size: int, overlap: int) -> list[Chunk]:
+    """Build retrieval chunks for all supported documents in a directory."""
+
     chunks: list[Chunk] = []
+
     for document_path in read_documents(source_dir):
-        loaded = load_document(document_path)
         relative_path = document_path.relative_to(PROJECT_ROOT).as_posix()
         category = document_path.parent.name
 
-        for index, chunk in enumerate(chunk_text(loaded.text, chunk_size, overlap)):
+        if document_path.suffix.lower() == ".pdf":
+            pdf_chunks = build_pdf_chunks(
+                document_path,
+                source_path=relative_path,
+                category=category,
+                chunk_size=chunk_size,
+            )
+
+            chunks.extend(pdf_chunks)
+            continue
+
+        # Preserve the existing V1 path for TXT and DOCX documents.
+        loaded = load_document(document_path)
+
+        for index, chunk in enumerate(
+            chunk_text(
+                loaded.text,
+                chunk_size,
+                overlap,
+            )
+        ):
             chunks.append(
                 Chunk(
                     source_path=relative_path,
@@ -91,11 +184,15 @@ def build_chunks(source_dir: Path, chunk_size: int, overlap: int) -> list[Chunk]
                     chunk_index=index,
                     text=chunk,
                     source_hash=loaded.source_hash,
-                    chroma_id=stable_chroma_id(relative_path, index),
+                    chroma_id=stable_chroma_id(
+                        relative_path,
+                        index,
+                    ),
                     source_type=loaded.source_type,
                     original_filename=loaded.original_filename,
                 )
             )
+
     return chunks
 
 
@@ -121,6 +218,37 @@ def build_loaded_document_chunks(
         for index, text in enumerate(chunk_text(loaded.text, chunk_size, overlap))
     ]
 
+def prepare_document_chunks(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    original_filename: str | None = None,
+    chunk_size: int,
+    overlap: int,
+) -> list[Chunk]:
+    """Prepare retrieval chunks for one document without persisting them."""
+
+    if document_path.suffix.lower() == ".pdf":
+        return build_pdf_chunks(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
+
+    loaded = load_document(
+        document_path,
+        original_filename=original_filename,
+    )
+
+    return build_loaded_document_chunks(
+        loaded,
+        source_path=source_path,
+        category=category,
+        chunk_size=chunk_size,
+        overlap=overlap,
+    )
 
 def ingest_document(
     document_path: Path,
@@ -134,16 +262,40 @@ def ingest_document(
     init_schema: bool = False,
 ) -> tuple[int, int]:
     """Extract and replace one document in MySQL and ChromaDB."""
-    settings = load_settings()
-    try:
-        loaded = load_document(document_path, original_filename=original_filename)
-    except DocumentLoadError as error:
-        from database import database_connection, initialize_schema, record_document_failure
 
-        if init_schema:
-            initialize_schema(settings)
-        source_type = SUPPORTED_TYPES.get(document_path.suffix.lower(), "unknown")
-        source_hash = hashlib.sha256(document_path.read_bytes()).hexdigest()
+    settings = load_settings()
+
+    source_type = document_path.suffix.lower().lstrip(".")
+    resolved_original_filename = Path(
+        original_filename or document_path.name
+    ).name
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    from database import (
+        database_connection,
+        initialize_schema,
+        mark_document_failed,
+        mark_document_ingested,
+        record_document_failure,
+        upsert_document_and_chunks,
+    )
+    from vector_store import get_collection, replace_document_chunks
+
+    if init_schema:
+        initialize_schema(settings)
+
+    try:
+        chunks = prepare_document_chunks(
+            document_path,
+            source_path=source_path,
+            category=category,
+            original_filename=resolved_original_filename,
+            chunk_size=chunk_size,
+            overlap=overlap,
+        )
+    except Exception as error:
         with database_connection(settings) as connection:
             record_document_failure(
                 connection,
@@ -151,44 +303,35 @@ def ingest_document(
                 category=category,
                 source_path=source_path,
                 source_type=source_type,
-                original_filename=Path(original_filename or document_path.name).name,
+                original_filename=resolved_original_filename,
                 source_hash=source_hash,
                 error=str(error),
             )
         raise
-    chunks = build_loaded_document_chunks(
-        loaded,
-        source_path=source_path,
-        category=category,
-        chunk_size=chunk_size,
-        overlap=overlap,
-    )
 
-    from database import (
-        database_connection,
-        initialize_schema,
-        mark_document_failed,
-        mark_document_ingested,
-        upsert_document_and_chunks,
-    )
-    from vector_store import get_collection, replace_document_chunks
-
-    if init_schema:
-        initialize_schema(settings)
     collection = get_collection(settings)
+
     with database_connection(settings) as connection:
         document_id, chunk_ids = upsert_document_and_chunks(
             connection,
             title=title,
             category=category,
             source_path=source_path,
-            source_type=loaded.source_type,
-            original_filename=loaded.original_filename,
-            source_hash=loaded.source_hash,
+            source_type=source_type,
+            original_filename=resolved_original_filename,
+            source_hash=source_hash,
             chunk_size=chunk_size,
             chunk_overlap=overlap,
-            chunks=[(chunk.chunk_index, chunk.text, chunk.chroma_id) for chunk in chunks],
+            chunks=[
+                (
+                    chunk.chunk_index,
+                    chunk.text,
+                    chunk.chroma_id,
+                )
+                for chunk in chunks
+            ],
         )
+
         try:
             replace_document_chunks(
                 collection,
@@ -200,8 +343,8 @@ def ingest_document(
                         "category": chunk.category,
                         "chunk_index": chunk.chunk_index,
                         "source_hash": chunk.source_hash,
-                        "source_type": loaded.source_type,
-                        "original_filename": loaded.original_filename,
+                        "source_type": source_type,
+                        "original_filename": resolved_original_filename,
                         "document_id": document_id,
                         "chunk_id": chunk_id,
                     }
@@ -209,10 +352,20 @@ def ingest_document(
                 ],
                 source_path=source_path,
             )
-            mark_document_ingested(connection, document_id)
+
+            mark_document_ingested(
+                connection,
+                document_id,
+            )
+
         except Exception as error:
-            mark_document_failed(connection, document_id, str(error))
+            mark_document_failed(
+                connection,
+                document_id,
+                str(error),
+            )
             raise
+
     return document_id, len(chunks)
 
 

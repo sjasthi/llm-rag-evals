@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pymupdf
-from rag.settings import Settings
-from rag.visual_processor import analyze_visual
+from settings import Settings
+from visual_processor import analyze_visual
 
 @dataclass(frozen=True)
 class DocumentElement:

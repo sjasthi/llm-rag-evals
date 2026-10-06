@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from io import StringIO
+from contextlib import redirect_stdout
 
 import pymupdf
 from settings import Settings
@@ -59,7 +61,11 @@ def process_pdf(
             vector_candidate = has_meaningful_vector_content(page)
 
             # Detect tables on the page.
-            found_tables = page.find_tables()
+            # PyMuPDF's table detector prints an optional pymupdf_layout
+            # recommendation to stdout. Suppress it because admin.py uses stdout
+            # as a machine-readable JSON interface for the PHP application.
+            with redirect_stdout(StringIO()):
+                found_tables = page.find_tables()
 
             valid_tables = []
 

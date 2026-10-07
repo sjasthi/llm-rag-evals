@@ -139,6 +139,69 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                     """ALTER TABLE rag_responses
                        ADD UNIQUE KEY uq_rag_responses_run_question (run_id, question_id)"""
                 )
+
+            # V2 multimodal provenance and chunking configuration. The new
+            # document_elements and conversation tables come from schema.sql;
+            # existing tables need their V2 columns before migration 008 runs.
+            v2_columns = {
+                "document_chunks": (
+                    ("element_id", "BIGINT UNSIGNED NULL AFTER document_id"),
+                ),
+                "retrieved_contexts": (
+                    ("element_id", "BIGINT UNSIGNED NULL AFTER chunk_id"),
+                    ("page_number_snapshot", "INT UNSIGNED NULL AFTER chunk_hash_snapshot"),
+                    ("content_type_snapshot", "VARCHAR(40) NULL AFTER page_number_snapshot"),
+                    (
+                        "extraction_method_snapshot",
+                        "VARCHAR(80) NULL AFTER content_type_snapshot",
+                    ),
+                ),
+                "model_settings": (
+                    (
+                        "chunking_strategy",
+                        "VARCHAR(60) NOT NULL DEFAULT 'fixed_character' AFTER chunk_overlap",
+                    ),
+                    ("chunking_configuration_json", "JSON NULL AFTER chunking_strategy"),
+                ),
+            }
+            for table_name, columns in v2_columns.items():
+                for column_name, definition in columns:
+                    cursor.execute(
+                        """SELECT COUNT(*) FROM information_schema.columns
+                           WHERE table_schema=%s AND table_name=%s AND column_name=%s""",
+                        (settings.db_name, table_name, column_name),
+                    )
+                    row = cursor.fetchone()
+                    if not row or int(row[0]) == 0:
+                        cursor.execute(
+                            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+                        )
+
+            v2_constraints = (
+                (
+                    "document_chunks",
+                    "fk_document_chunks_element",
+                    "ALTER TABLE document_chunks ADD CONSTRAINT fk_document_chunks_element "
+                    "FOREIGN KEY (element_id) REFERENCES document_elements (element_id) "
+                    "ON DELETE CASCADE",
+                ),
+                (
+                    "retrieved_contexts",
+                    "fk_retrieved_contexts_element",
+                    "ALTER TABLE retrieved_contexts ADD CONSTRAINT fk_retrieved_contexts_element "
+                    "FOREIGN KEY (element_id) REFERENCES document_elements (element_id) "
+                    "ON DELETE SET NULL",
+                ),
+            )
+            for table_name, constraint_name, statement in v2_constraints:
+                cursor.execute(
+                    """SELECT COUNT(*) FROM information_schema.table_constraints
+                       WHERE constraint_schema=%s AND table_name=%s AND constraint_name=%s""",
+                    (settings.db_name, table_name, constraint_name),
+                )
+                row = cursor.fetchone()
+                if not row or int(row[0]) == 0:
+                    cursor.execute(statement)
         connection.commit()
 
         if MIGRATIONS_PATH.is_dir():
@@ -578,9 +641,13 @@ def get_or_create_model_setting(
     temperature: float,
     top_p: float,
     retrieval_method: str = "chroma_vector",
+    chunking_strategy: str = "fixed_character",
+    chunking_configuration: dict[str, Any] | None = None,
 ) -> int:
     if retrieval_method not in {"chroma_vector", "mysql_keyword"}:
         raise ValueError(f"Unsupported retrieval method {retrieval_method!r}")
+    if chunking_configuration is None:
+        chunking_configuration = {"chunk_size": chunk_size, "chunk_overlap": chunk_overlap}
     with connection.cursor() as cursor:
         cursor.execute(
             """
@@ -592,6 +659,7 @@ def get_or_create_model_setting(
               AND embedding_model = %s
               AND chunk_size = %s
               AND chunk_overlap = %s
+              AND chunking_strategy = %s
               AND top_k = %s
               AND temperature = %s
               AND top_p = %s
@@ -605,6 +673,7 @@ def get_or_create_model_setting(
                 embedding_model,
                 chunk_size,
                 chunk_overlap,
+                chunking_strategy,
                 top_k,
                 temperature,
                 top_p,
@@ -620,8 +689,9 @@ def get_or_create_model_setting(
             """
             INSERT INTO model_settings (
                 setting_name, retrieval_method, llm_provider, chat_model,
-                embedding_model, chunk_size, chunk_overlap, top_k, temperature, top_p
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                embedding_model, chunk_size, chunk_overlap, chunking_strategy,
+                chunking_configuration_json, top_k, temperature, top_p
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 f"{provider} {chat_model} grounded CLI",
@@ -631,6 +701,8 @@ def get_or_create_model_setting(
                 embedding_model,
                 chunk_size,
                 chunk_overlap,
+                chunking_strategy,
+                json.dumps(chunking_configuration, sort_keys=True),
                 top_k,
                 temperature,
                 top_p,

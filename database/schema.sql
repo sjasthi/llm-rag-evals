@@ -22,9 +22,28 @@ CREATE TABLE IF NOT EXISTS documents (
     UNIQUE KEY uq_documents_source_path (source_path)
 );
 
+CREATE TABLE IF NOT EXISTS document_elements (
+    element_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    document_id BIGINT UNSIGNED NOT NULL,
+    element_index INT UNSIGNED NOT NULL,
+    page_number INT UNSIGNED NULL,
+    content_type VARCHAR(40) NOT NULL DEFAULT 'text',
+    normalized_content MEDIUMTEXT NOT NULL,
+    extraction_method VARCHAR(80) NOT NULL,
+    extraction_model VARCHAR(120) NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_document_elements_document_index (document_id, element_index),
+    KEY idx_document_elements_document_page (document_id, page_number),
+    KEY idx_document_elements_content_type (content_type),
+    CONSTRAINT fk_document_elements_document
+        FOREIGN KEY (document_id) REFERENCES documents (document_id)
+        ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS document_chunks (
     chunk_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     document_id BIGINT UNSIGNED NOT NULL,
+    element_id BIGINT UNSIGNED NULL,
     chunk_index INT UNSIGNED NOT NULL,
     chunk_text MEDIUMTEXT NOT NULL,
     token_estimate INT UNSIGNED NULL,
@@ -32,9 +51,13 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_document_chunks_document_index (document_id, chunk_index),
     UNIQUE KEY uq_document_chunks_chroma_id (chroma_id),
+    KEY idx_document_chunks_element (element_id),
     FULLTEXT KEY ft_document_chunks_text (chunk_text),
     CONSTRAINT fk_document_chunks_document
         FOREIGN KEY (document_id) REFERENCES documents (document_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_document_chunks_element
+        FOREIGN KEY (element_id) REFERENCES document_elements (element_id)
         ON DELETE CASCADE
 );
 
@@ -98,6 +121,8 @@ CREATE TABLE IF NOT EXISTS model_settings (
     embedding_model VARCHAR(120) NULL,
     chunk_size INT UNSIGNED NULL,
     chunk_overlap INT UNSIGNED NULL,
+    chunking_strategy VARCHAR(60) NOT NULL DEFAULT 'fixed_character',
+    chunking_configuration_json JSON NULL,
     top_k INT UNSIGNED NOT NULL DEFAULT 5,
     temperature DECIMAL(3,2) NOT NULL DEFAULT 0.00,
     top_p DECIMAL(3,2) NOT NULL DEFAULT 1.00,
@@ -164,11 +189,15 @@ CREATE TABLE IF NOT EXISTS retrieved_contexts (
     response_id BIGINT UNSIGNED NOT NULL,
     document_id BIGINT UNSIGNED NULL,
     chunk_id BIGINT UNSIGNED NULL,
+    element_id BIGINT UNSIGNED NULL,
     source_path_snapshot VARCHAR(500) NULL,
     category_snapshot VARCHAR(100) NULL,
     chunk_index_snapshot INT UNSIGNED NULL,
     document_hash_snapshot CHAR(64) NULL,
     chunk_hash_snapshot CHAR(64) NULL,
+    page_number_snapshot INT UNSIGNED NULL,
+    content_type_snapshot VARCHAR(40) NULL,
+    extraction_method_snapshot VARCHAR(80) NULL,
     rank_position INT UNSIGNED NOT NULL,
     similarity_score DECIMAL(8,6) NULL,
     semantic_distance DECIMAL(12,8) NULL,
@@ -185,6 +214,36 @@ CREATE TABLE IF NOT EXISTS retrieved_contexts (
         ON DELETE SET NULL,
     CONSTRAINT fk_retrieved_contexts_chunk
         FOREIGN KEY (chunk_id) REFERENCES document_chunks (chunk_id)
+        ON DELETE SET NULL,
+    CONSTRAINT fk_retrieved_contexts_element
+        FOREIGN KEY (element_id) REFERENCES document_elements (element_id)
+        ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS conversations (
+    conversation_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NULL,
+    status ENUM('active', 'archived') NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_conversations_status_updated (status, updated_at)
+);
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    message_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    conversation_id BIGINT UNSIGNED NOT NULL,
+    role ENUM('user', 'assistant') NOT NULL,
+    content MEDIUMTEXT NOT NULL,
+    sequence_number INT UNSIGNED NOT NULL,
+    response_id BIGINT UNSIGNED NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_conversation_messages_sequence (conversation_id, sequence_number),
+    UNIQUE KEY uq_conversation_messages_response (response_id),
+    CONSTRAINT fk_conversation_messages_conversation
+        FOREIGN KEY (conversation_id) REFERENCES conversations (conversation_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_conversation_messages_response
+        FOREIGN KEY (response_id) REFERENCES rag_responses (response_id)
         ON DELETE SET NULL
 );
 

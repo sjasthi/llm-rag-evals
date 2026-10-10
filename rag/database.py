@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import re
 from typing import Any, Iterator, Sequence
+from dataclasses import dataclass
 
 import mysql.connector
 from mysql.connector import MySQLConnection
@@ -446,6 +447,26 @@ def database_connection(settings: Settings) -> Iterator[MySQLConnection]:
     finally:
         connection.close()
 
+@dataclass(frozen=True)
+class ElementRecord:
+    """A complete extracted document element to persist in MySQL."""
+
+    element_index: int
+    page_number: int
+    content_type: str
+    normalized_content: str
+    extraction_method: str
+    extraction_model: str | None = None
+
+
+@dataclass(frozen=True)
+class ChunkRecord:
+    """A retrieval chunk with optional V2 element provenance."""
+
+    chunk_index: int
+    chunk_text: str
+    chroma_id: str
+    element_index: int | None = None
 
 def upsert_document_and_chunks(
     connection: MySQLConnection,
@@ -458,7 +479,9 @@ def upsert_document_and_chunks(
     source_hash: str,
     chunk_size: int,
     chunk_overlap: int,
-    chunks: Sequence[tuple[int, str, str]],
+    chunks: Sequence[tuple[int, str, str] | ChunkRecord],
+    elements: Sequence[ElementRecord] = (),
+    element_id_output: dict[int, int] | None = None,
 ) -> tuple[int, list[int]]:
     """Replace one document's chunk rows in a single MySQL transaction."""
     try:
@@ -490,27 +513,98 @@ def upsert_document_and_chunks(
             )
             document_id = int(cursor.lastrowid)
 
-            cursor.execute("DELETE FROM document_chunks WHERE document_id = %s", (document_id,))
+            # Remove old chunks before replacing their source elements.
+            cursor.execute(
+                "DELETE FROM document_chunks WHERE document_id = %s",
+                (document_id,),
+            )
 
-            chunk_ids: list[int] = []
-            for chunk_index, chunk_text, chroma_id in chunks:
+            cursor.execute(
+                "DELETE FROM document_elements WHERE document_id = %s",
+                (document_id,),
+            )
+
+            # Map document-local element indexes to MySQL element IDs.
+            element_ids: dict[int, int] = {}
+
+            for element in elements:
                 cursor.execute(
                     """
-                    INSERT INTO document_chunks (
-                        document_id, chunk_index, chunk_text, token_estimate, chroma_id
-                    ) VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO document_elements (
+                        document_id,
+                        element_index,
+                        page_number,
+                        content_type,
+                        normalized_content,
+                        extraction_method,
+                        extraction_model
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         document_id,
+                        element.element_index,
+                        element.page_number,
+                        element.content_type,
+                        element.normalized_content,
+                        element.extraction_method,
+                        element.extraction_model,
+                    ),
+                )
+
+                element_ids[element.element_index] = int(cursor.lastrowid)
+
+            chunk_ids: list[int] = []
+
+            for chunk in chunks:
+                if isinstance(chunk, ChunkRecord):
+                    chunk_index = chunk.chunk_index
+                    chunk_text = chunk.chunk_text
+                    chroma_id = chunk.chroma_id
+
+                    if chunk.element_index is not None:
+                        if chunk.element_index not in element_ids:
+                            raise ValueError(
+                                f"Chunk {chunk_index} references unknown "
+                                f"element index {chunk.element_index}"
+                            )
+                        element_id = element_ids[chunk.element_index]
+                    else:
+                        element_id = None
+
+                else:
+                    chunk_index, chunk_text, chroma_id = chunk
+                    element_id = None
+
+                cursor.execute(
+                    """
+                    INSERT INTO document_chunks (
+                        document_id,
+                        element_id,
+                        chunk_index,
+                        chunk_text,
+                        token_estimate,
+                        chroma_id
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        document_id,
+                        element_id,
                         chunk_index,
                         chunk_text,
                         max(1, (len(chunk_text) + 3) // 4),
                         chroma_id,
                     ),
                 )
+
                 chunk_ids.append(int(cursor.lastrowid))
 
         connection.commit()
+
+        if element_id_output is not None:
+            element_id_output.update(element_ids)
+
         return document_id, chunk_ids
     except Exception:
         connection.rollback()

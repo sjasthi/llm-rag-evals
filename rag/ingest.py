@@ -14,7 +14,8 @@ from document_loader import DocumentLoadError, LoadedDocument, SUPPORTED_TYPES, 
 from settings import PROJECT_ROOT, load_settings
 
 from chunking import chunk_element
-from pdf_processor import process_pdf
+from pdf_processor import process_pdf, DocumentElement
+
 
 DEFAULT_SOURCE_DIR = PROJECT_ROOT / "data" / "metrostate_documents"
 
@@ -38,6 +39,12 @@ class Chunk:
     extraction_method: str | None = None
     extraction_model: str | None = None
 
+@dataclass(frozen=True)
+class PreparedDocument:
+    """Complete extracted elements and their retrieval chunks."""
+
+    chunks: list[Chunk]
+    elements: list[DocumentElement]
 
 @dataclass(frozen=True)
 class IngestionSummary:
@@ -85,13 +92,13 @@ def stable_chroma_id(source_path: str, chunk_index: int) -> str:
     path_hash = hashlib.sha256(source_path.encode("utf-8")).hexdigest()[:20]
     return f"doc-{path_hash}-chunk-{chunk_index:04d}"
 
-def build_pdf_chunks(
+def prepare_pdf_document(
     document_path: Path,
     *,
     source_path: str,
     category: str,
     chunk_size: int,
-) -> list[Chunk]:
+) -> PreparedDocument:
     """Build content-aware retrieval chunks from a PDF."""
 
     settings = load_settings()
@@ -145,7 +152,65 @@ def build_pdf_chunks(
             f"{document_path.name}"
         )
 
-    return chunks
+    return PreparedDocument(
+        chunks=chunks,
+        elements=elements,
+    )
+
+def build_pdf_chunks(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> list[Chunk]:
+    """Build PDF chunks while preserving the existing caller interface."""
+
+    prepared = prepare_pdf_document(
+        document_path,
+        source_path=source_path,
+        category=category,
+        chunk_size=chunk_size,
+    )
+
+    return prepared.chunks
+
+def build_prepared_documents(
+    source_dir: Path,
+    chunk_size: int,
+    overlap: int,
+) -> dict[str, PreparedDocument]:
+    """Prepare every document once, retaining PDF elements and chunks."""
+
+    prepared_documents: dict[str, PreparedDocument] = {}
+
+    for document_path in read_documents(source_dir):
+        source_path = document_path.relative_to(PROJECT_ROOT).as_posix()
+        category = document_path.parent.name
+
+        if document_path.suffix.lower() == ".pdf":
+            prepared = prepare_pdf_document(
+                document_path,
+                source_path=source_path,
+                category=category,
+                chunk_size=chunk_size,
+            )
+        else:
+            prepared = PreparedDocument(
+                chunks=prepare_document_chunks(
+                    document_path,
+                    source_path=source_path,
+                    category=category,
+                    original_filename=document_path.name,
+                    chunk_size=chunk_size,
+                    overlap=overlap,
+                ),
+                elements=[],
+            )
+
+        prepared_documents[source_path] = prepared
+
+    return prepared_documents
 
 def build_chunks(source_dir: Path, chunk_size: int, overlap: int) -> list[Chunk]:
     """Build retrieval chunks for all supported documents in a directory."""
@@ -157,14 +222,14 @@ def build_chunks(source_dir: Path, chunk_size: int, overlap: int) -> list[Chunk]
         category = document_path.parent.name
 
         if document_path.suffix.lower() == ".pdf":
-            pdf_chunks = build_pdf_chunks(
+            prepared = prepare_pdf_document(
                 document_path,
                 source_path=relative_path,
                 category=category,
                 chunk_size=chunk_size,
             )
 
-            chunks.extend(pdf_chunks)
+            chunks.extend(prepared.chunks)
             continue
 
         # Preserve the existing V1 path for TXT and DOCX documents.
@@ -230,12 +295,12 @@ def prepare_document_chunks(
     """Prepare retrieval chunks for one document without persisting them."""
 
     if document_path.suffix.lower() == ".pdf":
-        return build_pdf_chunks(
+        return prepare_pdf_document(
             document_path,
             source_path=source_path,
             category=category,
             chunk_size=chunk_size,
-        )
+        ).chunks
 
     loaded = load_document(
         document_path,
@@ -274,6 +339,8 @@ def ingest_document(
     ).hexdigest()
 
     from database import (
+        ChunkRecord,
+        ElementRecord,
         database_connection,
         initialize_schema,
         mark_document_failed,
@@ -287,14 +354,27 @@ def ingest_document(
         initialize_schema(settings)
 
     try:
-        chunks = prepare_document_chunks(
-            document_path,
-            source_path=source_path,
-            category=category,
-            original_filename=resolved_original_filename,
-            chunk_size=chunk_size,
-            overlap=overlap,
-        )
+        if source_type == "pdf":
+            prepared = prepare_pdf_document(
+                document_path,
+                source_path=source_path,
+                category=category,
+                chunk_size=chunk_size,
+            )
+        else:
+            prepared = PreparedDocument(
+                chunks=prepare_document_chunks(
+                    document_path,
+                    source_path=source_path,
+                    category=category,
+                    original_filename=resolved_original_filename,
+                    chunk_size=chunk_size,
+                    overlap=overlap,
+                ),
+                elements=[],
+            )
+
+        chunks = prepared.chunks
     except Exception as error:
         with database_connection(settings) as connection:
             record_document_failure(
@@ -311,6 +391,8 @@ def ingest_document(
 
     collection = get_collection(settings)
 
+    element_ids: dict[int, int] = {}
+
     with database_connection(settings) as connection:
         document_id, chunk_ids = upsert_document_and_chunks(
             connection,
@@ -323,13 +405,26 @@ def ingest_document(
             chunk_size=chunk_size,
             chunk_overlap=overlap,
             chunks=[
-                (
-                    chunk.chunk_index,
-                    chunk.text,
-                    chunk.chroma_id,
+                ChunkRecord(
+                    chunk_index=chunk.chunk_index,
+                    chunk_text=chunk.text,
+                    chroma_id=chunk.chroma_id,
+                    element_index=chunk.element_index,
                 )
-                for chunk in chunks
+                for chunk in prepared.chunks
             ],
+            elements=[
+                ElementRecord(
+                    element_index=element.element_index,
+                    page_number=element.page_number,
+                    content_type=element.content_type,
+                    normalized_content=element.content,
+                    extraction_method=element.extraction_method,
+                    extraction_model=element.extraction_model,
+                )
+                for element in prepared.elements
+            ],
+            element_id_output=element_ids,
         )
 
         try:
@@ -347,6 +442,33 @@ def ingest_document(
                         "original_filename": resolved_original_filename,
                         "document_id": document_id,
                         "chunk_id": chunk_id,
+                        "content_type": chunk.content_type,
+                        **(
+                            {"page_number": chunk.page_number}
+                            if chunk.page_number is not None
+                            else {}
+                        ),
+                        **(
+                            {"element_index": chunk.element_index}
+                            if chunk.element_index is not None
+                            else {}
+                        ),
+                        **(
+                            {"extraction_method": chunk.extraction_method}
+                            if chunk.extraction_method is not None
+                            else {}
+                        ),
+                        **(
+                            {"extraction_model": chunk.extraction_model}
+                            if chunk.extraction_model is not None
+                            else {}
+                        ),
+                        **(
+                            {"element_id": element_ids[chunk.element_index]}
+                            if chunk.element_index is not None
+                            else {}
+                        ),
+
                     }
                     for chunk, chunk_id in zip(chunks, chunk_ids)
                 ],
@@ -390,7 +512,19 @@ def ingest(
 
     settings = load_settings()
     documents = read_documents(source_dir)
-    chunks = build_chunks(source_dir, chunk_size, overlap)
+
+    prepared_documents = build_prepared_documents(
+        source_dir,
+        chunk_size,
+        overlap,
+    )
+
+    chunks = [
+        chunk
+        for prepared in prepared_documents.values()
+        for chunk in prepared.chunks
+    ]
+
     grouped_chunks = _group_chunks(chunks)
 
     collection = None
@@ -428,6 +562,8 @@ def ingest(
             mark_document_failed,
             mark_document_ingested,
             upsert_document_and_chunks,
+            ChunkRecord,
+            ElementRecord
         )
 
         if init_schema:
@@ -438,9 +574,31 @@ def ingest(
                 source_path = document_path.relative_to(PROJECT_ROOT).as_posix()
                 document_chunks = grouped_chunks.get(source_path, [])
                 source_hash = hashlib.sha256(document_path.read_bytes()).hexdigest()
-                db_chunks = [
-                    (chunk.chunk_index, chunk.text, chunk.chroma_id) for chunk in document_chunks
+                prepared = prepared_documents[source_path]
+
+                db_elements = [
+                    ElementRecord(
+                        element_index=element.element_index,
+                        page_number=element.page_number,
+                        content_type=element.content_type,
+                        normalized_content=element.content,
+                        extraction_method=element.extraction_method,
+                        extraction_model=element.extraction_model,
+                    )
+                    for element in prepared.elements
                 ]
+
+                db_chunks = [
+                    ChunkRecord(
+                        chunk_index=chunk.chunk_index,
+                        chunk_text=chunk.text,
+                        chroma_id=chunk.chroma_id,
+                        element_index=chunk.element_index,
+                    )
+                    for chunk in document_chunks
+                ]
+
+                element_ids: dict[int, int] = {}
                 document_id, chunk_ids = upsert_document_and_chunks(
                     connection,
                     title=document_path.stem.replace("_", " ").title(),
@@ -452,6 +610,8 @@ def ingest(
                     chunk_size=chunk_size,
                     chunk_overlap=overlap,
                     chunks=db_chunks,
+                    elements=db_elements,
+                    element_id_output=element_ids,
                 )
 
                 try:
@@ -459,17 +619,32 @@ def ingest(
                         from vector_store import replace_document_chunks
 
                         metadatas: list[dict[str, Any]] = []
+
                         for chunk, chunk_id in zip(document_chunks, chunk_ids):
-                            metadatas.append(
-                                {
-                                    "source_path": chunk.source_path,
-                                    "category": chunk.category,
-                                    "chunk_index": chunk.chunk_index,
-                                    "source_hash": chunk.source_hash,
-                                    "document_id": document_id,
-                                    "chunk_id": chunk_id,
-                                }
-                            )
+                            metadata: dict[str, Any] = {
+                                "source_path": chunk.source_path,
+                                "category": chunk.category,
+                                "chunk_index": chunk.chunk_index,
+                                "source_hash": chunk.source_hash,
+                                "document_id": document_id,
+                                "chunk_id": chunk_id,
+                                "content_type": chunk.content_type,
+                            }
+
+                            if chunk.page_number is not None:
+                                metadata["page_number"] = chunk.page_number
+
+                            if chunk.element_index is not None:
+                                metadata["element_index"] = chunk.element_index
+                                metadata["element_id"] = element_ids[chunk.element_index]
+
+                            if chunk.extraction_method is not None:
+                                metadata["extraction_method"] = chunk.extraction_method
+
+                            if chunk.extraction_model is not None:
+                                metadata["extraction_model"] = chunk.extraction_model
+
+                            metadatas.append(metadata)
                         replace_document_chunks(
                             collection,
                             ids=[chunk.chroma_id for chunk in document_chunks],

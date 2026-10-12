@@ -162,7 +162,7 @@ def process_pdf(
                         content=analysis.content,
                         page_number=page_number,
                         element_index=len(elements) + 1,
-                        extraction_method="gemini_vision",
+                        extraction_method=f"{settings.vlm_provider}_vision",
                         extraction_model=analysis.model,
                     )
                 )
@@ -190,7 +190,7 @@ def process_pdf(
                                 content=analysis.content,
                                 page_number=page_number,
                                 element_index=len(elements) + 1,
-                                extraction_method="gemini_vision_page_render",
+                                extraction_method=f"{settings.vlm_provider}_vision_page_render",
                                 extraction_model=analysis.model,
                             )
                         )

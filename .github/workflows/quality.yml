@@ -59,6 +59,9 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q rag tests scripts
 
+      - name: Initialize MySQL test database
+        run: python rag/ingest.py --init-schema --json
+
       - name: Run provider-free tests
         run: python -m unittest discover -s tests -v
 

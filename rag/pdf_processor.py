@@ -80,6 +80,9 @@ def process_pdf(
                 if not is_likely_real_table(normalized_rows):
                     continue
 
+                if has_overlapping_table_cells(table):
+                    continue
+
                 valid_tables.append((table, normalized_rows))
 
             table_rects = [
@@ -404,3 +407,25 @@ def is_likely_real_table(
     populated_ratio = populated_cells / total_cells
 
     return populated_ratio >= 0.25
+
+def has_overlapping_table_cells(table) -> bool:
+    """Detect table candidates with overlapping cell geometry."""
+
+    cells = [
+        pymupdf.Rect(cell)
+        for row in table.rows
+        for cell in row.cells
+        if cell is not None
+    ]
+
+    for index, first_cell in enumerate(cells):
+        for second_cell in cells[index + 1:]:
+            intersection = first_cell & second_cell
+
+            if (
+                not intersection.is_empty
+                and intersection.get_area() > 1
+            ):
+                return True
+
+    return False

@@ -869,23 +869,30 @@ def save_grounded_response(
                 retrieval_metadata = getattr(context, "retrieval_metadata", {}) or {}
                 cursor.execute(
                     """
-                    INSERT INTO retrieved_contexts (
-                        response_id, document_id, chunk_id, source_path_snapshot,
-                        category_snapshot, chunk_index_snapshot, document_hash_snapshot,
-                        chunk_hash_snapshot, rank_position, similarity_score,
-                        semantic_distance, lexical_score, retrieval_score,
-                        retrieval_metadata_json, context_excerpt
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO retrieved_contexts (response_id, document_id, chunk_id, element_id,
+                                                    source_path_snapshot, category_snapshot, chunk_index_snapshot,
+                                                    document_hash_snapshot, chunk_hash_snapshot,
+                                                    page_number_snapshot, content_type_snapshot,
+                                                    extraction_method_snapshot,
+                                                    rank_position, similarity_score, semantic_distance,
+                                                    lexical_score, retrieval_score,
+                                                    retrieval_metadata_json, context_excerpt)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         response_id,
                         context.document_id,
                         context.chunk_id,
+                        getattr(context, "element_id", None),
                         context.source_path,
                         context.category,
                         context.chunk_index,
                         getattr(context, "source_hash", None),
                         hashlib.sha256(context.text.encode("utf-8")).hexdigest(),
+                        getattr(context, "page_number", None),
+                        getattr(context, "content_type", None),
+                        getattr(context, "extraction_method", None),
                         context.rank,
                         similarity,
                         distance,

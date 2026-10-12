@@ -33,6 +33,12 @@ class SearchResult:
     keyword_score: float | None
     document_id: int | None = None
     chunk_id: int | None = None
+    element_id: int | None = None
+    element_index: int | None = None
+    page_number: int | None = None
+    content_type: str | None = None
+    extraction_method: str | None = None
+    extraction_model: str | None = None
     source_hash: str | None = None
     retrieval_score: float | None = None
     retrieval_metadata: dict[str, Any] = field(default_factory=dict)
@@ -139,10 +145,14 @@ def mysql_keyword_search(
         with connection.cursor(dictionary=True) as cursor:
             cursor.execute(
                 f"""SELECT c.chunk_id, c.document_id, c.chunk_index, c.chunk_text,
-                          d.source_path, d.category, d.source_hash,
-                          MATCH(c.chunk_text) AGAINST (%s IN NATURAL LANGUAGE MODE) AS fulltext_score
-                   FROM document_chunks c
-                   JOIN documents d ON d.document_id=c.document_id
+                      c.element_id,
+                      e.element_index, e.page_number, e.content_type,
+                      e.extraction_method, e.extraction_model,
+                      d.source_path, d.category, d.source_hash,
+                      MATCH(c.chunk_text) AGAINST (%s IN NATURAL LANGUAGE MODE) AS fulltext_score
+               FROM document_chunks c
+               JOIN documents d ON d.document_id=c.document_id
+               LEFT JOIN document_elements e ON e.element_id=c.element_id
                    WHERE d.status='ingested'
                      {category_clause}
                      AND MATCH(c.chunk_text) AGAINST (%s IN NATURAL LANGUAGE MODE) > 0
@@ -157,9 +167,13 @@ def mysql_keyword_search(
                 # chunks and applies the documented deterministic lexical rule.
                 cursor.execute(
                     f"""SELECT c.chunk_id, c.document_id, c.chunk_index, c.chunk_text,
-                              d.source_path, d.category, d.source_hash, 0 AS fulltext_score
-                       FROM document_chunks c
-                       JOIN documents d ON d.document_id=c.document_id
+                          c.element_id,
+                          e.element_index, e.page_number, e.content_type,
+                          e.extraction_method, e.extraction_model,
+                          d.source_path, d.category, d.source_hash, 0 AS fulltext_score
+                   FROM document_chunks c
+                   JOIN documents d ON d.document_id=c.document_id
+                   LEFT JOIN document_elements e ON e.element_id=c.element_id
                        WHERE d.status='ingested'
                          {category_clause}
                        ORDER BY c.chunk_id""",
@@ -186,6 +200,12 @@ def mysql_keyword_search(
             keyword_score=float(_lexical),
             document_id=int(row["document_id"]),
             chunk_id=int(row["chunk_id"]),
+            element_id=_optional_int(row.get("element_id")),
+            element_index=_optional_int(row.get("element_index")),
+            page_number=_optional_int(row.get("page_number")),
+            content_type=row.get("content_type"),
+            extraction_method=row.get("extraction_method"),
+            extraction_model=row.get("extraction_model"),
             source_hash=str(row["source_hash"]) if row.get("source_hash") else None,
             retrieval_score=combined,
             retrieval_metadata={
@@ -240,6 +260,12 @@ def semantic_search(
                 keyword_score=lexical_score(question, text or ""),
                 document_id=_optional_int(metadata.get("document_id")),
                 chunk_id=_optional_int(metadata.get("chunk_id")),
+                element_id=_optional_int(metadata.get("element_id")),
+                element_index=_optional_int(metadata.get("element_index")),
+                page_number=_optional_int(metadata.get("page_number")),
+                content_type=metadata.get("content_type"),
+                extraction_method=metadata.get("extraction_method"),
+                extraction_model=metadata.get("extraction_model"),
                 source_hash=(
                     str(metadata.get("source_hash"))
                     if metadata.get("source_hash")

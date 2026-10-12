@@ -1,15 +1,13 @@
-"""Analyze PDF visual content with Gemini."""
+"""Analyze document visuals using a configurable VLM provider."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from google import genai
-from google.genai import types
+from vlm_providers.gemini_provider import GeminiVLMProvider
+from vlm_providers.ollama_provider import OllamaVLMProvider
 
 from settings import Settings
-
-import time
 
 MAX_VISUAL_OUTPUT_TOKENS = 1024
 
@@ -70,83 +68,50 @@ Do not repeat ordinary surrounding document text unless it is necessary to
 understand the visual.
 """.strip()
 
+
 def analyze_visual(
     image_bytes: bytes,
     image_format: str,
     settings: Settings,
 ) -> VisualAnalysis:
-    """Convert an extracted visual into searchable text using Gemini."""
+    """Convert visual content into searchable text using the selected VLM."""
 
     if not image_bytes:
         raise ValueError("Image data cannot be empty.")
 
-    if not settings.llm_api_key:
-        raise RuntimeError(
-            "Gemini API key is not configured. "
-            "Set GEMINI_API_KEY or LLM_API_KEY in the ignored .env file."
+    if settings.vlm_provider == "gemini":
+        provider = GeminiVLMProvider(
+            api_key=settings.llm_api_key,
+            model=settings.vlm_model,
         )
 
-    mime_type = f"image/{image_format.lower()}"
+    elif settings.vlm_provider == "ollama":
+        provider = OllamaVLMProvider(
+            model=settings.vlm_model,
+            base_url=settings.ollama_base_url,
+        )
 
-    client = genai.Client(api_key=settings.llm_api_key)
+    else:
+        raise ValueError(
+            f"Unsupported VLM provider: {settings.vlm_provider}"
+        )
 
-    max_attempts = 3
+    user_instruction = (
+        "Begin your response with exactly one classification line "
+        "using this format: TYPE: image, TYPE: chart, "
+        "TYPE: diagram, TYPE: scanned_page, or TYPE: other. "
+        "Then provide the useful searchable content."
+    )
 
-    try:
-        for attempt in range(1, max_attempts + 1):
-            try:
-                response = client.models.generate_content(
-                    model=settings.llm_chat_model,
-                    contents=[
-                        types.Part.from_bytes(
-                            data=image_bytes,
-                            mime_type=mime_type,
-                        ),
-                        (
-                            "Begin your response with exactly one classification line "
-                            "using this format: TYPE: image, TYPE: chart, "
-                            "TYPE: diagram, TYPE: scanned_page, or TYPE: other. "
-                            "Then provide the useful searchable content."
-                        ),
-                    ],
-                    config=types.GenerateContentConfig(
-                        system_instruction=VISUAL_SYSTEM_INSTRUCTION,
-                        temperature=0.0,
-                        max_output_tokens=MAX_VISUAL_OUTPUT_TOKENS,
-                    ),
-                )
-
-                break
-
-            except Exception as error:
-                error_text = str(error).lower()
-
-                is_temporary_error = (
-                        "503" in error_text
-                        or "unavailable" in error_text
-                        or "high demand" in error_text
-                )
-
-                if not is_temporary_error or attempt == max_attempts:
-                    raise
-
-                wait_seconds = attempt * 2
-
-                print(
-                    f"Warning: Gemini visual analysis attempt "
-                    f"{attempt} failed temporarily. "
-                    f"Retrying in {wait_seconds} seconds..."
-                )
-
-                time.sleep(wait_seconds)
-
-    finally:
-        client.close()
-
-    content = (response.text or "").strip()
+    content = provider.analyze(
+        image_bytes=image_bytes,
+        image_format=image_format,
+        system_instruction=VISUAL_SYSTEM_INSTRUCTION,
+        user_instruction=user_instruction,
+    ).strip()
 
     if not content:
-        raise RuntimeError("Gemini returned an empty visual analysis.")
+        raise RuntimeError("VLM returned an empty visual analysis.")
 
     first_line = content.splitlines()[0].strip().lower()
 
@@ -169,5 +134,5 @@ def analyze_visual(
     return VisualAnalysis(
         content_type=content_type,
         content=content,
-        model=settings.llm_chat_model,
+        model=settings.vlm_model,
     )

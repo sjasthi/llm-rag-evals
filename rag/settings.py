@@ -73,6 +73,9 @@ class Settings:
     llm_provider: str
     llm_api_key: str
     llm_chat_model: str
+    vlm_provider: str
+    vlm_model: str
+    ollama_base_url: str
     llm_temperature: float
     llm_top_p: float
     llm_input_cost_per_million: float
@@ -108,6 +111,15 @@ def load_settings() -> Settings:
         llm_provider=_env_value("LLM_PROVIDER", "gemini").lower(),
         llm_api_key=_env_value("GEMINI_API_KEY", _env_value("LLM_API_KEY")),
         llm_chat_model=_env_value("LLM_CHAT_MODEL", "gemini-2.5-flash"),
+        vlm_provider=_env_value("VLM_PROVIDER", "gemini").lower(),
+        vlm_model=_env_value(
+            "VLM_MODEL",
+            _env_value("LLM_CHAT_MODEL", "gemini-2.5-flash"),
+        ),
+        ollama_base_url=_env_value(
+            "OLLAMA_BASE_URL",
+            "http://127.0.0.1:11434",
+        ),
         llm_temperature=_float_between_zero_and_one("LLM_TEMPERATURE", 0.0),
         llm_top_p=_float_between_zero_and_one("LLM_TOP_P", 0.9),
         llm_input_cost_per_million=_nonnegative_float(

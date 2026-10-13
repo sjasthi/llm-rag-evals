@@ -73,10 +73,15 @@ class V2MultimodalRAGPipelineTests(unittest.TestCase):
                 model="qwen2.5vl:7b",
             )
 
-            with patch(
-                "pdf_processor.analyze_visual",
-                return_value=analysis,
-            ) as mock_analyze:
+            with (
+                patch(
+                    "pdf_processor.analyze_visual",
+                    return_value=analysis,
+                ) as mock_analyze,
+                patch("ingest.load_settings") as mock_settings,
+            ):
+                mock_settings.return_value.vlm_provider = "ollama"
+                mock_settings.return_value.vlm_model = "qwen2.5vl:7b"
                 prepared = prepare_pdf_document(
                     pdf_path,
                     source_path="v2_test/admissions_diagram.pdf",

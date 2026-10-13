@@ -26,3 +26,8 @@ __pycache__/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Local development and multimodal testing artifacts
+/database/backups/
+/rag/chroma_v2_test/
+/test_pdf_ingestion/

@@ -17,6 +17,9 @@ const ALLOWED_UPLOADS = [
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'application/zip',
     ],
+    'png' => ['image/png'],
+    'jpg' => ['image/jpeg'],
+    'jpeg' => ['image/jpeg'],
 ];
 
 function documentResponse(int $status, array $payload): never
@@ -71,7 +74,7 @@ function validatedUpload(array $file): array
     $size = (int) ($file['size'] ?? 0);
     $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
     if (!isset(ALLOWED_UPLOADS[$extension])) {
-        documentResponse(415, ['ok' => false, 'error' => 'Only TXT, PDF, and DOCX files are supported.']);
+        documentResponse(415, ['ok' => false, 'error' => 'Only TXT, PDF, DOCX, PNG and JPEG files are supported.']);
     }
     if ($size < 1 || $size > MAX_UPLOAD_BYTES) {
         documentResponse(422, ['ok' => false, 'error' => 'Document must be between 1 byte and 10 MB.']);

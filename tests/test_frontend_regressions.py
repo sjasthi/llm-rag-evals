@@ -172,8 +172,15 @@ class FrontendRegressionTests(unittest.TestCase):
         self.assertNotIn("documentResponse(500, ['ok' => false, 'error' => $error->getMessage()])", documents_api)
         self.assertIn("--delete-all", admin)
         self.assertIn("Replace existing", index)
-        self.assertIn("Current text-only indexing", index)
-        self.assertIn("not OCR'd, chunked, or embedded", index)
+        self.assertIn("Multimodal indexing enabled", index)
+        self.assertIn('accept=".txt,.pdf,.docx,.png,.jpg,.jpeg"', index)
+        self.assertIn('<option value="png">PNG</option>', index)
+        self.assertIn('<option value="jpg">JPG</option>', index)
+        self.assertIn('<option value="jpeg">JPEG</option>', index)
+        self.assertIn(
+            "Extracted descriptions are chunked and indexed for retrieval.",
+            index,
+        )
         self.assertIn("delete_source_chunks", admin)
         self.assertIn("Vector cleanup verification failed", (PROJECT_ROOT / "rag" / "vector_store.py").read_text(encoding="utf-8"))
         self.assertGreaterEqual(javascript.count("resetAnswer();"), 4)

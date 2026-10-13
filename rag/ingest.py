@@ -15,10 +15,12 @@ from settings import PROJECT_ROOT, load_settings
 
 from chunking import chunk_element
 from pdf_processor import process_pdf, DocumentElement
+from image_processor import process_image
 
 
 DEFAULT_SOURCE_DIR = PROJECT_ROOT / "data" / "metrostate_documents"
 
+MULTIMODAL_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg"})
 
 @dataclass(frozen=True)
 class Chunk:
@@ -63,7 +65,10 @@ def read_documents(source_dir: Path) -> list[Path]:
     return sorted(
         path
         for path in source_dir.rglob("*")
-        if path.is_file() and path.suffix.lower() in {".txt", ".pdf", ".docx"}
+        if path.is_file()
+        and path.suffix.lower() in (
+                {".txt", ".pdf", ".docx"} | MULTIMODAL_IMAGE_EXTENSIONS
+        )
     )
 
 
@@ -92,6 +97,56 @@ def stable_chroma_id(source_path: str, chunk_index: int) -> str:
     path_hash = hashlib.sha256(source_path.encode("utf-8")).hexdigest()[:20]
     return f"doc-{path_hash}-chunk-{chunk_index:04d}"
 
+
+def prepare_element_chunks(
+    elements: list[DocumentElement],
+    *,
+    source_path: str,
+    category: str,
+    source_hash: str,
+    source_type: str,
+    original_filename: str,
+    chunk_size: int,
+) -> list[Chunk]:
+    """Convert extracted document elements into retrieval chunks.
+
+    Preserve element provenance while assigning document-wide chunk
+    indexes and stable ChromaDB identifiers.
+    """
+    chunks: list[Chunk] = []
+
+    for element in elements:
+        for element_chunk in chunk_element(
+            element,
+            max_chars=chunk_size,
+        ):
+            chunk_index = len(chunks)
+
+            chunks.append(
+                Chunk(
+                    source_path=source_path,
+                    category=category,
+                    chunk_index=chunk_index,
+                    text=element_chunk.content,
+                    source_hash=source_hash,
+                    chroma_id=stable_chroma_id(
+                        source_path,
+                        chunk_index,
+                    ),
+                    source_type=source_type,
+                    original_filename=original_filename,
+                    page_number=element_chunk.page_number,
+                    element_index=element_chunk.element_index,
+                    element_chunk_index=element_chunk.chunk_index,
+                    content_type=element_chunk.content_type,
+                    extraction_method=element_chunk.extraction_method,
+                    extraction_model=element_chunk.extraction_model,
+                )
+            )
+
+    return chunks
+
+
 def prepare_pdf_document(
     document_path: Path,
     *,
@@ -112,39 +167,15 @@ def prepare_pdf_document(
         document_path.read_bytes()
     ).hexdigest()
 
-    chunks: list[Chunk] = []
-    document_chunk_index = 0
-
-    for element in elements:
-        element_chunks = chunk_element(
-            element,
-            max_chars=chunk_size,
-        )
-
-        for element_chunk in element_chunks:
-            chunks.append(
-                Chunk(
-                    source_path=source_path,
-                    category=category,
-                    chunk_index=document_chunk_index,
-                    text=element_chunk.content,
-                    source_hash=source_hash,
-                    chroma_id=stable_chroma_id(
-                        source_path,
-                        document_chunk_index,
-                    ),
-                    source_type="pdf",
-                    original_filename=document_path.name,
-                    page_number=element_chunk.page_number,
-                    element_index=element_chunk.element_index,
-                    element_chunk_index=element_chunk.chunk_index,
-                    content_type=element_chunk.content_type,
-                    extraction_method=element_chunk.extraction_method,
-                    extraction_model=element_chunk.extraction_model,
-                )
-            )
-
-            document_chunk_index += 1
+    chunks = prepare_element_chunks(
+        elements,
+        source_path=source_path,
+        category=category,
+        source_hash=source_hash,
+        source_type="pdf",
+        original_filename=document_path.name,
+        chunk_size=chunk_size,
+    )
 
     if not chunks:
         raise ValueError(
@@ -156,6 +187,74 @@ def prepare_pdf_document(
         chunks=chunks,
         elements=elements,
     )
+
+def prepare_image_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Build searchable retrieval chunks from a standalone PNG/JPEG image."""
+    settings = load_settings()
+
+    elements = process_image(
+        document_path,
+        settings,
+    )
+
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    chunks = prepare_element_chunks(
+        elements,
+        source_path=source_path,
+        category=category,
+        source_hash=source_hash,
+        source_type=document_path.suffix.lower().lstrip("."),
+        original_filename=document_path.name,
+        chunk_size=chunk_size,
+    )
+
+    if not chunks:
+        raise ValueError(
+            f"No retrieval chunks could be created from image: "
+            f"{document_path.name}"
+        )
+
+    return PreparedDocument(
+        chunks=chunks,
+        elements=elements,
+    )
+
+def prepare_multimodal_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Dispatch PDFs and standalone images to their extraction pipelines."""
+    extension = document_path.suffix.lower()
+
+    if extension == ".pdf":
+        return prepare_pdf_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
+
+    if extension in MULTIMODAL_IMAGE_EXTENSIONS:
+        return prepare_image_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
+
+    raise ValueError(f"Unsupported multimodal document type: {extension}")
 
 def build_pdf_chunks(
     document_path: Path,
@@ -188,8 +287,10 @@ def build_prepared_documents(
         source_path = document_path.relative_to(PROJECT_ROOT).as_posix()
         category = document_path.parent.name
 
-        if document_path.suffix.lower() == ".pdf":
-            prepared = prepare_pdf_document(
+        if document_path.suffix.lower() == ".pdf" or (
+                document_path.suffix.lower() in MULTIMODAL_IMAGE_EXTENSIONS
+        ):
+            prepared = prepare_multimodal_document(
                 document_path,
                 source_path=source_path,
                 category=category,
@@ -221,8 +322,10 @@ def build_chunks(source_dir: Path, chunk_size: int, overlap: int) -> list[Chunk]
         relative_path = document_path.relative_to(PROJECT_ROOT).as_posix()
         category = document_path.parent.name
 
-        if document_path.suffix.lower() == ".pdf":
-            prepared = prepare_pdf_document(
+        if document_path.suffix.lower() == ".pdf" or (
+                document_path.suffix.lower() in MULTIMODAL_IMAGE_EXTENSIONS
+        ):
+            prepared = prepare_multimodal_document(
                 document_path,
                 source_path=relative_path,
                 category=category,
@@ -354,8 +457,10 @@ def ingest_document(
         initialize_schema(settings)
 
     try:
-        if source_type == "pdf":
-            prepared = prepare_pdf_document(
+        if source_type == "pdf" or (
+                document_path.suffix.lower() in MULTIMODAL_IMAGE_EXTENSIONS
+        ):
+            prepared = prepare_multimodal_document(
                 document_path,
                 source_path=source_path,
                 category=category,

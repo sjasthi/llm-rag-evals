@@ -327,10 +327,12 @@ require __DIR__ . '/includes/header.php';
 
                     <form class="upload-dropzone" id="documentUploadForm" enctype="multipart/form-data">
                         <strong>Add source material</strong>
-                        <span>TXT, text-based PDF, or DOCX · server-side validation · maximum 10 MB</span>
+                        <span>TXT, PDF, DOCX, PNG, and JPEG files (maximum 10 MB)</span>
                         <p class="document-ingestion-scope">
-                            <strong>Current text-only indexing:</strong>
-                            Embedded pictures, charts, and scanned pages remain in the source file but are not OCR'd, chunked, or embedded.
+                            <strong>Multimodal indexing enabled:</strong>
+                           PDFs support text, table, and visual extraction, including embedded images and supported charts
+                           and diagrams. PNG and JPEG files are analyzed using the configured vision model.
+                           Extracted descriptions are chunked and indexed for retrieval.
                         </p>
                         <label class="form-label" for="documentFile">Document</label>
                         <input
@@ -338,7 +340,7 @@ require __DIR__ . '/includes/header.php';
                             id="documentFile"
                             name="document"
                             type="file"
-                            accept=".txt,.pdf,.docx"
+                            accept=".txt,.pdf,.docx,.png,.jpg,.jpeg"
                             required
                         >
                         <div class="row g-2 mt-1">
@@ -411,6 +413,9 @@ require __DIR__ . '/includes/header.php';
                                     <option value="txt">TXT</option>
                                     <option value="pdf">PDF</option>
                                     <option value="docx">DOCX</option>
+                                    <option value="png">PNG</option>
+                                    <option value="jpg">JPG</option>
+                                    <option value="jpeg">JPEG</option>
                                 </select>
                             </label>
                             <label>

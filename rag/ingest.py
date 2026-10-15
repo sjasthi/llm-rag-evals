@@ -16,11 +16,15 @@ from settings import PROJECT_ROOT, load_settings
 from chunking import chunk_element
 from pdf_processor import process_pdf, DocumentElement
 from image_processor import process_image
+from markdown_processor import process_markdown
 
 
 DEFAULT_SOURCE_DIR = PROJECT_ROOT / "data" / "metrostate_documents"
 
 MULTIMODAL_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg"})
+STRUCTURED_DOCUMENT_EXTENSIONS = (
+    MULTIMODAL_IMAGE_EXTENSIONS | {".pdf", ".md"}
+)
 
 @dataclass(frozen=True)
 class Chunk:
@@ -67,7 +71,7 @@ def read_documents(source_dir: Path) -> list[Path]:
         for path in source_dir.rglob("*")
         if path.is_file()
         and path.suffix.lower() in (
-                {".txt", ".pdf", ".docx"} | MULTIMODAL_IMAGE_EXTENSIONS
+                {".txt", ".pdf", ".docx", ".md"} | MULTIMODAL_IMAGE_EXTENSIONS
         )
     )
 
@@ -228,6 +232,42 @@ def prepare_image_document(
         elements=elements,
     )
 
+def prepare_markdown_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Build structured retrieval chunks from a Markdown document."""
+
+    elements = process_markdown(document_path)
+
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    chunks = prepare_element_chunks(
+        elements,
+        source_path=source_path,
+        category=category,
+        source_hash=source_hash,
+        source_type="md",
+        original_filename=document_path.name,
+        chunk_size=chunk_size,
+    )
+
+    if not chunks:
+        raise ValueError(
+            f"No retrieval chunks could be created from Markdown: "
+            f"{document_path.name}"
+        )
+
+    return PreparedDocument(
+        chunks=chunks,
+        elements=elements,
+    )
+
 def prepare_multimodal_document(
     document_path: Path,
     *,
@@ -248,6 +288,14 @@ def prepare_multimodal_document(
 
     if extension in MULTIMODAL_IMAGE_EXTENSIONS:
         return prepare_image_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
+
+    if extension == ".md":
+        return prepare_markdown_document(
             document_path,
             source_path=source_path,
             category=category,
@@ -288,7 +336,7 @@ def build_prepared_documents(
         category = document_path.parent.name
 
         if document_path.suffix.lower() == ".pdf" or (
-                document_path.suffix.lower() in MULTIMODAL_IMAGE_EXTENSIONS
+                document_path.suffix.lower() in STRUCTURED_DOCUMENT_EXTENSIONS
         ):
             prepared = prepare_multimodal_document(
                 document_path,
@@ -323,7 +371,7 @@ def build_chunks(source_dir: Path, chunk_size: int, overlap: int) -> list[Chunk]
         category = document_path.parent.name
 
         if document_path.suffix.lower() == ".pdf" or (
-                document_path.suffix.lower() in MULTIMODAL_IMAGE_EXTENSIONS
+                document_path.suffix.lower() in STRUCTURED_DOCUMENT_EXTENSIONS
         ):
             prepared = prepare_multimodal_document(
                 document_path,
@@ -397,8 +445,8 @@ def prepare_document_chunks(
 ) -> list[Chunk]:
     """Prepare retrieval chunks for one document without persisting them."""
 
-    if document_path.suffix.lower() == ".pdf":
-        return prepare_pdf_document(
+    if document_path.suffix.lower() in STRUCTURED_DOCUMENT_EXTENSIONS:
+        return prepare_multimodal_document(
             document_path,
             source_path=source_path,
             category=category,
@@ -458,7 +506,7 @@ def ingest_document(
 
     try:
         if source_type == "pdf" or (
-                document_path.suffix.lower() in MULTIMODAL_IMAGE_EXTENSIONS
+                document_path.suffix.lower() in STRUCTURED_DOCUMENT_EXTENSIONS
         ):
             prepared = prepare_multimodal_document(
                 document_path,

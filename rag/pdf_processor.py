@@ -17,7 +17,7 @@ class DocumentElement:
 
     content_type: str
     content: str
-    page_number: int
+    page_number: int | None
     element_index: int
     extraction_method: str
     extraction_model: str | None = None

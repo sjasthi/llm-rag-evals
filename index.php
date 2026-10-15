@@ -327,7 +327,7 @@ require __DIR__ . '/includes/header.php';
 
                     <form class="upload-dropzone" id="documentUploadForm" enctype="multipart/form-data">
                         <strong>Add source material</strong>
-                        <span>TXT, PDF, DOCX, PNG, and JPEG files (maximum 10 MB)</span>
+                        <span>TXT, MD, PDF, DOCX, PNG, and JPEG files (maximum 10 MB)</span>
                         <p class="document-ingestion-scope">
                             <strong>Multimodal indexing enabled:</strong>
                            PDFs support text, table, and visual extraction, including embedded images and supported charts
@@ -340,7 +340,7 @@ require __DIR__ . '/includes/header.php';
                             id="documentFile"
                             name="document"
                             type="file"
-                            accept=".txt,.pdf,.docx,.png,.jpg,.jpeg"
+                            accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg"
                             required
                         >
                         <div class="row g-2 mt-1">
@@ -411,6 +411,7 @@ require __DIR__ . '/includes/header.php';
                                 <select class="form-select form-select-sm" id="documentTypeFilter">
                                     <option value="">All types</option>
                                     <option value="txt">TXT</option>
+                                    <option value="md">MD</option>
                                     <option value="pdf">PDF</option>
                                     <option value="docx">DOCX</option>
                                     <option value="png">PNG</option>

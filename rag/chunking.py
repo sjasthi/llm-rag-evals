@@ -15,7 +15,7 @@ class ElementChunk:
 
     content: str
     content_type: str
-    page_number: int
+    page_number: int | None
     element_index: int
     chunk_index: int
     extraction_method: str

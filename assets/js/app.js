@@ -1010,6 +1010,7 @@ $(function () {
         return {
             mysql_keyword: "Keyword search",
             chroma_vector: "Vector search",
+            hybrid_rrf: "Hybrid search",
         }[String(method || "")] || titleCaseLabel(method, "Retrieval not recorded");
     }
 

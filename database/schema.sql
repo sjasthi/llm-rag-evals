@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS evaluation_question_memberships (
 CREATE TABLE IF NOT EXISTS model_settings (
     setting_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     setting_name VARCHAR(120) NOT NULL,
-    retrieval_method ENUM('mysql_keyword', 'chroma_vector') NOT NULL,
+    retrieval_method ENUM('mysql_keyword', 'chroma_vector', 'hybrid_rrf') NOT NULL,
     llm_provider VARCHAR(80) NOT NULL,
     chat_model VARCHAR(120) NOT NULL,
     embedding_model VARCHAR(120) NULL,
@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS rag_responses (
     question_id BIGINT UNSIGNED NULL,
     question_text TEXT NOT NULL,
     answer_text MEDIUMTEXT NOT NULL,
-    retrieval_method ENUM('mysql_keyword', 'chroma_vector') NOT NULL,
+    retrieval_method ENUM('mysql_keyword', 'chroma_vector', 'hybrid_rrf') NOT NULL,
     latency_ms INT UNSIGNED NULL,
     estimated_cost DECIMAL(12,8) NULL,
     evaluation_snapshot_json JSON NULL,

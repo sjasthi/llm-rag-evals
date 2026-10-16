@@ -122,7 +122,7 @@ def create_run(
         raise ValueError("limit must be greater than zero")
     if question_ids is not None and any(int(value) <= 0 for value in question_ids):
         raise ValueError("question_ids must contain positive integers")
-    if retrieval_method not in {"chroma_vector", "mysql_keyword"}:
+    if retrieval_method not in {"chroma_vector", "mysql_keyword", "hybrid_rrf",}:
         raise ValueError(f"Unsupported retrieval method {retrieval_method!r}")
     if top_k is not None and top_k <= 0:
         raise ValueError("top_k must be greater than zero")
@@ -479,7 +479,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument(
         "--retrieval",
-        choices=("chroma_vector", "mysql_keyword"),
+        choices=("chroma_vector", "mysql_keyword", "hybrid_rrf",),
         default="chroma_vector",
     )
     parser.add_argument("--top-k", type=int)

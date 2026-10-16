@@ -113,6 +113,115 @@ class MarkdownProcessorTests(unittest.TestCase):
         self.assertEqual(len(elements), 1)
         self.assertIn("# Not a Markdown heading", elements[0].content)
 
+    def test_extracts_mermaid_diagram_as_separate_element(self):
+        self.write_markdown(
+            "# Application Process\n\n"
+            "Students must complete the application process.\n\n"
+            "```mermaid\n"
+            "flowchart TD\n"
+            "    A[Submit Application] --> B{Requirements Met?}\n"
+            "    B -->|Yes| C[Accepted]\n"
+            "    B -->|No| D[Rejected]\n"
+            "```\n"
+        )
+
+        elements = process_markdown(self.path)
+
+        self.assertEqual(len(elements), 2)
+        self.assertEqual(
+            [e.content_type for e in elements],
+            ["text", "diagram"],
+        )
+        self.assertEqual(elements[1].extraction_method, "mermaid_source")
+        self.assertIsNone(elements[1].extraction_model)
+        self.assertIsNone(elements[1].page_number)
+        self.assertIn("flowchart TD", elements[1].content)
+        self.assertIn("B -->|No| D[Rejected]", elements[1].content)
+        self.assertTrue(elements[1].content.startswith("```mermaid"))
+        self.assertTrue(elements[1].content.endswith("```"))
+
+    def test_preserves_order_of_text_table_and_mermaid(self):
+        self.write_markdown(
+            "# Workshop\n\n"
+            "Workshop details.\n\n"
+            "| Session | Time |\n"
+            "|---|---|\n"
+            "| Python | 9:00 AM |\n\n"
+            "```mermaid\n"
+            "flowchart LR\n"
+            "    A[Register] --> B[Attend]\n"
+            "```\n\n"
+            "## Conclusion\n\n"
+            "Thank you for attending.\n"
+        )
+
+        elements = process_markdown(self.path)
+
+        self.assertEqual(
+            [e.content_type for e in elements],
+            ["text", "table", "diagram", "text"],
+        )
+        self.assertEqual(
+            [e.element_index for e in elements],
+            [1, 2, 3, 4],
+        )
+        self.assertIn("Register", elements[2].content)
+        self.assertIn("Conclusion", elements[3].content)
+
+    def test_extracts_multiple_mermaid_diagrams(self):
+        self.write_markdown(
+            "# Two Processes\n\n"
+            "```mermaid\n"
+            "flowchart LR\n"
+            "    A[Start] --> B[Finish]\n"
+            "```\n\n"
+            "```mermaid\n"
+            "flowchart TD\n"
+            "    C[Submit] --> D[Review]\n"
+            "```\n"
+        )
+
+        elements = process_markdown(self.path)
+        diagrams = [e for e in elements if e.content_type == "diagram"]
+
+        self.assertEqual(len(diagrams), 2)
+        self.assertIn("A[Start] --> B[Finish]", diagrams[0].content)
+        self.assertIn("C[Submit] --> D[Review]", diagrams[1].content)
+        self.assertTrue(
+            all(e.extraction_method == "mermaid_source" for e in diagrams)
+        )
+
+    def test_recognizes_case_insensitive_mermaid_and_tilde_fence(self):
+        self.write_markdown(
+            "# Diagram\n\n"
+            "~~~Mermaid\n"
+            "flowchart LR\n"
+            "    A[Input] --> B[Output]\n"
+            "~~~\n"
+        )
+
+        elements = process_markdown(self.path)
+
+        self.assertEqual(len(elements), 2)
+        self.assertEqual(elements[1].content_type, "diagram")
+        self.assertEqual(elements[1].extraction_method, "mermaid_source")
+        self.assertIn("A[Input] --> B[Output]", elements[1].content)
+
+    def test_unclosed_mermaid_fence_remains_text(self):
+        self.write_markdown(
+            "# Incomplete Diagram\n\n"
+            "```mermaid\n"
+            "flowchart TD\n"
+            "    A[Start] --> B[End]\n"
+        )
+
+        elements = process_markdown(self.path)
+
+        self.assertEqual(len(elements), 1)
+        self.assertEqual(elements[0].content_type, "text")
+        self.assertEqual(elements[0].extraction_method, "markdown_parser")
+        self.assertIn("```mermaid", elements[0].content)
+
     def test_rejects_empty_markdown(self):
         self.write_markdown(" \n \n")
 

@@ -48,7 +48,7 @@ $paidGenerationEnabled = filter_var(
     FILTER_VALIDATE_BOOLEAN
 );
 $defaultRetrievalMethod = envValue('RETRIEVAL_METHOD', 'chroma_vector');
-if (!in_array($defaultRetrievalMethod, ['chroma_vector', 'mysql_keyword'], true)) {
+if (!in_array($defaultRetrievalMethod, ['chroma_vector', 'mysql_keyword', 'hybrid_rrf'], true)) {
     $defaultRetrievalMethod = 'chroma_vector';
 }
 $defaultTopK = max(1, min(10, (int) envValue('RETRIEVAL_TOP_K', '3')));
@@ -224,6 +224,7 @@ require __DIR__ . '/includes/header.php';
                                     <select class="form-select" id="chatRetrievalMethod" data-default="<?= h($defaultRetrievalMethod) ?>">
                                         <option value="chroma_vector" <?= $defaultRetrievalMethod === 'chroma_vector' ? 'selected' : '' ?>>Vector search (recommended)</option>
                                         <option value="mysql_keyword" <?= $defaultRetrievalMethod === 'mysql_keyword' ? 'selected' : '' ?>>Keyword search</option>
+                                        <option value="hybrid_rrf" <?= $defaultRetrievalMethod === 'hybrid_rrf' ? 'selected' : '' ?>>Hybrid search (Vector + Keyword)</option>
                                     </select>
                                     <small>Vector finds similar meaning; keyword favors exact words and dates.</small>
                                 </label>
@@ -587,6 +588,7 @@ require __DIR__ . '/includes/header.php';
                                 <select class="form-select form-select-sm" id="newTestRetrieval">
                                     <option value="chroma_vector">Vector search</option>
                                     <option value="mysql_keyword">Keyword search</option>
+                                    <option value="hybrid_rrf">Hybrid search (Vector + Keyword)</option>
                                 </select>
                             </label>
                             <label>

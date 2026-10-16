@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 
 from pdf_processor import DocumentElement
+from mermaid_processor import describe_mermaid_flowchart
 
 
 
@@ -49,6 +50,21 @@ def chunk_element(
             element.content,
             max_chars=max_chars,
         )
+
+    elif (
+        element.content_type == "diagram"
+        and element.extraction_method == "mermaid_source"
+    ):
+        description = describe_mermaid_flowchart(element.content)
+
+        if description:
+            contents = [
+                description
+                + "\n\nOriginal Mermaid source:\n"
+                + element.content.strip()
+            ]
+        else:
+            contents = [element.content.strip()]
 
     elif element.content_type in VISUAL_CONTENT_TYPES:
         contents = [element.content.strip()]

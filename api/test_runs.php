@@ -105,7 +105,7 @@ function runTestCommand(array $payload): array
     if ($name === '' || strlen($name) > 120) {
         testRunResponse(422, ['ok' => false, 'error' => 'Give the saved test a name of 1 to 120 characters.']);
     }
-    if (!in_array($retrieval, ['chroma_vector', 'mysql_keyword'], true)) {
+    if (!in_array($retrieval, ['chroma_vector', 'mysql_keyword', 'hybrid_rrf'], true)) {
         testRunResponse(422, ['ok' => false, 'error' => 'Choose vector or keyword retrieval.']);
     }
     if ($topK === false || $temperature === false || $topP === false) {

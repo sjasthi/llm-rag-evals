@@ -22,7 +22,12 @@ from llm import (
     generate_with_gemini,
 )
 from provenance import code_provenance
-from query import SearchResult, mysql_keyword_search, semantic_search
+from query import (
+    SearchResult,
+    hybrid_rrf_search,
+    mysql_keyword_search,
+    semantic_search,
+)
 from settings import Settings, load_settings
 
 
@@ -72,7 +77,7 @@ def answer_question(
         raise ValueError("Question cannot be empty")
     if top_k <= 0:
         raise ValueError("top_k must be greater than zero")
-    if retrieval_method not in {"chroma_vector", "mysql_keyword"}:
+    if retrieval_method not in {"chroma_vector", "mysql_keyword","hybrid_rrf"}:
         raise ValueError(f"Unsupported retrieval method {retrieval_method!r}")
 
     base_settings = load_settings()
@@ -94,11 +99,12 @@ def answer_question(
         llm_top_p=selected_top_p,
     )
     started_at = time.perf_counter()
-    contexts = (
-        semantic_search(question, top_k, categories)
-        if retrieval_method == "chroma_vector"
-        else mysql_keyword_search(question, top_k, categories)
-    )
+    if retrieval_method == "chroma_vector":
+        contexts = semantic_search(question, top_k, categories)
+    elif retrieval_method == "mysql_keyword":
+        contexts = mysql_keyword_search(question, top_k, categories)
+    else:
+        contexts = hybrid_rrf_search(question, top_k, categories)
     if not contexts:
         raise RuntimeError(f"{retrieval_method} returned no matching source chunks.")
     prompt = build_grounded_prompt(question, contexts)
@@ -208,11 +214,12 @@ def dry_run(
     retrieval_method: str = "chroma_vector",
     categories: list[str] | None = None,
 ) -> tuple[str, list[SearchResult]]:
-    contexts = (
-        semantic_search(question, top_k, categories)
-        if retrieval_method == "chroma_vector"
-        else mysql_keyword_search(question, top_k, categories)
-    )
+    if retrieval_method == "chroma_vector":
+        contexts = semantic_search(question, top_k, categories)
+    elif retrieval_method == "mysql_keyword":
+        contexts = mysql_keyword_search(question, top_k, categories)
+    else:
+        contexts = hybrid_rrf_search(question, top_k, categories)
     return build_grounded_prompt(question, contexts), contexts
 
 
@@ -228,7 +235,7 @@ def main() -> None:
     parser.add_argument("--top-p", type=float, default=settings.llm_top_p)
     parser.add_argument(
         "--retrieval",
-        choices=("chroma_vector", "mysql_keyword"),
+        choices=("chroma_vector", "mysql_keyword", "hybrid_rrf"),
         default="chroma_vector",
     )
     parser.add_argument(

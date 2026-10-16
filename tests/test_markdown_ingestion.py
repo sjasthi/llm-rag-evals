@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rag"))
 from ingest import (
     prepare_multimodal_document,
     prepare_document_chunks,
+    prepare_markdown_document,
     read_documents,
     stable_chroma_id,
 )
@@ -116,6 +117,52 @@ class MarkdownIngestionTests(unittest.TestCase):
 
         self.assertEqual(documents, [self.path])
 
+    def test_mermaid_diagram_becomes_searchable_chunk(self):
+        self.path.write_text(
+            "# Application Review\n\n"
+            "The admissions office reviews student applications.\n\n"
+            "```mermaid\n"
+            "flowchart TD\n"
+            "    A[Submit Application] --> B{Requirements Met?}\n"
+            "    B -->|Yes| C[Application Accepted]\n"
+            "    B -->|No| D[Application Rejected]\n"
+            "```\n",
+            encoding="utf-8",
+        )
+
+        prepared = prepare_markdown_document(
+            self.path,
+            source_path="test_document.md",
+            category="admissions",
+            chunk_size=800,
+        )
+
+        diagram_elements = [
+            element
+            for element in prepared.elements
+            if element.content_type == "diagram"
+        ]
+
+        diagram_chunks = [
+            chunk
+            for chunk in prepared.chunks
+            if chunk.content_type == "diagram"
+        ]
+
+        self.assertEqual(len(diagram_elements), 1)
+        self.assertEqual(len(diagram_chunks), 1)
+
+        diagram = diagram_elements[0]
+        chunk = diagram_chunks[0]
+
+        self.assertEqual(diagram.extraction_method, "mermaid_source")
+        self.assertEqual(chunk.extraction_method, "mermaid_source")
+        self.assertEqual(chunk.source_type, "md")
+        self.assertIsNone(chunk.extraction_model)
+        self.assertIsNone(chunk.page_number)
+
+        self.assertIn("B -->|Yes| C[Application Accepted]", chunk.text)
+        self.assertIn("B -->|No| D[Application Rejected]", chunk.text)
 
 if __name__ == "__main__":
     unittest.main()

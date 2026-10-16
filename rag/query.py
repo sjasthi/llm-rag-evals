@@ -18,7 +18,7 @@ STOPWORDS = {
     "a", "an", "and", "are", "does", "for", "in", "is", "of", "the", "to", "what", "when",
 }
 
-SEMANTIC_CANDIDATE_MINIMUM = 20
+SEMANTIC_CANDIDATE_MINIMUM = 50
 LEXICAL_RERANK_WEIGHT = 0.05
 
 
@@ -71,6 +71,19 @@ def retrieval_provenance(retrieval_method: str) -> dict[str, Any]:
             "version": "filesystem-lexical-v1",
             "label": "Filesystem lexical troubleshooting baseline",
             "final_score": "lexical_score",
+            "score_direction": "higher_is_better",
+        }
+    if retrieval_method == "hybrid_rrf":
+        return {
+            "version": "hybrid-rrf-v1",
+            "label": "ChromaDB + MySQL Reciprocal Rank Fusion",
+            "fusion_constant": 60,
+            "candidate_minimum": 50,
+            "candidate_top_k_multiplier": 10,
+            "source_methods": [
+                "chroma_vector",
+                "mysql_keyword",
+            ],
             "score_direction": "higher_is_better",
         }
     raise ValueError(f"Unsupported retrieval method {retrieval_method!r}")
@@ -300,6 +313,110 @@ def semantic_search(
         )
     return output
 
+def reciprocal_rank_fusion(
+    result_lists: list[list[SearchResult]],
+    top_k: int,
+    k: int = 60,
+) -> list[SearchResult]:
+    """Combine independently ranked retrieval results using RRF."""
+    if top_k <= 0:
+        raise ValueError("top_k must be greater than zero")
+    if k <= 0:
+        raise ValueError("RRF constant must be greater than zero")
+
+    scores: dict[tuple, float] = {}
+    matches: dict[tuple, SearchResult] = {}
+    contributions: dict[tuple, list[dict[str, Any]]] = {}
+
+    for method_index, results in enumerate(result_lists):
+        seen_in_method: set[tuple] = set()
+
+        for position, result in enumerate(results, start=1):
+            if result.chunk_id is not None:
+                key = ("chunk_id", result.chunk_id)
+            else:
+                key = (
+                    "source",
+                    result.source_path,
+                    result.chunk_index,
+                )
+
+            if key in seen_in_method:
+                continue
+
+            seen_in_method.add(key)
+
+            contribution = 1.0 / (k + position)
+            scores[key] = scores.get(key, 0.0) + contribution
+
+            contributions.setdefault(key, []).append(
+                {
+                    "method_index": method_index,
+                    "rank": position,
+                    "contribution": contribution,
+                }
+            )
+
+            if key not in matches:
+                matches[key] = result
+            elif (
+                matches[key].element_id is None
+                and result.element_id is not None
+            ):
+                matches[key] = result
+
+    ranked_keys = sorted(
+        scores,
+        key=lambda key: (-scores[key], str(key)),
+    )[:top_k]
+
+    return [
+        SearchResult(
+            **{
+                **asdict(matches[key]),
+                "rank": rank,
+                "retrieval_score": scores[key],
+                "retrieval_metadata": {
+                    "version": "rrf-v1",
+                    "label": "Reciprocal Rank Fusion",
+                    "rrf_k": k,
+                    "score_direction": "higher_is_better",
+                    "contributions": contributions[key],
+                },
+            }
+        )
+        for rank, key in enumerate(ranked_keys, start=1)
+    ]
+
+def hybrid_rrf_search(
+    question: str,
+    top_k: int,
+    categories: list[str] | None = None,
+) -> list[SearchResult]:
+    """Combine ChromaDB and MySQL retrieval using Reciprocal Rank Fusion."""
+    if not question.strip():
+        raise ValueError("Question cannot be empty")
+    if top_k <= 0:
+        raise ValueError("top_k must be greater than zero")
+
+    candidate_count = max(top_k * 10, 50)
+
+    chroma_results = semantic_search(
+        question,
+        candidate_count,
+        categories,
+    )
+    mysql_results = mysql_keyword_search(
+        question,
+        candidate_count,
+        categories,
+    )
+
+    return reciprocal_rank_fusion(
+        [chroma_results, mysql_results],
+        top_k=top_k,
+        k=60,
+    )
 
 def _optional_int(value: Any) -> int | None:
     return int(value) if value is not None else None
@@ -311,7 +428,7 @@ def main() -> None:
     parser.add_argument("question")
     parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR)
     parser.add_argument("--top-k", type=int, default=5)
-    parser.add_argument("--retrieval", choices=("chroma", "mysql", "keyword"), default="chroma")
+    parser.add_argument("--retrieval", choices=("chroma", "mysql", "keyword", "hybrid"), default="chroma")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
@@ -329,6 +446,8 @@ def main() -> None:
             )
         elif args.retrieval == "mysql":
             matches = mysql_keyword_search(args.question, args.top_k)
+        elif args.retrieval == "hybrid":
+            matches = hybrid_rrf_search(args.question, args.top_k)
         else:
             matches = semantic_search(args.question, args.top_k)
     except Exception as error:

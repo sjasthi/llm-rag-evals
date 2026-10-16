@@ -53,7 +53,11 @@ def process_markdown(path: Path) -> list[DocumentElement]:
     text_buffer: list[str] = []
     index = 0
 
-    def append_element(content_type: str, content: str) -> None:
+    def append_element(
+            content_type: str,
+            content: str,
+            extraction_method: str = "markdown_parser",
+    ) -> None:
         content = content.strip()
         if not content:
             return
@@ -64,7 +68,7 @@ def process_markdown(path: Path) -> list[DocumentElement]:
                 content=content,
                 page_number=None,
                 element_index=len(elements) + 1,
-                extraction_method="markdown_parser",
+                extraction_method=extraction_method,
             )
         )
 
@@ -78,12 +82,21 @@ def process_markdown(path: Path) -> list[DocumentElement]:
 
         # Preserve fenced code blocks as text, without interpreting
         # headings or table syntax inside the code fence.
+        # Preserve regular code fences as text, but extract Mermaid
+        # fences as structured diagram elements.
         fence = _FENCE_START.match(line)
 
         if fence:
             fence_char = fence.group(1)[0]
             fence_length = len(fence.group(1))
-            text_buffer.append(line)
+
+            # Mermaid fences use a language identifier of "mermaid".
+            language = fence.group(2).strip().split(maxsplit=1)
+            is_mermaid = bool(
+                language and language[0].lower() == "mermaid"
+            )
+
+            fence_lines = [line]
             index += 1
 
             closing_fence = re.compile(
@@ -91,13 +104,27 @@ def process_markdown(path: Path) -> list[DocumentElement]:
                 rf"{{{fence_length},}}\s*$"
             )
 
+            closed = False
+
             while index < len(lines):
                 code_line = lines[index]
-                text_buffer.append(code_line)
+                fence_lines.append(code_line)
                 index += 1
 
                 if closing_fence.match(code_line):
+                    closed = True
                     break
+
+            if is_mermaid and closed:
+                flush_text()
+
+                append_element(
+                    "diagram",
+                    "\n".join(fence_lines),
+                    extraction_method="mermaid_source",
+                )
+            else:
+                text_buffer.extend(fence_lines)
 
             continue
 

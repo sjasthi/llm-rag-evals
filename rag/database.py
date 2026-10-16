@@ -738,7 +738,7 @@ def get_or_create_model_setting(
     chunking_strategy: str = "fixed_character",
     chunking_configuration: dict[str, Any] | None = None,
 ) -> int:
-    if retrieval_method not in {"chroma_vector", "mysql_keyword"}:
+    if retrieval_method not in {"chroma_vector", "mysql_keyword", "hybrid_rrf"}:
         raise ValueError(f"Unsupported retrieval method {retrieval_method!r}")
     if chunking_configuration is None:
         chunking_configuration = {"chunk_size": chunk_size, "chunk_overlap": chunk_overlap}

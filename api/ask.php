@@ -73,7 +73,7 @@ function requestConfiguration(array $payload): array
     }
 
     $retrievalMethod = $payload['retrieval_method'] ?? 'chroma_vector';
-    if (!is_string($retrievalMethod) || !in_array($retrievalMethod, ['chroma_vector', 'mysql_keyword'], true)) {
+    if (!is_string($retrievalMethod) || !in_array($retrievalMethod, ['chroma_vector', 'mysql_keyword', 'hybrid_rrf'], true)) {
         jsonResponse(422, ['ok' => false, 'error' => 'Choose vector or keyword retrieval.']);
     }
 

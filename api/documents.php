@@ -12,7 +12,7 @@ const DOCUMENT_TIMEOUT_SECONDS = 120;
 const BUNDLED_RESTORE_TIMEOUT_SECONDS = 300;
 const ALLOWED_UPLOADS = [
     'txt' => ['text/plain'],
-    'md' => ['text/plain', 'text/markdown', 'text/x-markdown'],
+    'md' => ['text/plain', 'text/markdown', 'text/x-markdown','application/x-wine-extension-ini',],
     'pdf' => ['application/pdf'],
     'docx' => [
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

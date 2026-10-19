@@ -18,13 +18,14 @@ from pdf_processor import process_pdf, DocumentElement
 from image_processor import process_image
 from markdown_processor import process_markdown
 from docx_processor import process_docx
+from pptx_processor import process_pptx
 
 
 DEFAULT_SOURCE_DIR = PROJECT_ROOT / "data" / "metrostate_documents"
 
 MULTIMODAL_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg"})
 STRUCTURED_DOCUMENT_EXTENSIONS = (
-    MULTIMODAL_IMAGE_EXTENSIONS | {".pdf", ".md", ".docx"}
+    MULTIMODAL_IMAGE_EXTENSIONS | {".pdf", ".md", ".docx", ".pptx"}
 )
 
 @dataclass(frozen=True)
@@ -72,7 +73,7 @@ def read_documents(source_dir: Path) -> list[Path]:
         for path in source_dir.rglob("*")
         if path.is_file()
         and path.suffix.lower() in (
-                {".txt", ".pdf", ".docx", ".md"} | MULTIMODAL_IMAGE_EXTENSIONS
+                {".txt", ".pdf", ".docx", ".md", ".pptx"} | MULTIMODAL_IMAGE_EXTENSIONS
         )
     )
 
@@ -234,6 +235,47 @@ def prepare_docx_document(
         elements=elements,
     )
 
+def prepare_pptx_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Extract PPTX elements and prepare searchable chunks."""
+
+    settings = load_settings()
+
+    elements = process_pptx(
+        document_path,
+        settings=settings,
+    )
+
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    chunks = prepare_element_chunks(
+        elements,
+        source_path=source_path,
+        category=category,
+        source_hash=source_hash,
+        source_type="pptx",
+        original_filename=document_path.name,
+        chunk_size=chunk_size,
+    )
+
+    if not chunks:
+        raise ValueError(
+            f"No retrieval chunks could be created from PPTX: "
+            f"{document_path.name}"
+        )
+
+    return PreparedDocument(
+        chunks=chunks,
+        elements=elements,
+    )
+
 def prepare_image_document(
     document_path: Path,
     *,
@@ -329,6 +371,13 @@ def prepare_multimodal_document(
         )
     if extension == ".docx":
         return prepare_docx_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
+    if extension == ".pptx":
+        return prepare_pptx_document(
             document_path,
             source_path=source_path,
             category=category,

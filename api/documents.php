@@ -21,6 +21,10 @@ const ALLOWED_UPLOADS = [
     'png' => ['image/png'],
     'jpg' => ['image/jpeg'],
     'jpeg' => ['image/jpeg'],
+    'pptx' => [
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/zip',
+],
 ];
 
 function documentResponse(int $status, array $payload): never
@@ -75,7 +79,7 @@ function validatedUpload(array $file): array
     $size = (int) ($file['size'] ?? 0);
     $extension = strtolower(pathinfo($name, PATHINFO_EXTENSION));
     if (!isset(ALLOWED_UPLOADS[$extension])) {
-        documentResponse(415, ['ok' => false, 'error' => 'Only TXT, MD, PDF, DOCX, PNG and JPEG files are supported.']);
+        documentResponse(415, ['ok' => false, 'error' => 'Only TXT, MD, PDF, DOCX, PPTX, PNG and JPEG files are supported.']);
     }
     if ($size < 1 || $size > MAX_UPLOAD_BYTES) {
         documentResponse(422, ['ok' => false, 'error' => 'Document must be between 1 byte and 10 MB.']);

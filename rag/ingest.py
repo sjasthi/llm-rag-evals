@@ -17,13 +17,14 @@ from chunking import chunk_element
 from pdf_processor import process_pdf, DocumentElement
 from image_processor import process_image
 from markdown_processor import process_markdown
+from docx_processor import process_docx
 
 
 DEFAULT_SOURCE_DIR = PROJECT_ROOT / "data" / "metrostate_documents"
 
 MULTIMODAL_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg"})
 STRUCTURED_DOCUMENT_EXTENSIONS = (
-    MULTIMODAL_IMAGE_EXTENSIONS | {".pdf", ".md"}
+    MULTIMODAL_IMAGE_EXTENSIONS | {".pdf", ".md", ".docx"}
 )
 
 @dataclass(frozen=True)
@@ -192,6 +193,47 @@ def prepare_pdf_document(
         elements=elements,
     )
 
+def prepare_docx_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Build structured retrieval chunks from a Word document."""
+
+    settings = load_settings()
+
+    elements = process_docx(
+        document_path,
+        settings=settings,
+    )
+
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    chunks = prepare_element_chunks(
+        elements,
+        source_path=source_path,
+        category=category,
+        source_hash=source_hash,
+        source_type="docx",
+        original_filename=document_path.name,
+        chunk_size=chunk_size,
+    )
+
+    if not chunks:
+        raise ValueError(
+            f"No retrieval chunks could be created from DOCX: "
+            f"{document_path.name}"
+        )
+
+    return PreparedDocument(
+        chunks=chunks,
+        elements=elements,
+    )
+
 def prepare_image_document(
     document_path: Path,
     *,
@@ -285,7 +327,13 @@ def prepare_multimodal_document(
             category=category,
             chunk_size=chunk_size,
         )
-
+    if extension == ".docx":
+        return prepare_docx_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
     if extension in MULTIMODAL_IMAGE_EXTENSIONS:
         return prepare_image_document(
             document_path,
@@ -383,7 +431,7 @@ def build_chunks(source_dir: Path, chunk_size: int, overlap: int) -> list[Chunk]
             chunks.extend(prepared.chunks)
             continue
 
-        # Preserve the existing V1 path for TXT and DOCX documents.
+        # Preserve the existing V1 path for TXT documents.
         loaded = load_document(document_path)
 
         for index, chunk in enumerate(

@@ -46,10 +46,11 @@ def chunk_element(
         )
 
     elif element.content_type == "table":
-        contents = chunk_table(
-            element.content,
-            max_chars=max_chars,
+        enriched_content = enrich_table_for_retrieval(
+            element.content
         )
+
+        contents = [enriched_content]
 
     elif (
         element.content_type == "diagram"
@@ -253,6 +254,73 @@ def chunk_text(
         chunks.append("\n\n".join(current_paragraphs))
 
     return chunks
+
+def enrich_table_for_retrieval(table_text: str) -> str:
+    """Describe Markdown table rows in natural language for retrieval.
+
+    Preserve the original table so the answer model can reference
+    the exact source values.
+    """
+    lines = [
+        line.strip()
+        for line in table_text.splitlines()
+        if line.strip()
+    ]
+
+    if len(lines) < 2:
+        return table_text.strip()
+
+    def parse_row(line: str) -> list[str]:
+        return [
+            cell.strip()
+            for cell in line.strip().strip("|").split("|")
+        ]
+
+    def is_separator(line: str) -> bool:
+        cells = parse_row(line)
+        return bool(cells) and all(
+            re.fullmatch(r":?-{3,}:?", cell) is not None
+            for cell in cells
+        )
+
+    headers = parse_row(lines[0])
+
+    if not headers or any(not header for header in headers):
+        return table_text.strip()
+
+    data_start = 2 if len(lines) > 1 and is_separator(lines[1]) else 1
+
+    descriptions = [
+        "Table information:",
+        "This table contains the following fields: "
+        + ", ".join(headers)
+        + ".",
+    ]
+
+    for line in lines[data_start:]:
+        values = parse_row(line)
+
+        if len(values) != len(headers):
+            continue
+
+        row_label = values[0]
+
+        attributes = [
+            f"{header}: {value}"
+            for header, value in zip(headers[1:], values[1:])
+        ]
+
+        descriptions.append(
+            f"{row_label}. " + ". ".join(attributes) + "."
+        )
+
+    descriptions.extend([
+        "",
+        "Original table:",
+        table_text.strip(),
+    ])
+
+    return "\n".join(descriptions)
 
 def chunk_table(
     text: str,

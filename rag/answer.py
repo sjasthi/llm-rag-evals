@@ -24,10 +24,9 @@ from llm import (
 from provenance import code_provenance
 from query import (
     SearchResult,
-    hybrid_rrf_search,
-    mysql_keyword_search,
-    semantic_search,
+    search_with_optional_reranking,
 )
+
 from settings import Settings, load_settings
 
 
@@ -72,6 +71,8 @@ def answer_question(
     temperature: float | None = None,
     top_p: float | None = None,
     model: str | None = None,
+    content_reranking: bool = True,
+
 ) -> AnswerResult:
     if not question.strip():
         raise ValueError("Question cannot be empty")
@@ -99,12 +100,13 @@ def answer_question(
         llm_top_p=selected_top_p,
     )
     started_at = time.perf_counter()
-    if retrieval_method == "chroma_vector":
-        contexts = semantic_search(question, top_k, categories)
-    elif retrieval_method == "mysql_keyword":
-        contexts = mysql_keyword_search(question, top_k, categories)
-    else:
-        contexts = hybrid_rrf_search(question, top_k, categories)
+    contexts = search_with_optional_reranking(
+        question=question,
+        retrieval_method=retrieval_method,
+        top_k=top_k,
+        categories=categories,
+        content_reranking=content_reranking,
+    )
     if not contexts:
         raise RuntimeError(f"{retrieval_method} returned no matching source chunks.")
     prompt = build_grounded_prompt(question, contexts)
@@ -207,21 +209,21 @@ def answer_question(
         persistence_error=persistence_error,
     )
 
-
 def dry_run(
     question: str,
     top_k: int,
     retrieval_method: str = "chroma_vector",
     categories: list[str] | None = None,
+    content_reranking: bool = True,
 ) -> tuple[str, list[SearchResult]]:
-    if retrieval_method == "chroma_vector":
-        contexts = semantic_search(question, top_k, categories)
-    elif retrieval_method == "mysql_keyword":
-        contexts = mysql_keyword_search(question, top_k, categories)
-    else:
-        contexts = hybrid_rrf_search(question, top_k, categories)
+    contexts = search_with_optional_reranking(
+        question=question,
+        retrieval_method=retrieval_method,
+        top_k=top_k,
+        categories=categories,
+        content_reranking=content_reranking,
+    )
     return build_grounded_prompt(question, contexts), contexts
-
 
 def main() -> None:
     settings = load_settings()
@@ -244,6 +246,11 @@ def main() -> None:
     )
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--no-save", action="store_true")
+    parser.add_argument(
+        "--no-content-reranking",
+        action="store_true",
+        help="Disable content-aware reranking for baseline comparisons.",
+    )
     parser.add_argument("--allow-paid", action="store_true")
     parser.add_argument(
         "--allow-unknown-cost",
@@ -270,7 +277,13 @@ def main() -> None:
     try:
         if args.dry_run:
             categories = [value.strip() for value in (args.categories or "").split(",") if value.strip()]
-            prompt, contexts = dry_run(args.question, args.top_k, args.retrieval, categories)
+            prompt, contexts = dry_run(
+                args.question,
+                args.top_k,
+                args.retrieval,
+                categories,
+                content_reranking=not args.no_content_reranking,
+            )
             if args.json:
                 print(
                     json.dumps(
@@ -317,6 +330,7 @@ def main() -> None:
             temperature=args.temperature,
             top_p=args.top_p,
             model=args.model,
+            content_reranking=not args.no_content_reranking,
         )
     except Exception as error:
         print(f"Answer generation failed: {error}", file=sys.stderr)

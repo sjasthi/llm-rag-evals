@@ -160,7 +160,7 @@ class V2MultimodalRAGPipelineTests(unittest.TestCase):
             return "A rejection is sent."
 
         with patch(
-            "answer.semantic_search",
+            "answer.search_with_optional_reranking",
             return_value=[diagram_context],
         ) as mock_search:
             result = answer_question(

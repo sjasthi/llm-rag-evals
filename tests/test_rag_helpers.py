@@ -260,7 +260,10 @@ class GroundedAnswerTests(unittest.TestCase):
             self.assertIn("March 23, 2026", prompt)
             return "Registration begins March 23, 2026."
 
-        with patch("answer.semantic_search", return_value=[sample_context()]):
+        with patch(
+                "answer.search_with_optional_reranking",
+                return_value=[sample_context()],
+             ):
             result = answer_question(
                 "When does Fall 2026 registration begin?",
                 top_k=1,
@@ -279,7 +282,10 @@ class GroundedAnswerTests(unittest.TestCase):
             observed_settings.append(settings)
             return "Grounded answer."
 
-        with patch("answer.semantic_search", return_value=[sample_context()]):
+        with patch(
+                "answer.search_with_optional_reranking",
+                return_value=[sample_context()],
+             ):
             result = answer_question(
                 "When does registration begin?",
                 top_k=5,
@@ -316,7 +322,10 @@ class GroundedAnswerTests(unittest.TestCase):
             llm_output_cost_per_million=0.0,
         )
         with (
-            patch("answer.semantic_search", return_value=[sample_context()]),
+            patch(
+                "answer.search_with_optional_reranking",
+                return_value=[sample_context()],
+            ),
             patch("answer.load_settings", return_value=unpriced),
         ):
             result = answer_question(
@@ -357,6 +366,38 @@ class GroundedAnswerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "API key is not configured"):
             generate_with_gemini("prompt", settings)
 
+    def test_content_reranking_defaults_on_and_can_be_disabled(self):
+        from unittest.mock import patch
+        from answer import answer_question
+
+        context = sample_context()
+
+        with patch(
+                "answer.search_with_optional_reranking",
+                return_value=[context],
+        ) as mock_search:
+            answer_question(
+                "What is the test answer?",
+                top_k=3,
+                save=False,
+                generator=lambda prompt, settings: "Test answer",
+            )
+
+            self.assertTrue(
+                mock_search.call_args.kwargs["content_reranking"]
+            )
+
+            answer_question(
+                "What is the test answer?",
+                top_k=3,
+                save=False,
+                generator=lambda prompt, settings: "Test answer",
+                content_reranking=False,
+            )
+
+            self.assertFalse(
+                mock_search.call_args.kwargs["content_reranking"]
+            )
 
 def sample_evaluation_input(**overrides: object) -> EvaluationInput:
     values = {

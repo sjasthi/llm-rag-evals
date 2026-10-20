@@ -418,6 +418,38 @@ def hybrid_rrf_search(
         k=60,
     )
 
+def search_with_optional_reranking(
+    question: str,
+    retrieval_method: str,
+    top_k: int,
+    categories: list[str] | None = None,
+    content_reranking: bool = False,
+) -> list[SearchResult]:
+    """Run the selected retrieval method with optional content-aware reranking."""
+    if top_k <= 0:
+        raise ValueError("top_k must be greater than zero")
+
+    candidate_count = max(top_k * 5, 20) if content_reranking else top_k
+
+    if retrieval_method in ("chroma", "chroma_vector"):
+        results = semantic_search(question, candidate_count, categories)
+    elif retrieval_method in ("mysql", "mysql_keyword"):
+        results = mysql_keyword_search(question, candidate_count, categories)
+    elif retrieval_method in ("hybrid", "hybrid_rrf"):
+        results = hybrid_rrf_search(question, candidate_count, categories)
+    else:
+        raise ValueError(
+            f"Unsupported retrieval method: {retrieval_method}"
+        )
+
+    if not content_reranking:
+        return results
+
+    from content_reranker import rerank_results
+
+    return rerank_results(question, results, top_k)
+
+
 def _optional_int(value: Any) -> int | None:
     return int(value) if value is not None else None
 
@@ -430,6 +462,11 @@ def main() -> None:
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--retrieval", choices=("chroma", "mysql", "keyword", "hybrid"), default="chroma")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument(
+        "--content-reranking",
+        action="store_true",
+        help="Enable content-aware reranking of retrieved chunks.",
+    )
     args = parser.parse_args()
 
     if args.top_k <= 0:
@@ -444,12 +481,13 @@ def main() -> None:
                 settings.chunk_size,
                 settings.chunk_overlap,
             )
-        elif args.retrieval == "mysql":
-            matches = mysql_keyword_search(args.question, args.top_k)
-        elif args.retrieval == "hybrid":
-            matches = hybrid_rrf_search(args.question, args.top_k)
         else:
-            matches = semantic_search(args.question, args.top_k)
+            matches = search_with_optional_reranking(
+                question=args.question,
+                retrieval_method=args.retrieval,
+                top_k=args.top_k,
+                content_reranking=args.content_reranking,
+        )
     except Exception as error:
         print(f"Query failed: {error}", file=sys.stderr)
         raise SystemExit(1) from error

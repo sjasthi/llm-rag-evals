@@ -27,6 +27,8 @@ DEFAULT_EVALUATORS = [
     "bertscore",
     "expected_source_accuracy",
     "refusal_correctness",
+    "citation_validity",
+    "citation_presence",
 ]
 
 

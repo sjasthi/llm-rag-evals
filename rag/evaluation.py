@@ -16,13 +16,16 @@ from typing import Any, Callable
 from database import database_connection
 from evaluation_store import persist_result
 from evaluator_catalog import ALL_DEFINITIONS, BASELINE_DEFINITIONS, definition_for
+from citation_validator import validate_citations
 from llm import REFUSAL_MESSAGE
 from settings import PROJECT_ROOT, load_settings
 
-
 DATASET_PATH = PROJECT_ROOT / "data" / "evaluation" / "metrostate_v2.json"
 TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
-
+REFERENCE_FREE_EVALUATORS = frozenset({
+    "citation_validity",
+    "citation_presence",
+})
 
 @dataclass(frozen=True)
 class EvaluationInput:
@@ -38,7 +41,7 @@ class EvaluationInput:
     expected_evidence: str | None = None
     retrieved_contexts: list[str] = field(default_factory=list)
     review_status: str = "reviewed"
-
+    retrieved_source_ranks: list[int] = field(default_factory=list)
 
 @dataclass(frozen=True)
 class EvaluationResult:
@@ -54,9 +57,7 @@ class EvaluationResult:
     configuration: dict[str, Any] = field(default_factory=dict)
     estimated_cost: float | None = 0.0
 
-
 Evaluator = Callable[[EvaluationInput], tuple[float | None, bool | None, str, dict[str, Any]]]
-
 
 EVALUATOR_DEFINITIONS = tuple(
     (
@@ -70,11 +71,9 @@ EVALUATOR_DEFINITIONS = tuple(
     for definition in BASELINE_DEFINITIONS
 )
 
-
 def normalize_text(value: str) -> str:
     value = unicodedata.normalize("NFKC", value).lower()
     return " ".join(TOKEN_PATTERN.findall(value))
-
 
 def exact_contains(item: EvaluationInput) -> tuple[float, bool, str, dict[str, Any]]:
     actual = normalize_text(item.actual_answer)
@@ -85,7 +84,6 @@ def exact_contains(item: EvaluationInput) -> tuple[float, bool, str, dict[str, A
     score = 1.0 if exact else 0.75 if contains else 0.0
     return score, contains, "Exact match." if exact else "Accepted answer is contained." if contains else "No accepted lexical match.", {"exact": exact, "contains": contains, "candidate_count": len(normalized)}
 
-
 def required_fact_coverage(item: EvaluationInput) -> tuple[float | None, bool | None, str, dict[str, Any]]:
     if not item.required_facts:
         return None, None, "No required facts apply to this question.", {"matched": [], "missing": []}
@@ -94,7 +92,6 @@ def required_fact_coverage(item: EvaluationInput) -> tuple[float | None, bool | 
     missing = [fact for fact in item.required_facts if fact not in matched]
     score = len(matched) / len(item.required_facts)
     return score, score == 1.0, f"Matched {len(matched)} of {len(item.required_facts)} required facts.", {"matched": matched, "missing": missing}
-
 
 def token_f1(item: EvaluationInput) -> tuple[float, bool, str, dict[str, Any]]:
     expected = TOKEN_PATTERN.findall(normalize_text(item.expected_answer))
@@ -107,7 +104,6 @@ def token_f1(item: EvaluationInput) -> tuple[float, bool, str, dict[str, Any]]:
     score = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     return score, score >= 0.7, f"Token F1 is {score:.3f} (descriptive threshold 0.70).", {"precision": precision, "recall": recall, "overlap_tokens": overlap}
 
-
 def _lcs_length(left: list[str], right: list[str]) -> int:
     previous = [0] * (len(right) + 1)
     for left_token in left:
@@ -116,7 +112,6 @@ def _lcs_length(left: list[str], right: list[str]) -> int:
             current.append(previous[index - 1] + 1 if left_token == right_token else max(previous[index], current[-1]))
         previous = current
     return previous[-1]
-
 
 def rouge_l(item: EvaluationInput) -> tuple[float, bool, str, dict[str, Any]]:
     expected = TOKEN_PATTERN.findall(normalize_text(item.expected_answer))
@@ -135,7 +130,6 @@ def semantic_similarity(item: EvaluationInput) -> tuple[float, bool, str, dict[s
     embeddings = model.encode([item.expected_answer, item.actual_answer], convert_to_tensor=True)
     score = float(util.cos_sim(embeddings[0], embeddings[1]).item())
     return score, score >= 0.75, f"Embedding cosine similarity is {score:.3f} (descriptive threshold 0.75).", {"model": "all-MiniLM-L6-v2"}
-
 
 @lru_cache(maxsize=1)
 def _semantic_model() -> Any:
@@ -174,6 +168,51 @@ def refusal_correctness(item: EvaluationInput) -> tuple[float, bool, str, dict[s
     correct = refused if not item.is_answerable else not refused
     return float(correct), correct, "Refusal behavior matches the answerability label." if correct else "Refusal behavior conflicts with the answerability label.", {"is_answerable": item.is_answerable, "returned_fixed_refusal": refused}
 
+def citation_validity(item: EvaluationInput) -> tuple[float | None, bool | None, str, dict[str, Any]]:
+    """Check whether cited source IDs exist in the retrieved evidence."""
+    sources = [{"rank": rank} for rank in item.retrieved_source_ranks]
+
+    validation = validate_citations(
+        answer_text=item.actual_answer,
+        retrieved_sources=sources,
+    )
+
+    if validation.is_refusal:
+        return None, None, "Citation validity does not apply to a refusal.", validation.to_dict()
+
+    if not validation.has_citations:
+        return None, None, "No citations were provided; validity cannot be calculated.", validation.to_dict()
+
+    score = validation.citation_validity_score
+
+    return (
+        score,
+        not validation.invalid_citations,
+        f"{len(validation.valid_citations)} of {len(validation.citations_found)} citation IDs are valid.",
+        validation.to_dict(),
+    )
+
+
+def citation_presence(item: EvaluationInput) -> tuple[float | None, bool | None, str, dict[str, Any]]:
+    """Check whether a generated answer includes at least one citation."""
+    sources = [{"rank": rank} for rank in item.retrieved_source_ranks]
+
+    validation = validate_citations(
+        answer_text=item.actual_answer,
+        retrieved_sources=sources,
+    )
+
+    if validation.is_refusal:
+        return None, None, "Citation presence does not apply to a refusal.", validation.to_dict()
+
+    passed = validation.has_citations
+
+    return (
+        float(passed),
+        passed,
+        "Answer contains a citation." if passed else "Answer is missing a citation.",
+        validation.to_dict(),
+    )
 
 LOCAL_EVALUATORS: dict[str, Evaluator] = {
     "exact_contains": exact_contains,
@@ -184,8 +223,9 @@ LOCAL_EVALUATORS: dict[str, Evaluator] = {
     "bertscore": bertscore,
     "expected_source_accuracy": expected_source_accuracy,
     "refusal_correctness": refusal_correctness,
+    "citation_validity": citation_validity,
+    "citation_presence": citation_presence,
 }
-
 
 def run_evaluator(key: str, item: EvaluationInput) -> EvaluationResult:
     started = time.perf_counter()
@@ -290,7 +330,12 @@ def _json_object(value: Any) -> dict[str, Any]:
     return dict(parsed) if isinstance(parsed, dict) else {}
 
 
-def load_evaluation_input(connection: Any, response_id: int) -> EvaluationInput:
+def load_evaluation_input(
+    connection: Any,
+    response_id: int,
+    *,
+    require_expected_answer: bool = True,
+) -> EvaluationInput:
     with connection.cursor(dictionary=True) as cursor:
         cursor.execute(
             """SELECT r.response_id, r.question_text, r.answer_text,
@@ -307,24 +352,34 @@ def load_evaluation_input(connection: Any, response_id: int) -> EvaluationInput:
         if not row:
             raise ValueError("Saved response is missing or is not linked to an evaluation question.")
         cursor.execute(
-            """SELECT COALESCE(c.source_path_snapshot, d.source_path) AS source_path,
+            """SELECT c.rank_position,
+                      COALESCE(c.source_path_snapshot, d.source_path) AS source_path,
                       c.context_excerpt
                FROM retrieved_contexts c
                LEFT JOIN documents d ON d.document_id = c.document_id
-               WHERE c.response_id = %s ORDER BY c.rank_position""",
+               WHERE c.response_id = %s
+               ORDER BY c.rank_position""",
             (response_id,),
         )
         context_rows = cursor.fetchall()
+        source_ranks = [
+            int(context["rank_position"])
+            for context in context_rows
+            if context["rank_position"] is not None
+        ]
         sources = [str(item["source_path"]) for item in context_rows if item["source_path"]]
         contexts = [str(item["context_excerpt"]) for item in context_rows if item["context_excerpt"]]
     snapshot = _json_object(row.get("evaluation_snapshot_json"))
     expected_answer = snapshot.get("expected_answer", row.get("expected_answer"))
-    if expected_answer is None:
-        raise ValueError("Saved response is missing its reviewed expected-answer snapshot.")
+
+    if expected_answer is None and require_expected_answer:
+        raise ValueError(
+            "Saved response is missing its reviewed expected-answer snapshot."
+        )
     return EvaluationInput(
         response_id=int(row["response_id"]),
         question=str(row["question_text"]),
-        expected_answer=str(expected_answer),
+        expected_answer=str(expected_answer) if expected_answer is not None else "",
         actual_answer=str(row["answer_text"]),
         expected_source=snapshot.get("expected_source", row.get("expected_source")),
         retrieved_sources=sources,
@@ -334,6 +389,7 @@ def load_evaluation_input(connection: Any, response_id: int) -> EvaluationInput:
         expected_evidence=snapshot.get("expected_evidence", row.get("expected_evidence")),
         retrieved_contexts=contexts,
         review_status=str(snapshot.get("review_status", row.get("review_status") or "unknown")),
+        retrieved_source_ranks=source_ranks,
     )
 
 
@@ -341,9 +397,18 @@ def score_saved_response(response_id: int, evaluator_keys: list[str]) -> list[Ev
     unknown = sorted(set(evaluator_keys) - LOCAL_EVALUATORS.keys())
     if unknown:
         raise ValueError(f"Unknown evaluators: {', '.join(unknown)}")
+    require_expected_answer = not (
+            evaluator_keys
+            and set(evaluator_keys).issubset(REFERENCE_FREE_EVALUATORS)
+    )
+
     settings = load_settings()
     with database_connection(settings) as connection:
-        item = load_evaluation_input(connection, response_id)
+        item = load_evaluation_input(
+            connection,
+            response_id,
+            require_expected_answer=require_expected_answer,
+        )
         results = [run_evaluator(key, item) for key in evaluator_keys]
         try:
             connection.commit()

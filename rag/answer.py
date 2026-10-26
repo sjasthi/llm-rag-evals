@@ -9,6 +9,8 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 
+from citation_validator import CitationValidation, validate_citations
+
 from database import (
     database_connection,
     get_or_create_model_setting,
@@ -29,9 +31,7 @@ from query import (
 
 from settings import Settings, load_settings
 
-
 AnswerGenerator = Callable[[str, Settings], str | GenerationExecution]
-
 
 @dataclass(frozen=True)
 class AnswerResult:
@@ -54,7 +54,7 @@ class AnswerResult:
     generation_cost_status: str
     response_id: int | None
     persistence_error: str | None
-
+    citation_validation: CitationValidation | None = None
 
 def answer_question(
     question: str,
@@ -125,6 +125,14 @@ def answer_question(
         total_tokens = None
         thinking_tokens = None
         finish_reason = None
+
+    # Validate inline citations against the retrieved source ranks.
+    # Report issues without modifying the generated answer.
+    citation_validation = validate_citations(
+        answer_text=answer,
+        retrieved_sources=contexts,
+    )
+
     estimated_cost = estimate_generation_cost(
         input_tokens,
         output_tokens,
@@ -207,6 +215,7 @@ def answer_question(
         generation_cost_status=generation_cost_status,
         response_id=response_id,
         persistence_error=persistence_error,
+        citation_validation=citation_validation,
     )
 
 def dry_run(

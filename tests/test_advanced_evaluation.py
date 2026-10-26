@@ -75,9 +75,12 @@ class AdvancedEvaluationTests(unittest.TestCase):
         ):
             preflight = build_local_preflight(object(), [19], force=False)
 
-        self.assertEqual(8, len(preflight["applications"]))
+        self.assertEqual(len(LOCAL_EVALUATOR_KEYS), len(preflight["applications"]))
         self.assertEqual(1, preflight["reused_count"])
-        self.assertEqual(7, preflight["application_count"])
+        self.assertEqual(
+            len(LOCAL_EVALUATOR_KEYS) - preflight["reused_count"],
+            preflight["application_count"],
+        )
         self.assertEqual(0, preflight["paid_application_count"])
         store = (PROJECT_ROOT / "rag" / "evaluation_store.py").read_text(encoding="utf-8")
         self.assertIn("result.status IN ('completed', 'skipped')", store)
@@ -98,9 +101,12 @@ class AdvancedEvaluationTests(unittest.TestCase):
         self.assertEqual({"result": "structured"}, result)
         self.assertEqual([("evaluate this", response_model)], calls)
 
-    def test_catalog_has_unique_score_contracts_for_thirteen_evaluators(self) -> None:
+    def test_catalog_has_unique_score_contracts_for_all_evaluators(self) -> None:
         keys = [definition["key"] for definition in ALL_DEFINITIONS]
-        self.assertEqual(13, len(keys))
+
+        self.assertEqual(15, len(keys))
+        self.assertIn("citation_validity", keys)
+        self.assertIn("citation_presence", keys)
         self.assertEqual(len(keys), len(set(keys)))
         for key in keys:
             configuration = definition_for(key)["configuration"]

@@ -6,7 +6,7 @@ import argparse
 import json
 import re
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +40,7 @@ class SearchResult:
     extraction_method: str | None = None
     extraction_model: str | None = None
     source_hash: str | None = None
+    original_filename: str | None = None
     retrieval_score: float | None = None
     retrieval_metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -418,6 +419,47 @@ def hybrid_rrf_search(
         k=60,
     )
 
+def resolve_original_filenames(
+    results: list[SearchResult],
+) -> list[SearchResult]:
+    """Retrieve original filenames from MySQL for final search results."""
+    document_ids = sorted({
+        result.document_id
+        for result in results
+        if result.document_id is not None
+    })
+
+    if not document_ids:
+        return results
+
+    from database import database_connection
+
+    placeholders = ", ".join(["%s"] * len(document_ids))
+
+    with database_connection(load_settings()) as connection:
+        with connection.cursor(dictionary=True) as cursor:
+            cursor.execute(
+                f"""
+                SELECT document_id, original_filename
+                FROM documents
+                WHERE document_id IN ({placeholders})
+                """,
+                tuple(document_ids),
+            )
+
+            filenames = {
+                int(row["document_id"]): row["original_filename"]
+                for row in cursor.fetchall()
+            }
+
+    return [
+        replace(
+            result,
+            original_filename=filenames.get(result.document_id),
+        )
+        for result in results
+    ]
+
 def search_with_optional_reranking(
     question: str,
     retrieval_method: str,
@@ -442,12 +484,11 @@ def search_with_optional_reranking(
             f"Unsupported retrieval method: {retrieval_method}"
         )
 
-    if not content_reranking:
-        return results
+    if content_reranking:
+        from content_reranker import rerank_results
+        results = rerank_results(question, results, top_k)
 
-    from content_reranker import rerank_results
-
-    return rerank_results(question, results, top_k)
+    return resolve_original_filenames(results)
 
 
 def _optional_int(value: Any) -> int | None:

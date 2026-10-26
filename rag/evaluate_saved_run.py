@@ -9,6 +9,7 @@ from typing import Any
 
 from database import database_connection
 from evaluation import LOCAL_EVALUATORS, score_saved_response
+from evaluator_catalog import ADVANCED_DEFINITIONS
 from evaluation_store import reusable_result_exists
 from run_advanced_evaluation import (
     build_preflight as build_advanced_preflight,
@@ -80,7 +81,10 @@ def build_run_preflight(
     return {
         "responses": len(response_ids),
         "response_ids": response_ids,
-        "requested_metric_count": 13 if include_advanced else 8,
+        "requested_metric_count": (
+                len(LOCAL_EVALUATOR_KEYS)
+                + (len(ADVANCED_DEFINITIONS) if include_advanced else 0)
+        ),
         "local": local,
         "advanced": advanced,
         "application_count": local["application_count"] + (
@@ -120,7 +124,7 @@ def execute_local_plan(preflight: dict[str, Any]) -> list[dict[str, Any]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Reapply local or all 13 evaluators to an existing saved run."
+        description="Reapply local or all available evaluators to an existing saved run."
     )
     parser.add_argument("--run-id", type=int, required=True)
     parser.add_argument(

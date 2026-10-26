@@ -244,33 +244,97 @@ $(function () {
         $sourceList.empty();
 
         if (!Array.isArray(sources) || sources.length === 0) {
-            $("<p>").addClass("text-muted mb-0").text("No sources were returned.").appendTo($sourceList);
+            $("<p>")
+                .addClass("text-muted mb-0")
+                .text("No sources were returned.")
+                .appendTo($sourceList);
             return;
         }
 
-        sources.forEach(function (source) {
+        sources.forEach(function (source, index) {
             const distance = Number(source.distance);
             const finalScore = Number(source.retrieval_score);
             const scoreParts = [];
-            if (Number.isFinite(distance)) {
+
+            if (source.distance !== null &&
+                source.distance !== undefined &&
+                Number.isFinite(distance)) {
                 scoreParts.push("distance " + distance.toFixed(6));
             }
-            if (source.keyword_score !== null && source.keyword_score !== undefined) {
-                scoreParts.push("lexical " + compactNumber(source.keyword_score, 3));
+
+            if (source.keyword_score !== null &&
+                source.keyword_score !== undefined) {
+                scoreParts.push(
+                    "lexical " + compactNumber(source.keyword_score, 3)
+                );
             }
-            if (Number.isFinite(finalScore)) {
+
+            if (source.retrieval_score !== null &&
+                source.retrieval_score !== undefined &&
+                Number.isFinite(finalScore)) {
                 scoreParts.push("final " + finalScore.toFixed(6));
             }
+
+            // Prefer the original filename retrieved from MySQL.
+            const filename = source.original_filename ||
+                source.source_path ||
+                "Unknown document";
+
+            // Normalize the extracted content type.
+            const contentType = String(
+                source.content_type || "text"
+            ).replace(/_/g, " ");
+
+            const formattedType = contentType
+                .replace(/\b\w/g, function (character) {
+                    return character.toUpperCase();
+                });
+
+            // Use the document extension to label the source location.
+            const extension = filename.split(".").pop().toLowerCase();
+
+            let locationLabel = "Page";
+            if (extension === "pptx") {
+                locationLabel = "Slide";
+            }
+
+            const metadata = [];
+
+            if (source.page_number !== null &&
+                source.page_number !== undefined) {
+                metadata.push(locationLabel + " " + source.page_number);
+            }
+
+            if (source.chunk_index !== null &&
+                source.chunk_index !== undefined) {
+                metadata.push("Chunk " + source.chunk_index);
+            }
+
+            metadata.push("Type: " + formattedType);
+
+            if (scoreParts.length > 0) {
+                metadata.push(scoreParts.join(" · "));
+            }
+
+            // Create the source card.
             const $card = $("<article>").addClass("source-card");
             const $heading = $("<div>").addClass("source-heading");
 
-            $("<strong>").text(source.rank + ". " + source.source_path).appendTo($heading);
+            $("<strong>")
+                .text((source.rank ?? index + 1) + ". " + filename)
+                .appendTo($heading);
+
             $("<span>")
-                .text("Chunk " + source.chunk_index + " · " + (scoreParts.join(" · ") || "score unavailable"))
+                .text(metadata.join(" · "))
                 .appendTo($heading);
 
             $heading.appendTo($card);
-            $("<p>").text(source.text).appendTo($card);
+
+            // Display the extracted evidence.
+            $("<p>")
+                .text(source.text || "No extracted text available.")
+                .appendTo($card);
+
             $card.appendTo($sourceList);
         });
     }

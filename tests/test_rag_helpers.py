@@ -29,6 +29,9 @@ from evaluation import (  # noqa: E402
     token_f1,
     run_evaluator,
     LOCAL_EVALUATORS,
+    citation_validity,
+    citation_presence,
+    REFERENCE_FREE_EVALUATORS,
 )
 from ingest import build_loaded_document_chunks, chunk_text, stable_chroma_id  # noqa: E402
 from llm import (  # noqa: E402
@@ -46,7 +49,6 @@ from run_evaluation import evaluation_snapshot, select_questions  # noqa: E402
 from provenance import code_provenance  # noqa: E402
 from settings import load_settings  # noqa: E402
 from vector_store import delete_source_chunks  # noqa: E402
-
 
 class FakeVectorCollection:
     def __init__(self, records: dict[str, str], *, ignore_deletes: bool = False) -> None:
@@ -243,6 +245,20 @@ def sample_context() -> SearchResult:
         chunk_id=10,
     )
 
+def sample_evaluation_input(**overrides: object) -> EvaluationInput:
+    values = {
+        "response_id": 7,
+        "question": "When does Fall 2026 registration begin?",
+        "expected_answer": "Fall 2026 registration begins Monday, March 23, 2026.",
+        "actual_answer": "Registration begins on Monday, March 23, 2026.",
+        "expected_source": "data/metrostate_documents/academic_calendar/fall_2026.txt",
+        "retrieved_sources": ["data/metrostate_documents/academic_calendar/fall_2026.txt"],
+        "accepted_answers": ["March 23, 2026"],
+        "required_facts": ["March 23, 2026"],
+        "is_answerable": True,
+    }
+    values.update(overrides)
+    return EvaluationInput(**values)  # type: ignore[arg-type]
 
 class GroundedAnswerTests(unittest.TestCase):
     def test_prompt_contains_question_and_source_metadata(self) -> None:
@@ -399,21 +415,107 @@ class GroundedAnswerTests(unittest.TestCase):
                 mock_search.call_args.kwargs["content_reranking"]
             )
 
-def sample_evaluation_input(**overrides: object) -> EvaluationInput:
-    values = {
-        "response_id": 7,
-        "question": "When does Fall 2026 registration begin?",
-        "expected_answer": "Fall 2026 registration begins Monday, March 23, 2026.",
-        "actual_answer": "Registration begins on Monday, March 23, 2026.",
-        "expected_source": "data/metrostate_documents/academic_calendar/fall_2026.txt",
-        "retrieved_sources": ["data/metrostate_documents/academic_calendar/fall_2026.txt"],
-        "accepted_answers": ["March 23, 2026"],
-        "required_facts": ["March 23, 2026"],
-        "is_answerable": True,
-    }
-    values.update(overrides)
-    return EvaluationInput(**values)  # type: ignore[arg-type]
+    def test_answer_workflow_validates_correct_citation(self) -> None:
+        """A citation referencing a retrieved source should pass."""
+        def fake_generator(_prompt, _settings):
+            return GenerationExecution(
+                "Registration begins March 23 [1].",
+                100, 20, 120,
+            )
 
+        with (
+            patch(
+                "answer.search_with_optional_reranking",
+                return_value=[sample_context()],
+            ),
+        ):
+            result = answer_question(
+                "When does registration begin?",
+                top_k=1,
+                save=False,
+                generator=fake_generator,
+            )
+
+        validation = result.citation_validation
+
+        self.assertIsNotNone(validation)
+        self.assertTrue(validation.passed)
+        self.assertEqual(validation.citations_found, [1])
+        self.assertEqual(validation.valid_citations, [1])
+        self.assertEqual(validation.invalid_citations, [])
+        self.assertEqual(validation.citation_validity_score, 1.0)
+
+        self.assertEqual(
+            result.answer,
+            "Registration begins March 23 [1].",
+        )
+
+    def test_answer_workflow_detects_invalid_citation(self) -> None:
+        """An invalid citation should be flagged without losing the answer."""
+        def fake_generator(_prompt, _settings):
+            return GenerationExecution(
+                "Registration begins March 23 [99].",
+                100, 20, 120,
+            )
+
+        with (
+            patch(
+                "answer.search_with_optional_reranking",
+                return_value=[sample_context()],
+            ),
+        ):
+            result = answer_question(
+                "When does registration begin?",
+                top_k=1,
+                save=False,
+                generator=fake_generator,
+            )
+
+        validation = result.citation_validation
+
+        self.assertIsNotNone(validation)
+        self.assertFalse(validation.passed)
+        self.assertEqual(validation.citations_found, [99])
+        self.assertEqual(validation.valid_citations, [])
+        self.assertEqual(validation.invalid_citations, [99])
+        self.assertEqual(validation.citation_validity_score, 0.0)
+
+        self.assertEqual(
+            result.answer,
+            "Registration begins March 23 [99].",
+        )
+        self.assertIsNone(result.response_id)
+
+    def test_answer_workflow_detects_missing_citation(self) -> None:
+        """An uncited answer should be flagged but still returned."""
+        def fake_generator(_prompt, _settings):
+            return "Registration begins March 23."
+
+        with (
+            patch(
+                "answer.search_with_optional_reranking",
+                return_value=[sample_context()],
+            ),
+        ):
+            result = answer_question(
+                "When does registration begin?",
+                top_k=1,
+                save=False,
+                generator=fake_generator,
+            )
+
+        validation = result.citation_validation
+
+        self.assertIsNotNone(validation)
+        self.assertFalse(validation.passed)
+        self.assertFalse(validation.has_citations)
+        self.assertFalse(validation.citation_presence_passed)
+        self.assertIsNone(validation.citation_validity_score)
+
+        self.assertEqual(
+            result.answer,
+            "Registration begins March 23.",
+        )
 
 class LocalEvaluatorTests(unittest.TestCase):
     def test_normalization_ignores_case_and_punctuation(self) -> None:
@@ -478,6 +580,53 @@ class LocalEvaluatorTests(unittest.TestCase):
         self.assertIn("controlled evaluator failure", result.error_message or "")
         self.assertIsNone(result.normalized_score)
 
+    def test_citation_evaluators_accept_valid_reference(self) -> None:
+        item = sample_evaluation_input(
+            actual_answer="Registration begins March 23 [1].",
+            retrieved_source_ranks=[1, 2],
+        )
+
+        validity_score, validity_passed, _, _ = citation_validity(item)
+        presence_score, presence_passed, _, _ = citation_presence(item)
+
+        self.assertEqual(1.0, validity_score)
+        self.assertTrue(validity_passed)
+        self.assertEqual(1.0, presence_score)
+        self.assertTrue(presence_passed)
+
+    def test_citation_evaluators_detect_invalid_reference(self) -> None:
+        item = sample_evaluation_input(
+            actual_answer="Registration begins March 23 [99].",
+            retrieved_source_ranks=[1, 2],
+        )
+
+        validity_score, validity_passed, _, _ = citation_validity(item)
+        presence_score, presence_passed, _, _ = citation_presence(item)
+
+        self.assertEqual(0.0, validity_score)
+        self.assertFalse(validity_passed)
+        self.assertEqual(1.0, presence_score)
+        self.assertTrue(presence_passed)
+
+    def test_citation_evaluators_detect_missing_reference(self) -> None:
+        item = sample_evaluation_input(
+            actual_answer="Registration begins March 23.",
+            retrieved_source_ranks=[1, 2],
+        )
+
+        validity_score, validity_passed, _, _ = citation_validity(item)
+        presence_score, presence_passed, _, _ = citation_presence(item)
+
+        self.assertIsNone(validity_score)
+        self.assertIsNone(validity_passed)
+        self.assertEqual(0.0, presence_score)
+        self.assertFalse(presence_passed)
+
+    def test_citation_evaluators_are_reference_free(self) -> None:
+        self.assertEqual(
+            {"citation_validity", "citation_presence"},
+            set(REFERENCE_FREE_EVALUATORS),
+        )
 
 class EvaluationDatasetTests(unittest.TestCase):
     def test_v2_dataset_has_fifty_unique_reviewed_questions(self) -> None:

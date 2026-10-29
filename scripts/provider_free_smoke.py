@@ -9,11 +9,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 from rag.evaluator_catalog import ALL_DEFINITIONS
 
 def request_json(

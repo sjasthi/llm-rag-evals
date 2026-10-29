@@ -14,6 +14,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from rag.evaluator_catalog import ALL_DEFINITIONS
 
 def request_json(
     base_url: str,
@@ -78,8 +79,21 @@ def verify_stack(base_url: str) -> dict[str, Any]:
     evaluators = evaluation_data.get("evaluators")
     if not isinstance(questions, list) or len(questions) != 50:
         raise AssertionError("Expected 50 reviewed Gold Standard questions")
-    if not isinstance(evaluators, list) or len(evaluators) != 13:
-        raise AssertionError("Expected 13 active evaluator definitions")
+
+    if not isinstance(evaluators, list):
+        raise AssertionError("Expected a list of active evaluator definitions")
+
+    expected_keys = {definition["key"] for definition in ALL_DEFINITIONS}
+    actual_keys = {evaluator["evaluator_key"] for evaluator in evaluators}
+
+    if actual_keys != expected_keys:
+        missing = sorted(expected_keys - actual_keys)
+        unexpected = sorted(actual_keys - expected_keys)
+
+        raise AssertionError(
+            f"Evaluator definitions mismatch: "
+            f"missing={missing}, unexpected={unexpected}"
+        )
 
     preview_payload = request_json(
         base_url,

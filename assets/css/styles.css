@@ -1112,3 +1112,133 @@ details > summary {
     .side-nav a { min-height: 2.75rem; font-size: 0.78rem; }
     .matched-comparison-grid { grid-template-columns: 1fr; }
 }
+
+/* Standalone Chat response and its scoring controls */
+.evaluation-response-buttons > .standalone-response-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.5rem;
+    margin: 0;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 0.65rem;
+}
+
+.standalone-response-row > .evaluation-response-button {
+    display: block;
+    width: 100%;
+    margin: 0;
+    text-align: left;
+}
+
+.standalone-response-row > .preview-standalone-scoring {
+    display: inline-block;
+    align-self: flex-start;
+    width: auto;
+    margin: 0;
+}
+
+
+.standalone-response-row {
+    display: flex;
+    flex-direction: column;
+}
+
+.standalone-response-details {
+    order: 1;
+    width: 100%;
+}
+
+.standalone-response-actions {
+    order: 2;
+    width: 100%;
+    margin-top: 0.4rem;
+}
+
+.standalone-response-details .evaluation-response-button {
+    display: block;
+    width: 100%;
+    margin: 0;
+    text-align: left;
+}
+
+.standalone-response-actions .preview-standalone-scoring {
+    display: inline-block;
+    width: auto;
+    margin: 0;
+}
+/* =========================================================
+   Evaluation page: responsive layout and overflow fixes
+   ========================================================= */
+
+/* Keep the response browser and inspector inside their columns. */
+#results .experiment-workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: 1rem;
+    align-items: start;
+    width: 100%;
+    min-width: 0;
+}
+
+/* Prevent nested content from expanding beyond its grid column. */
+#results .experiment-browser,
+#results .evaluation-result-detail,
+#results #standaloneResponseList,
+#results #standaloneResponseList .evaluation-response-buttons,
+#results #standaloneResponseList .standalone-response-row {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* Constrain standalone response cards and their controls. */
+#results #standaloneResponseList .standalone-response-row {
+    width: 100%;
+    overflow-wrap: anywhere;
+}
+
+#results #standaloneResponseList .evaluation-response-button {
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+}
+
+#results #standaloneResponseList .evaluation-response-button strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+/* Allow long answer text and metadata to wrap safely. */
+#results .evaluation-result-detail {
+    overflow-wrap: anywhere;
+}
+
+#results .answer-comparison {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#results .answer-comparison article {
+    min-width: 0;
+}
+
+/* Separate the Gold Standard workflow visually. */
+#results .evaluation-runs-section {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 2px solid var(--line);
+}
+
+/* Stack the browser and inspector on narrower screens. */
+@media (max-width: 900px) {
+    #results .experiment-workspace {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    #results .answer-comparison {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}

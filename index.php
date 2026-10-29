@@ -731,7 +731,7 @@ require __DIR__ . '/includes/header.php';
                         <p id="evaluatorSummary">Loading saved tests and answer results...</p>
                     </div>
                     <details class="evaluation-method-help">
-                        <summary>How the 13 scoring methods work and which ones need the Gold Standard</summary>
+                        <summary>How the evaluation methods work and which ones need the Gold Standard</summary>
                         <div class="evaluation-method-note" aria-label="How to interpret the evaluation methods">
                             <strong>Every selected answer lists the methods that completed, failed, were skipped, or have not run.</strong>
                             <p>The methods are independent checks, not steps in a voting system. Do not combine unlike scores into one grade; none of them finds or generates the answer.</p>
@@ -754,22 +754,69 @@ require __DIR__ . '/includes/header.php';
                             </article>
                         </div>
                     </details>
+                    <!-- Section 1: Chat response evaluations -->
+                <section class="evaluation-workflow-section"
+                         aria-labelledby="chatEvaluationTitle">
+
+                    <div class="evaluation-workflow-heading">
+                        <span>Response evaluation</span>
+                        <h3 id="chatEvaluationTitle">Chat Response Evaluations</h3>
+                        <p>
+                            Inspect individual saved answers, review their evidence,
+                            and run citation scoring.
+                        </p>
+                    </div>
+
                     <div class="experiment-workspace">
-                        <aside class="experiment-browser" aria-label="Saved experiment runs">
+
+                        <aside class="experiment-browser"
+                               aria-label="Saved Chat responses">
+
                             <div class="subsection-heading">
-                                <span>Saved tests</span>
-                                <strong>Choose a test, then a question</strong>
+                                <span>Saved responses</span>
+                                <strong>Select a response to inspect</strong>
                             </div>
-                            <div id="evaluationRunList" class="evaluation-run-list"></div>
+
+                            <div id="standaloneResponseList"
+                                 class="evaluation-run-list"></div>
+
                         </aside>
-                        <div id="evaluationResultDetail" class="evaluation-result-detail">
+
+                        <div id="evaluationResultDetail"
+                             class="evaluation-result-detail">
+
                             <div class="detail-placeholder">
                                 <span>Response inspector</span>
                                 <strong>Loading the newest saved response</strong>
-                                <p>The generated output, reviewed reference, evaluator explanations, and retrieved chunks appear here together.</p>
+                                <p>
+                                    The generated answer, evaluation results,
+                                    and retrieved evidence appear here.
+                                </p>
                             </div>
+
                         </div>
+
                     </div>
+
+                </section>
+
+                <!-- Section 2: Gold Standard evaluation runs -->
+                <section class="evaluation-workflow-section evaluation-runs-section"
+                         aria-labelledby="goldEvaluationTitle">
+
+                    <div class="evaluation-workflow-heading">
+                        <span>Experiment evaluation</span>
+                        <h3 id="goldEvaluationTitle">Gold Standard Evaluation Runs</h3>
+                        <p>
+                            Review saved test runs, compare evaluation results,
+                            and score answers against the Gold Standard.
+                        </p>
+                    </div>
+
+                    <div id="evaluationRunList"
+                         class="evaluation-run-list"></div>
+
+                </section>
                 </section>
 
                 <section class="panel panel-large workspace-view" id="report" data-view-panel="report" hidden>

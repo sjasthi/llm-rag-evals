@@ -12,6 +12,7 @@ from evaluation import LOCAL_EVALUATORS, score_saved_response
 from evaluator_catalog import ADVANCED_DEFINITIONS
 from evaluation_store import reusable_result_exists
 from run_advanced_evaluation import (
+    DEFAULT_ADVANCED_EVALUATOR_KEYS,
     build_preflight as build_advanced_preflight,
     execute_plan as execute_advanced_plan,
     selected_response_ids,
@@ -83,7 +84,7 @@ def build_run_preflight(
         "response_ids": response_ids,
         "requested_metric_count": (
                 len(LOCAL_EVALUATOR_KEYS)
-                + (len(ADVANCED_DEFINITIONS) if include_advanced else 0)
+                + (len(DEFAULT_ADVANCED_EVALUATOR_KEYS) if include_advanced else 0)
         ),
         "local": local,
         "advanced": advanced,

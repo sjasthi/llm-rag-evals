@@ -15,9 +15,22 @@ from advanced_evaluation import (
 )
 from database import database_connection
 from evaluation import load_evaluation_input
-from evaluation_store import persist_result, reusable_result_exists
+from evaluation_store import active_evaluator, persist_result, reusable_result_exists
 from settings import Settings, load_settings
 
+# Citation Support and Citation Coverage are opt-in evaluators.
+DEFAULT_ADVANCED_EVALUATOR_KEYS = [
+    key
+    for key in ADVANCED_EVALUATOR_KEYS
+    if key not in {"citation_support", "citation_coverage"}
+]
+
+def requires_expected_answer(evaluator_keys: list[str]) -> bool:
+    """Determine whether selected evaluators require Gold Standard loading."""
+    return any(
+        key not in {"citation_support", "citation_coverage"}
+        for key in evaluator_keys
+    )
 
 def selected_response_ids(
     connection: Any,
@@ -56,7 +69,11 @@ def build_preflight(
     estimated_cost = 0.0
     unknown_cost_applications = 0
     for response_id in response_ids:
-        item = load_evaluation_input(connection, response_id)
+        item = load_evaluation_input(
+            connection,
+            response_id,
+            require_expected_answer=requires_expected_answer(evaluator_keys),
+        )
         for evaluator_key in evaluator_keys:
             existing = reusable_result_exists(connection, response_id, evaluator_key)
             if existing and not force:
@@ -133,6 +150,18 @@ def execute_plan(
             "pass --allow-unknown-cost deliberately."
         )
 
+    # Verify that every evaluator can be persisted before any paid execution.
+    evaluator_keys_to_run = {
+        application["evaluator"]
+        for application in preflight["applications"]
+        if application["action"] == "run"
+    }
+
+    if evaluator_keys_to_run:
+        with database_connection(settings) as connection:
+            for evaluator_key in sorted(evaluator_keys_to_run):
+                active_evaluator(connection, evaluator_key)
+
     outcomes: list[dict[str, Any]] = []
     with AdvancedEvaluatorEngine(settings) as engine:
         for application in preflight["applications"]:
@@ -144,7 +173,13 @@ def execute_plan(
             repeat_count = int(application.get("attempts", 1))
             for _ in range(repeat_count):
                 with database_connection(settings) as connection:
-                    item = load_evaluation_input(connection, response_id)
+                    item = load_evaluation_input(
+                        connection,
+                        response_id,
+                        require_expected_answer=(
+                                evaluator_key not in {"citation_support", "citation_coverage"}
+                        ),
+                    )
                 execution = engine.run(evaluator_key, item)
                 with database_connection(settings) as connection:
                     try:
@@ -187,8 +222,12 @@ def main() -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument(
         "--evaluators",
-        default=",".join(ADVANCED_EVALUATOR_KEYS),
-        help="Comma-separated advanced evaluator keys.",
+        default=",".join(DEFAULT_ADVANCED_EVALUATOR_KEYS),
+        help=(
+            "Comma-separated advanced evaluator keys. "
+            "Citation Support and Citation Coverage are opt-in: "
+            "use --evaluators citation_support,citation_coverage."
+        ),
     )
     parser.add_argument("--attempts", type=int, default=1)
     parser.add_argument("--max-applications", type=int, default=5)

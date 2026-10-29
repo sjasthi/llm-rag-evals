@@ -68,8 +68,10 @@ $(function () {
     const $evaluatorGoalSecondary = $("#evaluatorGoalSecondary");
     const $evaluatorGoalCaution = $("#evaluatorGoalCaution");
     const $evaluatorGoalReference = $("#evaluatorGoalReference");
+    const $standaloneResponseList = $("#standaloneResponseList");
     const $evaluationRunList = $("#evaluationRunList");
     const $evaluationResultDetail = $("#evaluationResultDetail");
+    const $evaluationLists = $standaloneResponseList.add($evaluationRunList);
     const $newTestRunToggle = $("#newTestRunToggle");
     const $newTestRunForm = $("#newTestRunForm");
     const $closeNewTestRun = $("#closeNewTestRun");
@@ -1150,17 +1152,23 @@ $(function () {
     }
 
     function evaluatorMethodKey(evaluator) {
-        if (Number(evaluator.is_local) === 1) {
-            return "local";
-        }
-        if (evaluator.evaluator_key === "llm_judge") {
-            return "judge";
-        }
-        if (String(evaluator.evaluator_key || "").startsWith("ragas_")) {
-            return "ragas";
-        }
-        return "model";
+    const key = String(evaluator.evaluator_key || "");
+
+    if (["citation_coverage", "citation_support"].includes(key)) {
+        return "citation";
     }
+
+    if (Number(evaluator.is_local) === 1) {
+        return "local";
+    }
+    if (evaluator.evaluator_key === "llm_judge") {
+        return "judge";
+    }
+    if (key.startsWith("ragas_")) {
+        return "ragas";
+    }
+    return "model";
+}
 
     function evaluatorMethodLabel(evaluator) {
         return {
@@ -1172,7 +1180,14 @@ $(function () {
     }
 
     function requiresGoldStandard(evaluator) {
-        return !["ragas_faithfulness", "ragas_response_relevancy"].includes(
+        const noGoldStandardRequired = [
+            "ragas_faithfulness",
+            "ragas_response_relevancy",
+            "citation_support",
+            "citation_coverage"
+        ];
+
+        return !noGoldStandardRequired.includes(
             String(evaluator.evaluator_key || "")
         );
     }
@@ -1207,6 +1222,7 @@ $(function () {
             { key: "local", label: "Local metrics" },
             { key: "judge", label: "LLM judge" },
             { key: "ragas", label: "RAGAS" },
+            { key: "citation", label: "Citation metrics" },
         ];
         const $section = $("<section>").addClass("response-method-section");
         $section.append($("<div>").addClass("subsection-heading").append(
@@ -1453,7 +1469,10 @@ $(function () {
                 $experimentHumanReviewCount.text(data.findings?.human_review_count || 0);
                 renderResearchReadiness(dataset, evaluationRuns, data.findings || {});
                 $evaluatorSummary.text(
-                    "Start with a completed test below. Scoring can reuse finished results, add missing local checks without an API call, or apply all 13 methods to one exact saved answer after a call preview."
+                    "Choose a saved test or standalone Chat answer to inspect its evaluation results. " +
+                    "The catalog contains " + evaluatorCatalog.length + " evaluation methods, " +
+                    "including optional advanced and citation metrics. " +
+                    "Scoring can reuse saved results, and local checks do not require an external API call."
                 );
                 const categories = [...new Set(evaluationQuestions.map(function (question) { return question.category; }))].sort();
                 $evaluationCategoryFilter.find("option:not(:first)").remove();
@@ -1461,7 +1480,12 @@ $(function () {
                     $evaluationCategoryFilter.append($("<option>").val(value).text(titleCaseLabel(value)));
                 });
                 renderEvaluationQuestions();
-                renderEvaluationRuns(evaluationRuns, data.responses || [], data.findings || {});
+                renderEvaluationRuns(
+                    evaluationRuns,
+                    data.responses || [],
+                    data.findings || {},
+                    data.standaloneResponses || []
+                );
                 renderFindings(data);
             })
             .fail(function () {
@@ -1828,9 +1852,175 @@ $(function () {
         return $run;
     }
 
-    function renderEvaluationRuns(runs, responses, findings) {
+    function renderStandaloneResponses(responses) {
+        const $section = $("<details>")
+            .addClass("standalone-response-section")
+            .prop("open", true);
+
+        $section.append(
+            $("<summary>").text(
+                "Chat and standalone answers (" + responses.length + ")"
+            )
+        );
+
+        if (!responses.length) {
+            $section.append(
+                $("<p>").addClass("text-muted")
+                    .text("No standalone Chat answers have been saved yet.")
+            );
+            $standaloneResponseList.append($section);
+            return;
+        }
+
+        const $search = $("<input>")
+            .attr({
+                type: "search",
+                placeholder: "Search question or response ID",
+                "aria-label": "Search standalone answers"
+            })
+            .addClass("form-control mb-2");
+
+        const $count = $("<small>").addClass("text-muted");
+        const $list = $("<div>").addClass("evaluation-response-buttons");
+
+        const $showMore = $("<button>")
+            .attr("type", "button")
+            .addClass("btn btn-sm btn-outline-secondary mt-2")
+            .text("Show more answers");
+
+        const $showFewer = $("<button>")
+            .attr("type", "button")
+            .addClass("btn btn-sm btn-outline-secondary mt-2")
+            .text("Show fewer answers");
+
+        let visibleLimit = 10;
+
+        // Register all responses, including those initially hidden.
+        responses.forEach(function (response) {
+            const responseId = Number(response.response_id);
+
+            evaluationResponseContexts.set(responseId, {
+                response_id: responseId,
+                run_id: null,
+                question_id: response.question_id || null,
+                question_text: response.question_text
+            });
+        });
+
+        function updateList() {
+            const query = $search.val().trim().toLowerCase();
+
+            const filtered = responses.filter(function (response) {
+                return String(response.response_id).includes(query) ||
+                    String(response.question_text || "")
+                        .toLowerCase()
+                        .includes(query);
+            });
+
+            $list.empty();
+
+            filtered.slice(0, visibleLimit).forEach(function (response) {
+                const responseId = Number(response.response_id);
+                const completedCount =
+                    Number(response.completed_result_count) || 0;
+
+                const $button = $("<button>")
+                    .attr("type", "button")
+                    .attr("aria-pressed",
+                        currentEvaluationResponseId === responseId
+                            ? "true" : "false")
+                    .addClass(
+                        "btn btn-sm btn-outline-primary evaluation-response-button"
+                    )
+                    .toggleClass(
+                        "active",
+                        currentEvaluationResponseId === responseId
+                    )
+                    .data("responseId", responseId);
+
+                $button.append(
+                    $("<strong>").text("Response #" + responseId),
+                    $("<span>").text(
+                        response.question_text || "Untitled question"
+                    ),
+                    $("<small>").text(
+                        completedCount + " completed evaluations"
+                    )
+                );
+
+                const $previewButton = $("<button>")
+                    .attr({
+                        type: "button",
+                        "aria-label": "Preview citation scoring for response " + responseId
+                    })
+                    .addClass("btn btn-sm btn-outline-secondary preview-standalone-scoring")
+                    .data("responseId", responseId)
+                    .text("Preview citation scoring");
+
+                const $executeButton = $("<button>")
+                    .attr({
+                        type: "button",
+                        "aria-label": "Run citation scoring for response " + responseId,
+                        title: "Preview citation scoring before execution"
+                    })
+                    .addClass("btn btn-sm btn-primary execute-standalone-scoring")
+                    .data("responseId", responseId)
+                    .prop("disabled", true)
+                    .text("Run citation scoring");
+
+                const $responseRow = $("<div>")
+                    .addClass("standalone-response-row");
+
+                const $responseDetails = $("<div>")
+                    .addClass("standalone-response-details")
+                    .append($button);
+
+                const $responseActions = $("<div>")
+                    .addClass("standalone-response-actions")
+                    .append($previewButton, " ", $executeButton);
+
+                $responseRow.append($responseDetails, $responseActions);
+                $list.append($responseRow);
+            });
+
+            $count.text(
+                "Showing " +
+                Math.min(visibleLimit, filtered.length) +
+                " of " + filtered.length + " matching answers"
+            );
+
+            $showMore.toggle(filtered.length > visibleLimit);
+            $showFewer.toggle(visibleLimit > 10);
+        }
+
+        $search.on("input", function () {
+            visibleLimit = 10;
+            updateList();
+        });
+
+        $showMore.on("click", function () {
+            visibleLimit += 10;
+            updateList();
+        });
+
+        $showFewer.on("click", function () {
+            visibleLimit = 10;
+            updateList();
+        });
+
+        $section.append($search, $count, $list, $showMore, " ", $showFewer);
+        $standaloneResponseList.append($section);
+
+        updateList();
+    }
+
+   function renderEvaluationRuns(runs, responses, findings, standaloneResponses = []) {
+        $standaloneResponseList.empty();
         $evaluationRunList.empty();
+
         evaluationResponseContexts = new Map();
+        renderStandaloneResponses(standaloneResponses);
+
         if (!runs.length) {
             $evaluationRunList.append($("<p>").addClass("text-muted").text("No saved tests are available yet."));
             return;
@@ -1862,9 +2052,9 @@ $(function () {
         })[0];
         let $responseToOpen = preferredRun
             ? $evaluationRunList.find('.evaluation-run[data-run-id="' + preferredRun.run_id + '"] .evaluation-response-button').first()
-            : $evaluationRunList.find(".evaluation-response-button").first();
+            : $evaluationLists.find(".evaluation-response-button").first();
         if (currentEvaluationResponseId) {
-            const $current = $evaluationRunList.find(".evaluation-response-button").filter(function () {
+            const $current = $evaluationLists.find(".evaluation-response-button").filter(function () {
                 return Number($(this).data("responseId")) === currentEvaluationResponseId;
             }).first();
             if ($current.length) {
@@ -2351,14 +2541,14 @@ $(function () {
         return payload;
     }
 
-    $evaluationRunList.on("click", ".evaluate-run-toggle", function () {
+    $evaluationLists.on("click", ".evaluate-run-toggle", function () {
         const $panel = $(this).siblings(".run-evaluation-panel");
         const willOpen = $panel.prop("hidden");
         $panel.prop("hidden", !willOpen);
         $(this).text(willOpen ? "Close scoring" : "Score saved answers");
     });
 
-    $evaluationRunList.on("click", ".evaluate-response-button", function () {
+    $evaluationLists.on("click", ".evaluate-response-button", function () {
         const $button = $(this);
         const $run = $button.closest(".evaluation-run");
         const $panel = $run.find(".run-evaluation-panel");
@@ -2371,7 +2561,7 @@ $(function () {
         $panel[0].scrollIntoView({ behavior: preferredScrollBehavior(), block: "nearest" });
     });
 
-    $evaluationRunList.on("change", ".run-evaluation-scope, .run-evaluation-target-select, .run-evaluation-force-input", function () {
+    $evaluationLists.on("change", ".run-evaluation-scope, .run-evaluation-target-select, .run-evaluation-force-input", function () {
         const $panel = $(this).closest(".run-evaluation-panel");
         const includeAdvanced = $panel.find(".run-evaluation-scope").val() === "all13";
         $panel.find(".run-evaluation-target").prop("hidden", !includeAdvanced);
@@ -2383,7 +2573,7 @@ $(function () {
         );
     });
 
-    $evaluationRunList.on("click", ".preflight-run-evaluation", function () {
+    $evaluationLists.on("click", ".preflight-run-evaluation", function () {
         const $button = $(this);
         const $panel = $button.closest(".run-evaluation-panel");
         const $status = $panel.find(".run-evaluation-status");
@@ -2422,7 +2612,7 @@ $(function () {
             });
     });
 
-    $evaluationRunList.on("click", ".execute-run-evaluation", function () {
+    $evaluationLists.on("click", ".execute-run-evaluation", function () {
         const $button = $(this);
         const $panel = $button.closest(".run-evaluation-panel");
         const plan = $button.data("preflight") || {};
@@ -2628,7 +2818,19 @@ $(function () {
         $evaluationResultDetail.append($comparison);
 
         const $meta = $("<div>").addClass("response-meta");
-        $meta.append($("<span>").text((Number(response.is_answerable) ? "Answerable" : "Unanswerable") + " test case"));
+        if (response.is_answerable === null ||
+            response.is_answerable === undefined) {
+            $meta.append(
+                $("<span>").text("No Gold Standard reference")
+            );
+        } else {
+            $meta.append(
+                $("<span>").text(
+                    (Number(response.is_answerable) ? "Answerable" : "Unanswerable") +
+                    " test case"
+                )
+            );
+        }
         $meta.append($("<span>").text(readable(response.retrieval_method) + " retrieval"));
         $meta.append($("<span>").text((response.latency_ms || 0) + " ms answer latency"));
         if (response.chat_model) {
@@ -2691,6 +2893,12 @@ $(function () {
                 label: "RAGAS metrics",
                 emptyTitle: "RAGAS has not evaluated this answer.",
                 emptyText: "This is missing evidence, not a zero score. A guarded RAGAS run can add faithfulness, relevancy, context precision, and context recall.",
+            },
+            {
+                key: "citation",
+                label: "Citation metrics",
+                emptyTitle: "Citation metrics have not evaluated this answer.",
+                emptyText: "Citation Coverage checks whether factual claims have valid saved citations. Citation Support checks whether cited evidence supports those claims. Both are optional, provider-backed evaluations.",
             },
         ].forEach(function (method) {
             const methodResults = results.filter(function (result) { return evaluatorMethodKey(result) === method.key; });
@@ -2760,8 +2968,13 @@ $(function () {
     }
 
     function loadEvaluationResponse($button, shouldScroll) {
-        $evaluationRunList.find(".evaluation-response-button").removeClass("active").attr("aria-pressed", "false");
+        $evaluationLists.find(".evaluation-response-button").removeClass("active").attr("aria-pressed", "false");
         $button.addClass("active").attr("aria-pressed", "true").prop("disabled", true);
+
+        // Remember the selected response even when search filters
+        // temporarily remove its button from the list.
+        currentEvaluationResponseId = Number($button.data("responseId"));
+
         $.getJSON("api/evaluations.php", { response_id: $button.data("responseId") })
             .done(function (response) {
                 renderEvaluationDetail(response.data);
@@ -2792,11 +3005,304 @@ $(function () {
         });
     });
 
-    $evaluationRunList.on("click", ".evaluation-response-button", function () {
+    $evaluationLists.on("click", ".evaluation-response-button", function () {
         const $button = $(this);
         $button.closest(".evaluation-run").find(".run-evaluation-target-select").val($button.data("responseId"));
         loadEvaluationResponse($button, true);
     });
+
+    // Preview citation scoring for a standalone Chat response.
+    // Preflight only: does not execute evaluators or call Gemini.
+    $evaluationLists.on("click", ".preview-standalone-scoring", function () {
+        const $button = $(this);
+        const responseId = Number($button.data("responseId"));
+        const $actions = $button.closest(".standalone-response-actions");
+        const $executeButton = $actions.find(".execute-standalone-scoring");
+
+        // Invalidate any previous preview before requesting a new one.
+        $executeButton
+            .prop("disabled", true)
+            .removeData("preflightPlan")
+            .text("Run citation scoring")
+            .attr("title", "Preview citation scoring before execution");
+        let $details = $actions.find(".standalone-scoring-details");
+        let $status;
+
+        if (!$details.length) {
+            $details = $("<details>")
+                .addClass("standalone-scoring-details mt-2");
+
+            const $summary = $("<summary>")
+                .text("Citation scoring preview details");
+
+            $status = $("<div>")
+                .addClass("standalone-scoring-preview small mt-2")
+                .attr({
+                    role: "status",
+                    "aria-live": "polite"
+                });
+
+            $details.append($summary, $status);
+            $actions.append($details);
+        } else {
+            $status = $details.find(".standalone-scoring-preview");
+        }
+
+        // Expand automatically whenever a new preview is requested.
+        $details.prop("open", true);
+
+        $button.prop("disabled", true).text("Checking…");
+        $status.empty().text("Checking citation scoring plan…");
+
+        $.ajax({
+            url: "api/evaluate_standalone.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({
+                action: "preflight",
+                response_id: responseId
+            })
+        })
+        .done(function (result) {
+            if (!result.ok) {
+                $status.text(result.error || "Unable to preview citation scoring.");
+                return;
+            }
+
+            const plan = result.data && result.data.preflight
+                ? result.data.preflight
+                : {};
+
+            const reused = Number(plan.reused_count) || 0;
+            const paidCalls = Number(plan.paid_application_count) || 0;
+            const estimatedCost = Number(plan.estimated_cost) || 0;
+            const unknownCostCalls = Number(plan.unknown_cost_application_count) || 0;
+
+            const costIsKnown =
+                plan.estimated_cost !== null &&
+                plan.estimated_cost !== undefined &&
+                Number.isFinite(Number(plan.estimated_cost));
+
+            const canExecute =
+                Array.isArray(plan.applications) &&
+                plan.applications.length === 2 &&
+                paidCalls > 0 &&
+                paidCalls <= 2 &&
+                unknownCostCalls === 0 &&
+                costIsKnown &&
+                estimatedCost <= 0.25;
+
+            if (canExecute) {
+                $executeButton
+                    .data("preflightPlan", plan)
+                    .prop("disabled", false)
+                    .attr("title", "Review and confirm citation scoring execution");
+                }
+            if (!canExecute && Array.isArray(plan.applications)) {
+                const actions = plan.applications.map(function (application) {
+                    return String(application.action || "").toLowerCase();
+                });
+
+                if (actions.length === 2 && actions.every(action => action === "reuse")) {
+                    $executeButton
+                        .text("Already scored")
+                        .attr("title", "Both citation evaluations already have reusable results");
+                } else if (actions.length === 2 && actions.every(action => action === "skip")) {
+                    $executeButton
+                        .text("No scoring needed")
+                        .attr("title", "Both citation evaluators were skipped");
+                }
+            }
+            const applications = Array.isArray(plan.applications)
+                ? plan.applications
+                : [];
+
+            const evaluatorNames = {
+                citation_support: "Citation Support",
+                citation_coverage: "Citation Coverage"
+            };
+
+            const $breakdown = $("<div>")
+                .addClass("standalone-scoring-breakdown mt-2");
+
+            $breakdown.append(
+                $("<strong>").text("Individual evaluator plan")
+            );
+
+            if (!applications.length) {
+                $breakdown.append(
+                    $("<div>")
+                        .addClass("text-muted")
+                        .text("No evaluator actions were returned.")
+                );
+            }
+
+            applications.forEach(function (application) {
+                const evaluatorName =
+                    evaluatorNames[application.evaluator] ||
+                    application.evaluator ||
+                    "Unknown evaluator";
+
+                const action = String(application.action || "unknown");
+                const reason = String(application.reason || "");
+
+                const actionLabels = {
+                    reuse: "Reuse existing result",
+                    run: "Run evaluator",
+                    skip: "Skip evaluator"
+                };
+
+                const actionLabel = actionLabels[action] || action;
+
+                const $item = $("<div>")
+                    .addClass("standalone-scoring-evaluator mt-2");
+
+                $item.append(
+                    $("<div>").append(
+                        $("<strong>").text(evaluatorName),
+                        $("<span>").text(" — " + actionLabel)
+                    ),
+                    $("<div>")
+                        .addClass("text-muted")
+                        .text(reason)
+                );
+
+                $breakdown.append($item);
+            });
+
+            $status.empty().append(
+                $("<strong>").text("Citation scoring preview"),
+                $("<div>").text("Existing evaluations reused: " + reused),
+                $("<div>").text("External evaluator calls planned: " + paidCalls),
+                $("<div>").text("Estimated cost: $" + estimatedCost.toFixed(4)),
+                $breakdown,
+                $("<div>")
+                    .addClass("text-muted mt-2")
+                    .text("Preview only. No evaluations were executed.")
+            );
+
+        })
+        .fail(function (xhr) {
+            const message = xhr.responseJSON?.error ||
+                xhr.responseJSON?.message ||
+                "Unable to retrieve citation scoring preview.";
+
+            $status.text(message);
+        })
+        .always(function () {
+            $button.prop("disabled", false).text("Preview citation scoring");
+        });
+    });
+
+// Run citation scoring only after a successful preflight and explicit confirmation.
+$evaluationLists.on("click", ".execute-standalone-scoring", function () {
+    const $button = $(this);
+    const responseId = Number($button.data("responseId"));
+    const plan = $button.data("preflightPlan");
+
+    if (!plan || $button.prop("disabled")) {
+        return;
+    }
+
+    const paidCalls = Number(plan.paid_application_count) || 0;
+    const estimatedCost = Number(plan.estimated_cost);
+
+    const validPlan =
+        Array.isArray(plan.applications) &&
+        plan.applications.length === 2 &&
+        paidCalls > 0 &&
+        paidCalls <= 2 &&
+        Number(plan.unknown_cost_application_count) === 0 &&
+        plan.estimated_cost !== null &&
+        plan.estimated_cost !== undefined &&
+        Number.isFinite(estimatedCost) &&
+        estimatedCost <= 0.25;
+
+    if (!validPlan) {
+        $button.prop("disabled", true).removeData("preflightPlan");
+        return;
+    }
+
+    const confirmed = window.confirm(
+        "Run citation scoring for Response #" + responseId + "?\n\n" +
+        "External evaluator calls planned: " + paidCalls + "\n" +
+        "Estimated cost: $" + estimatedCost.toFixed(4) + "\n\n" +
+        "This may make paid Gemini API calls.\n" +
+        "The estimate is not a guaranteed spending cap.\n\n" +
+        "Select OK to confirm or Cancel to stop."
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    const $actions = $button.closest(".standalone-response-actions");
+
+    let $resultDetails = $actions.find(".standalone-scoring-result-details");
+    let $status;
+
+    if (!$resultDetails.length) {
+        $resultDetails = $("<details>")
+            .addClass("standalone-scoring-result-details mt-2");
+
+        const $summary = $("<summary>")
+            .text("Citation scoring execution results");
+
+        $status = $("<div>")
+            .addClass("standalone-scoring-result small mt-2")
+            .attr({
+                role: "status",
+                "aria-live": "polite"
+            });
+
+        $resultDetails.append($summary, $status);
+        $actions.append($resultDetails);
+    } else {
+        $status = $resultDetails.find(".standalone-scoring-result");
+    }
+
+    // Show the execution status automatically.
+    $resultDetails.prop("open", true);
+    $status.text("Submitting citation scoring request...");
+
+    // Require a fresh preflight before any subsequent execution attempt.
+    $button
+        .prop("disabled", true)
+        .removeData("preflightPlan")
+        .text("Submitting…");
+
+    $.ajax({
+        url: "api/evaluate_standalone.php",
+        method: "POST",
+        contentType: "application/json; charset=utf-8",
+        dataType: "json",
+        data: JSON.stringify({
+            action: "execute",
+            response_id: responseId,
+            confirm_execution: true
+        })
+    })
+    .done(function (result) {
+        if (result.ok) {
+            $status.text(
+                "Citation scoring request completed. Refresh evaluation results to review the scores."
+            );
+        } else {
+            $status.text(result.error || "Citation scoring was not completed.");
+        }
+    })
+    .fail(function (xhr) {
+        const message =
+            xhr.responseJSON?.error ||
+            "Citation scoring request failed.";
+
+        $status.text(message);
+    })
+    .always(function () {
+        $button.text("Run citation scoring");
+    });
+});
 
     $evaluationResultDetail.on("submit", "#humanReviewForm", function (event) {
         event.preventDefault();

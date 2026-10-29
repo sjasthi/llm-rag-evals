@@ -42,6 +42,7 @@ class EvaluationInput:
     retrieved_contexts: list[str] = field(default_factory=list)
     review_status: str = "reviewed"
     retrieved_source_ranks: list[int] = field(default_factory=list)
+    retrieved_evidence_by_rank: dict[int, str] = field(default_factory=dict)
 
 @dataclass(frozen=True)
 class EvaluationResult:
@@ -369,6 +370,12 @@ def load_evaluation_input(
         ]
         sources = [str(item["source_path"]) for item in context_rows if item["source_path"]]
         contexts = [str(item["context_excerpt"]) for item in context_rows if item["context_excerpt"]]
+        evidence_by_rank = {
+            int(item["rank_position"]): str(item["context_excerpt"])
+            for item in context_rows
+            if item["rank_position"] is not None
+               and item["context_excerpt"] is not None
+        }
     snapshot = _json_object(row.get("evaluation_snapshot_json"))
     expected_answer = snapshot.get("expected_answer", row.get("expected_answer"))
 
@@ -390,6 +397,7 @@ def load_evaluation_input(
         retrieved_contexts=contexts,
         review_status=str(snapshot.get("review_status", row.get("review_status") or "unknown")),
         retrieved_source_ranks=source_ranks,
+        retrieved_evidence_by_rank=evidence_by_rank,
     )
 
 

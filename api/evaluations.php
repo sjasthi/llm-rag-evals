@@ -396,6 +396,44 @@ try {
         }
         unset($savedResponse);
 
+        // Standalone Chat and CLI responses are not associated
+        // with a structured evaluation test run.
+        $standaloneResponses = $database->query(
+            "SELECT
+                 response.response_id,
+                 response.run_id,
+                 response.question_id,
+                 response.question_text,
+                 response.latency_ms,
+                 response.created_at,
+                 COUNT(result.result_id) AS result_count,
+                 COALESCE(SUM(result.status='completed'), 0) AS completed_result_count,
+                 COALESCE(SUM(result.status='failed'), 0) AS failed_result_count,
+                 COALESCE(SUM(result.status='skipped'), 0) AS skipped_result_count,
+                 COALESCE(SUM(
+                     definition.evaluator_key='citation_coverage'
+                     AND result.status='completed'
+                 ), 0) AS citation_coverage_completed_count,
+                 COALESCE(SUM(
+                     definition.evaluator_key='citation_support'
+                     AND result.status='completed'
+                 ), 0) AS citation_support_completed_count,
+                 (SELECT COUNT(*)
+                    FROM human_reviews review
+                   WHERE review.response_id=response.response_id
+                     AND review.is_current=TRUE
+                 ) AS human_review_count
+             FROM rag_responses response
+             LEFT JOIN evaluator_results result
+               ON result.response_id=response.response_id
+             LEFT JOIN evaluator_definitions definition
+               ON definition.evaluator_id=result.evaluator_id
+             WHERE response.run_id IS NULL
+             GROUP BY response.response_id
+             ORDER BY response.response_id DESC
+             LIMIT 100"
+        )->fetchAll();
+
         $metricSummaries = normalizeJsonColumns($database->query(
             "SELECT definition.evaluator_key, definition.display_name, definition.family,
                     definition.dimension, definition.configuration_json, definition.is_local,
@@ -503,8 +541,10 @@ try {
             ],
         ];
 
+
         evaluationResponse(200, ['ok' => true, 'data' => compact(
-            'dataset', 'questions', 'evaluators', 'runs', 'responses', 'findings'
+            'dataset', 'questions', 'evaluators', 'runs',
+            'responses', 'standaloneResponses', 'findings'
         )]);
     }
 

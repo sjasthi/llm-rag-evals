@@ -259,6 +259,92 @@ BASELINE_DEFINITIONS = [
 
 ADVANCED_DEFINITIONS = [
     _definition(
+        "citation_coverage",
+        "Citation Coverage",
+        "judged",
+        "generation",
+        "1.0",
+        "Measures the proportion of factual claims in the generated "
+        "response that include at least one valid saved citation.",
+        layer="advanced",
+        question="What proportion of factual claims have valid citations?",
+        comparison_target=(
+            "Atomic factual claims extracted from the generated response "
+            "and citation IDs associated with their originating statements"
+        ),
+        calculation=(
+            "Factual claims with at least one valid saved citation "
+            "divided by all identified factual claims; "
+            "claim-free responses are not applicable"
+        ),
+        scale="0 to 1 factual-claim citation coverage ratio",
+        limitation=(
+            "The LLM may omit or incorrectly identify factual claims. "
+            "Statement review completeness does not guarantee atomic "
+            "claim extraction completeness. A valid citation indicates "
+            "that a saved source was referenced, not that the source "
+            "supports the claim. Citation Support measures that separately."
+        ),
+        inputs=[
+            "user_input",
+            "response",
+            "retrieved_evidence_by_rank",
+        ],
+        threshold=1.0,
+        threshold_status="project_defined_unvalidated",
+        implementation="rag/advanced_evaluation.py:run_citation_coverage",
+        framework="project_gemini_judge",
+        is_local=False,
+        is_deterministic=False,
+        applicability=(
+            "Saved responses containing factual claims; "
+            "no reviewed reference answer required"
+        ),
+    ),
+    _definition(
+        "citation_support",
+        "Citation Support",
+        "judged",
+        "generation",
+        "1.0",
+        "Evaluates whether factual claims in citation-bearing statements "
+        "are supported by their specifically cited retrieved evidence.",
+        layer="advanced",
+        question="Does each factual claim have support in the source it cites?",
+        comparison_target=(
+            "Factual claims extracted from the generated response and "
+            "the saved evidence associated with each cited source ID"
+        ),
+        calculation=(
+            "Supported claims divided by assessable claims; "
+            "unassessable claims excluded from the score and "
+            "reported separately through assessment coverage"
+        ),
+        scale="0 to 1 claim support ratio, plus assessment coverage",
+        limitation=(
+            "The LLM may incorrectly extract or classify claims. "
+            "Only citation-bearing statements are evaluated; "
+            "uncited statements are outside this metric's scope. "
+            "A high support score does not establish answer completeness "
+            "or overall factual correctness."
+        ),
+        inputs=[
+            "user_input",
+            "response",
+            "retrieved_evidence_by_rank",
+        ],
+        threshold=1.0,
+        threshold_status="project_defined_unvalidated",
+        implementation="rag/advanced_evaluation.py:run_citation_support",
+        framework="project_gemini_judge",
+        is_local=False,
+        is_deterministic=False,
+        applicability=(
+            "Saved responses containing at least one citation-bearing "
+            "statement; no reviewed reference answer required"
+        ),
+    ),
+    _definition(
         "llm_judge",
         "LLM-as-judge rubric",
         "judged",

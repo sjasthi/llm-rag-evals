@@ -1183,6 +1183,8 @@ $(function () {
         const noGoldStandardRequired = [
             "ragas_faithfulness",
             "ragas_response_relevancy",
+            "citation_validity",
+            "citation_presence",
             "citation_support",
             "citation_coverage"
         ];
@@ -1191,7 +1193,29 @@ $(function () {
             String(evaluator.evaluator_key || "")
         );
     }
+    function hasGoldStandardReference(response) {
+    return response.is_answerable !== null &&
+        response.is_answerable !== undefined;
+}
 
+function applicableEvaluators(methodKey, response, results) {
+    const hasReference = hasGoldStandardReference(response);
+    const historicalKeys = new Set(
+        (results || []).map(function (result) {
+            return String(result.evaluator_key || "");
+        })
+    );
+
+    return evaluatorCatalog.filter(function (evaluator) {
+        if (evaluatorMethodKey(evaluator) !== methodKey) {
+            return false;
+        }
+
+        return hasReference ||
+            !requiresGoldStandard(evaluator) ||
+            historicalKeys.has(String(evaluator.evaluator_key || ""));
+    });
+}
     function methodStatusCounts(results) {
         return {
             completed: results.filter(function (result) { return result.status === "completed"; }).length,
@@ -1218,11 +1242,12 @@ $(function () {
     function renderEvaluationMethodSummary(data) {
         const results = data.results || [];
         const reviews = data.human_reviews || [];
+        const response = data.response || {};
         const definitions = [
             { key: "local", label: "Local metrics" },
             { key: "judge", label: "LLM judge" },
             { key: "ragas", label: "RAGAS" },
-            { key: "citation", label: "Citation metrics" },
+            { key: "citation", label: "AI Citation Analysis"},
         ];
         const $section = $("<section>").addClass("response-method-section");
         $section.append($("<div>").addClass("subsection-heading").append(
@@ -1234,9 +1259,19 @@ $(function () {
             const methodResults = results.filter(function (result) {
                 return evaluatorMethodKey(result) === definition.key;
             });
-            const total = evaluatorCatalog.filter(function (evaluator) {
-                return evaluatorMethodKey(evaluator) === definition.key;
-            }).length;
+
+            const eligibleMethods = applicableEvaluators(
+                definition.key,
+                response,
+                results
+            );
+
+            if (!eligibleMethods.length && !methodResults.length) {
+                return;
+            }
+
+            const total = eligibleMethods.length;
+
             const counts = methodStatusCounts(methodResults);
             let headline = counts.completed + " of " + total + " completed";
             if (definition.key === "judge" && total === 1) {
@@ -2880,7 +2915,7 @@ $(function () {
                 key: "local",
                 label: "Local metrics",
                 emptyTitle: "No local metric results were saved.",
-                emptyText: "Run the local evaluation methods to compare this answer with the reviewed answer and expected source.",
+                emptyText: "Local metrics include deterministic checks such as Citation ID Validity and Citation Presence. These checks can evaluate saved citations without a Gold Standard reference. Other local metrics compare the answer against a reviewed reference and require Gold Standard data.",
             },
             {
                 key: "judge",
@@ -2896,13 +2931,26 @@ $(function () {
             },
             {
                 key: "citation",
-                label: "Citation metrics",
-                emptyTitle: "Citation metrics have not evaluated this answer.",
-                emptyText: "Citation Coverage checks whether factual claims have valid saved citations. Citation Support checks whether cited evidence supports those claims. Both are optional, provider-backed evaluations.",
+                label: "AI Citation Analysis",
+                emptyTitle: "AI Citation Analysis has not evaluated this answer.",
+                emptyText: "Citation Coverage checks whether factual claims have valid saved citations. Citation Support checks whether the cited evidence supports those claims. Both are optional, provider-backed evaluations."
             },
         ].forEach(function (method) {
-            const methodResults = results.filter(function (result) { return evaluatorMethodKey(result) === method.key; });
-            const catalogMethods = evaluatorCatalog.filter(function (evaluator) { return evaluatorMethodKey(evaluator) === method.key; });
+            const methodResults = results.filter(function (result) {
+                return evaluatorMethodKey(result) === method.key;
+            });
+
+            const catalogMethods = applicableEvaluators(
+                method.key,
+                response,
+                results
+            );
+
+            // Hide categories with no applicable evaluators or historical results.
+            if (!catalogMethods.length && !methodResults.length) {
+                return;
+            }
+
             const counts = methodStatusCounts(methodResults);
             const $section = $("<details>").addClass("score-layer-section");
             $section.append($("<summary>").addClass("score-layer-heading").append(

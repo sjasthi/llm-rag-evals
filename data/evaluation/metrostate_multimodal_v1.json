@@ -1,0 +1,538 @@
+{
+  "dataset_name": "Metro State Multimodal RAG Evaluation",
+  "version": "1.0",
+  "description": "Draft 30-question Gold Standard dataset covering ten synthetic FP06 fixtures across PNG, PDF, Markdown, PowerPoint, and Word. Includes visual workflows, charts, native tables, structured text, and text-only controls.",
+  "status": "draft",
+  "questions": [
+    {
+      "question": "What are the three steps in the Metro State academic advising appointment process, in order?",
+      "expected_answer": "The three steps are Schedule, Prepare, and Meet, in that order.",
+      "expected_source": "storage/uploads/e57501a586361ef2814dcaccb38676a2.png",
+      "expected_evidence": "The infographic shows three numbered steps connected by arrows: 1. Schedule, 2. Prepare, and 3. Meet.",
+      "accepted_answers": [
+        "Schedule, Prepare, Meet",
+        "Schedule -> Prepare -> Meet"
+      ],
+      "required_facts": [
+        "Schedule",
+        "Prepare",
+        "Meet"
+      ],
+      "category": "image_workflow",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC01. Standalone PNG infographic. Tests extraction of ordered workflow steps. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC01_image_only.png"
+    },
+    {
+      "question": "What should students do to prepare for a Metro State academic advising appointment?",
+      "expected_answer": "Students should review their degree audit, make a list of questions, and check for any holds on their account.",
+      "expected_source": "storage/uploads/e57501a586361ef2814dcaccb38676a2.png",
+      "expected_evidence": "Step 2, Prepare: Review your degree audit, make a list of questions, and check for any holds on your account.",
+      "accepted_answers": [
+        "Review degree audit, prepare questions, and check account holds"
+      ],
+      "required_facts": [
+        "degree audit",
+        "questions",
+        "account holds"
+      ],
+      "category": "image_text_extraction",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC01. Tests extraction of instructions embedded in an image. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC01_image_only.png"
+    },
+    {
+      "question": "Which Metro State advising support option focuses on transfer credit evaluation?",
+      "expected_answer": "The Transfer Advisor focuses on transfer credit evaluation.",
+      "expected_source": "storage/uploads/e57501a586361ef2814dcaccb38676a2.png",
+      "expected_evidence": "Advising Support Options table: Transfer Advisor | Transfer and new students | Transfer credit evaluation.",
+      "accepted_answers": [
+        "Transfer Advisor"
+      ],
+      "required_facts": [
+        "Transfer Advisor"
+      ],
+      "category": "image_table",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC01. Tests retrieval from a table embedded in the PNG infographic. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC01_image_only.png"
+    },
+    {
+      "question": "How many gallons of water were saved in March according to the campus water conservation dashboard?",
+      "expected_answer": "The campus saved 2,300 gallons of water in March.",
+      "expected_source": "storage/uploads/f36b1cf30fba28321226934ffb49951c.pdf",
+      "expected_evidence": "The embedded chart on page 1 labels March with 2,300 gallons.",
+      "accepted_answers": [
+        "2,300 gallons",
+        "2300 gallons"
+      ],
+      "required_facts": [
+        "2,300 gallons"
+      ],
+      "category": "pdf_embedded_chart",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC02. Tests extraction of a monthly value from an embedded chart. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC02_Campus_Water_Savings_Embedded_Image_v3.pdf"
+    },
+    {
+      "question": "What were the total water savings reported in the campus water conservation dashboard?",
+      "expected_answer": "The dashboard reports total water savings of 8,400 gallons.",
+      "expected_source": "storage/uploads/f36b1cf30fba28321226934ffb49951c.pdf",
+      "expected_evidence": "The Total Savings panel on page 1 shows 8,400 gallons.",
+      "accepted_answers": [
+        "8,400 gallons",
+        "8400 gallons"
+      ],
+      "required_facts": [
+        "8,400 gallons"
+      ],
+      "category": "pdf_embedded_chart",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC02. Tests extraction from a summary panel embedded in a PDF image. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC02_Campus_Water_Savings_Embedded_Image_v3.pdf"
+    },
+    {
+      "question": "By how many gallons did the campus exceed its quarterly water conservation goal?",
+      "expected_answer": "The campus exceeded its quarterly goal by 400 gallons, saving 8,400 gallons against a goal of 8,000 gallons.",
+      "expected_source": "storage/uploads/f36b1cf30fba28321226934ffb49951c.pdf",
+      "expected_evidence": "Total Savings: 8,400 gallons. Quarter Goal: 8,000 gallons. Result: 400 gallons above goal.",
+      "accepted_answers": [
+        "400 gallons",
+        "400 gallons above goal"
+      ],
+      "required_facts": [
+        "400 gallons"
+      ],
+      "category": "pdf_chart_reasoning",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC02. Tests numerical comparison using values in the embedded PDF chart. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC02_Campus_Water_Savings_Embedded_Image_v3.pdf"
+    },
+    {
+      "question": "Which item in the campus equipment loan inventory has the longest loan period, and how long is it?",
+      "expected_answer": "The graphing calculator has the longest loan period at 7 days.",
+      "expected_source": "storage/uploads/de58a1bb1320dc655208c1ccc0754d5e.pdf",
+      "expected_evidence": "Campus Equipment Loan Inventory table: Graphing calculator | 7 days | 22 | Math Lab | CAL-722.",
+      "accepted_answers": [
+        "Graphing calculator, 7 days",
+        "Graphing calculator for 7 days"
+      ],
+      "required_facts": [
+        "Graphing calculator",
+        "7 days"
+      ],
+      "category": "pdf_native_table",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC03. Requires comparison of loan periods across rows in a native PDF table. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC03_Equipment_Loan_Native_Table_REGENERATED.pdf"
+    },
+    {
+      "question": "How many portable projectors are available in the campus equipment loan inventory?",
+      "expected_answer": "There are 6 portable projectors available.",
+      "expected_source": "storage/uploads/de58a1bb1320dc655208c1ccc0754d5e.pdf",
+      "expected_evidence": "Campus Equipment Loan Inventory table: Portable projector | 3 days | 6 | Tech Counter | PRO-263.",
+      "accepted_answers": [
+        "6",
+        "6 portable projectors",
+        "6 units"
+      ],
+      "required_facts": [
+        "6"
+      ],
+      "category": "pdf_native_table",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC03. Tests extraction of a numeric inventory quantity from a native PDF table. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC03_Equipment_Loan_Native_Table_REGENERATED.pdf"
+    },
+    {
+      "question": "Where can students pick up a USB microphone kit from the campus equipment loan inventory?",
+      "expected_answer": "Students can pick up a USB microphone kit at the Media Desk.",
+      "expected_source": "storage/uploads/de58a1bb1320dc655208c1ccc0754d5e.pdf",
+      "expected_evidence": "Campus Equipment Loan Inventory table: USB microphone kit | 4 days | 9 | Media Desk | MIC-409.",
+      "accepted_answers": [
+        "Media Desk",
+        "At the Media Desk"
+      ],
+      "required_facts": [
+        "Media Desk"
+      ],
+      "category": "pdf_native_table",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC03. Tests retrieval of a pickup location from a native PDF table. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC03_Equipment_Loan_Native_Table_REGENERATED.pdf"
+    },
+    {
+      "question": "When do applications close for the Cedar Annex bicycle locker permit pilot?",
+      "expected_answer": "Applications close on November 6, 2026.",
+      "expected_source": "storage/uploads/882b2d298ee0c64a76454943d111fb40.pdf",
+      "expected_evidence": "Program overview: Applications open on October 26, 2026, and close on November 6, 2026.",
+      "accepted_answers": [
+        "November 6, 2026",
+        "November 6"
+      ],
+      "required_facts": [
+        "November 6, 2026"
+      ],
+      "category": "pdf_text_control",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC04. Text-only PDF control case for date extraction. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC04_Bicycle_Locker_Permit_Text_Only.pdf"
+    },
+    {
+      "question": "What is the combined upfront cost of the Cedar Annex bicycle locker permit and refundable key deposit?",
+      "expected_answer": "The combined upfront cost is $43, consisting of an $18 permit fee and a $25 refundable key deposit.",
+      "expected_source": "storage/uploads/882b2d298ee0c64a76454943d111fb40.pdf",
+      "expected_evidence": "Permit details: The permit costs $18 for the entire pilot period. A separate refundable key deposit of $25 is collected when a key is issued.",
+      "accepted_answers": [
+        "$43",
+        "43 dollars",
+        "$18 permit plus $25 deposit"
+      ],
+      "required_facts": [
+        "$43"
+      ],
+      "category": "pdf_text_reasoning",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC04. Tests arithmetic reasoning over two values in a text-only PDF. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC04_Bicycle_Locker_Permit_Text_Only.pdf"
+    },
+    {
+      "question": "How long does Facilities Mobility Services take to review complete bicycle locker permit applications?",
+      "expected_answer": "Facilities Mobility Services reviews complete applications within 4 business days.",
+      "expected_source": "storage/uploads/882b2d298ee0c64a76454943d111fb40.pdf",
+      "expected_evidence": "Application and pickup: Facilities Mobility Services reviews complete applications within 4 business days.",
+      "accepted_answers": [
+        "4 business days",
+        "Within 4 business days"
+      ],
+      "required_facts": [
+        "4 business days"
+      ],
+      "category": "pdf_text_control",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC04. Text-only PDF control case for service turnaround extraction. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC04_Bicycle_Locker_Permit_Text_Only.pdf"
+    },
+    {
+      "question": "What are the three steps visitors must follow to enter the Cedar Annex greenhouse, in order?",
+      "expected_answer": "Visitors must Check In at the North Gate kiosk, Sanitize at Wash station B, and Enter the Zone C greenhouse, in that order.",
+      "expected_source": "storage/uploads/5750e051f814c952adf4f183bc7f2cc0.pdf",
+      "expected_evidence": "Embedded Greenhouse Access Route diagram on page 1: 1. CHECK IN - North Gate kiosk; 2. SANITIZE - Wash station B; 3. ENTER - Zone C greenhouse.",
+      "accepted_answers": [
+        "Check In, Sanitize, Enter",
+        "Check In at North Gate kiosk, Sanitize at Wash station B, Enter Zone C greenhouse"
+      ],
+      "required_facts": [
+        "Check In",
+        "Sanitize",
+        "Enter"
+      ],
+      "category": "pdf_embedded_workflow",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC05. Tests ordered workflow extraction from a raster diagram embedded in a PDF. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC05_Campus_Greenhouse_Orientation_Mixed_Content.pdf"
+    },
+    {
+      "question": "Where must visitors sanitize before entering the Cedar Annex greenhouse?",
+      "expected_answer": "Visitors must sanitize at Wash station B.",
+      "expected_source": "storage/uploads/5750e051f814c952adf4f183bc7f2cc0.pdf",
+      "expected_evidence": "Embedded Greenhouse Access Route diagram on page 1: Step 2, SANITIZE - Wash station B.",
+      "accepted_answers": [
+        "Wash station B",
+        "At Wash station B"
+      ],
+      "required_facts": [
+        "Wash station B"
+      ],
+      "category": "pdf_embedded_workflow",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC05. Tests extraction of a location found only in the embedded workflow image. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC05_Campus_Greenhouse_Orientation_Mixed_Content.pdf"
+    },
+    {
+      "question": "How many moisture meters are at the greenhouse Irrigation Corner, and who is the station lead?",
+      "expected_answer": "The Irrigation Corner has 7 moisture meters, and R. Patel is the station lead.",
+      "expected_source": "storage/uploads/5750e051f814c952adf4f183bc7f2cc0.pdf",
+      "expected_evidence": "Native PDF orientation station inventory table on page 1: Irrigation Corner | Moisture meters | 7 | R. Patel.",
+      "accepted_answers": [
+        "7 moisture meters, R. Patel",
+        "Seven moisture meters led by R. Patel"
+      ],
+      "required_facts": [
+        "7 moisture meters",
+        "R. Patel"
+      ],
+      "category": "pdf_native_table",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC05. Tests extraction of multiple related values from a native table within a mixed-content PDF. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC05_Campus_Greenhouse_Orientation_Mixed_Content.pdf"
+    },
+    {
+      "question": "What are the three steps in the Harbor Point repair lab device intake workflow, in order?",
+      "expected_answer": "The intake workflow is Tag Device at Desk K4, Safety Check at Station S2, and Assign Bench at Bench B7.",
+      "expected_source": "storage/uploads/79771fc1104b5c4c78f0fcdc1737e985.pdf",
+      "expected_evidence": "Embedded Device Intake Route diagram on page 1: 1. TAG DEVICE - Desk K4; 2. SAFETY CHECK - Station S2; 3. ASSIGN BENCH - Bench B7.",
+      "accepted_answers": [
+        "Tag Device, Safety Check, Assign Bench",
+        "Tag Device at Desk K4, Safety Check at Station S2, Assign Bench at Bench B7"
+      ],
+      "required_facts": [
+        "Tag Device",
+        "Safety Check",
+        "Assign Bench"
+      ],
+      "category": "pdf_embedded_workflow",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC06. Tests extraction of ordered steps from the intake diagram on page 1 of a multipage PDF. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC06_Community_Repair_Lab_Mixed_Content.pdf"
+    },
+    {
+      "question": "At which counter does the Harbor Point repair lab device collection workflow begin?",
+      "expected_answer": "The collection workflow begins at Counter C3, where the ticket is verified.",
+      "expected_source": "storage/uploads/79771fc1104b5c4c78f0fcdc1737e985.pdf",
+      "expected_evidence": "Embedded Collection Route diagram on page 2: Step 1, VERIFY TICKET - Counter C3.",
+      "accepted_answers": [
+        "Counter C3",
+        "Counter C3 for ticket verification"
+      ],
+      "required_facts": [
+        "Counter C3"
+      ],
+      "category": "pdf_embedded_workflow",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC06. Tests retrieval of a diagram-only detail from page 2, distinct from the intake workflow on page 1. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC06_Community_Repair_Lab_Mixed_Content.pdf"
+    },
+    {
+      "question": "Where and when can visitors collect completed devices from the Harbor Point repair lab, and what must they bring?",
+      "expected_answer": "Visitors can collect completed devices in Room HP-218 on Fridays from 1:00 PM to 5:00 PM. They must bring the original ticket and a campus photo ID.",
+      "expected_source": "storage/uploads/79771fc1104b5c4c78f0fcdc1737e985.pdf",
+      "expected_evidence": "Collection text section on page 2: Collection hours are Fridays, 1:00 PM to 5:00 PM, at Room HP-218. Visitors must present the original ticket and a campus photo ID.",
+      "accepted_answers": [
+        "Room HP-218, Friday 1:00 PM to 5:00 PM, original ticket and campus photo ID"
+      ],
+      "required_facts": [
+        "Room HP-218",
+        "Fridays",
+        "1:00 PM to 5:00 PM",
+        "original ticket",
+        "campus photo ID"
+      ],
+      "category": "pdf_multipage_text",
+      "difficulty": "hard",
+      "is_answerable": true,
+      "reviewer_notes": "TC06. Multi-fact retrieval from page 2 of a multipage mixed-content PDF. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC06_Community_Repair_Lab_Mixed_Content.pdf"
+    },
+    {
+      "question": "What time does the Python Fundamentals session begin at the Metro State Student Technology Workshop?",
+      "expected_answer": "The Python Fundamentals session begins at 9:00 AM.",
+      "expected_source": "storage/uploads/423ef2ea300ef9489b3b53a7b9a569ef.md",
+      "expected_evidence": "Workshop Schedule table: Python Fundamentals | 9:00 AM | Dr. Elena Brooks.",
+      "accepted_answers": [
+        "9:00 AM",
+        "9 AM"
+      ],
+      "required_facts": [
+        "9:00 AM"
+      ],
+      "category": "markdown_table",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC07. Tests extraction of a session start time from a Markdown table. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC07_markdown_formatted_test.md"
+    },
+    {
+      "question": "Who teaches the Data Analytics session at the Metro State Student Technology Workshop?",
+      "expected_answer": "Prof. Marcus Chen teaches the Data Analytics session.",
+      "expected_source": "storage/uploads/423ef2ea300ef9489b3b53a7b9a569ef.md",
+      "expected_evidence": "Workshop Schedule table: Data Analytics | 11:00 AM | Prof. Marcus Chen.",
+      "accepted_answers": [
+        "Prof. Marcus Chen",
+        "Marcus Chen"
+      ],
+      "required_facts": [
+        "Marcus Chen"
+      ],
+      "category": "markdown_table",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC07. Tests retrieval of an instructor from a Markdown table. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC07_markdown_formatted_test.md"
+    },
+    {
+      "question": "What is the registration deadline for the Metro State Student Technology Workshop?",
+      "expected_answer": "Students must register before November 5, 2026.",
+      "expected_source": "storage/uploads/423ef2ea300ef9489b3b53a7b9a569ef.md",
+      "expected_evidence": "Registration Requirements, step 3: Register before November 5, 2026.",
+      "accepted_answers": [
+        "Before November 5, 2026",
+        "November 5, 2026"
+      ],
+      "required_facts": [
+        "November 5, 2026"
+      ],
+      "category": "markdown_structured_text",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC07. Tests retrieval of a deadline from a numbered Markdown list. The source explicitly says before November 5. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC07_markdown_formatted_test.md"
+    },
+    {
+      "question": "What happens in the graduate application review workflow when an applicant has not submitted all required documents?",
+      "expected_answer": "The applicant is asked to provide the missing documents. The process waits for the student's response and then checks again whether all documents have been received.",
+      "expected_source": "storage/uploads/92961d6d28143d521dc94ee993aac667.md",
+      "expected_evidence": "Mermaid flowchart: All Documents Received? --No--> Request Missing Documents --> Wait for Student Response --> All Documents Received?",
+      "accepted_answers": [
+        "Request missing documents, wait for a response, and recheck document completeness"
+      ],
+      "required_facts": [
+        "Request Missing Documents",
+        "Wait for Student Response",
+        "recheck documents"
+      ],
+      "category": "markdown_mermaid_workflow",
+      "difficulty": "hard",
+      "is_answerable": true,
+      "reviewer_notes": "TC08. Tests interpretation of a loop and conditional branch in a Mermaid flowchart. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC08_markdown_mermaid_test.md"
+    },
+    {
+      "question": "What happens in the graduate application review workflow if the applicant does not meet the minimum GPA requirement of 3.0?",
+      "expected_answer": "The application is rejected.",
+      "expected_source": "storage/uploads/92961d6d28143d521dc94ee993aac667.md",
+      "expected_evidence": "Mermaid flowchart: Minimum GPA 3.0 Met? --No--> Application Rejected.",
+      "accepted_answers": [
+        "Application Rejected",
+        "The applicant is rejected"
+      ],
+      "required_facts": [
+        "Application Rejected"
+      ],
+      "category": "markdown_mermaid_workflow",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC08. Tests interpretation of a decision branch in a Mermaid flowchart. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC08_markdown_mermaid_test.md"
+    },
+    {
+      "question": "What are the three possible faculty committee decisions in the graduate application review workflow?",
+      "expected_answer": "The faculty committee may approve the application and send an admission offer, reject the application, or place the applicant on the waitlist.",
+      "expected_source": "storage/uploads/92961d6d28143d521dc94ee993aac667.md",
+      "expected_evidence": "Mermaid flowchart: Committee Decision --Approve--> Admission Offer Sent; --Reject--> Application Rejected; --Waitlist--> Applicant Waitlisted.",
+      "accepted_answers": [
+        "Approve, Reject, Waitlist",
+        "Admission offer, rejection, or waitlist"
+      ],
+      "required_facts": [
+        "Approve",
+        "Reject",
+        "Waitlist"
+      ],
+      "category": "markdown_mermaid_workflow",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC08. Tests extraction of all three outcomes from a branching Mermaid decision node. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC08_markdown_mermaid_test.md"
+    },
+    {
+      "question": "What happens immediately after Advisor Review in the Fall registration workflow shown in the Metro State presentation?",
+      "expected_answer": "Approval comes immediately after Advisor Review.",
+      "expected_source": "storage/uploads/91d62f1145cf2be6bc91084c3780d501.pptx",
+      "expected_evidence": "Slide 1 Registration Workflow diagram: Submit Request -> Advisor Review -> Approval.",
+      "accepted_answers": [
+        "Approval",
+        "The request proceeds to Approval"
+      ],
+      "required_facts": [
+        "Approval"
+      ],
+      "category": "pptx_embedded_workflow",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC09. Tests interpretation of an embedded registration workflow diagram on slide 1. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC09_multimodal.pptx"
+    },
+    {
+      "question": "How long does Enrollment Verification take, and which office is responsible according to the Metro State presentation?",
+      "expected_answer": "Enrollment Verification takes 3 business days and is handled by the Registrar.",
+      "expected_source": "storage/uploads/91d62f1145cf2be6bc91084c3780d501.pptx",
+      "expected_evidence": "Slide 1 Registration Task table: Enrollment Verification | 3 business days | Registrar.",
+      "accepted_answers": [
+        "3 business days, Registrar",
+        "Three business days, handled by the Registrar"
+      ],
+      "required_facts": [
+        "3 business days",
+        "Registrar"
+      ],
+      "category": "pptx_native_table",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC09. Tests retrieval of related values from a native PowerPoint table. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC09_multimodal.pptx"
+    },
+    {
+      "question": "Which team handles password reset requests, and what priority are they assigned according to the Metro State presentation?",
+      "expected_answer": "Password Reset requests are assigned High priority and handled by Identity Services.",
+      "expected_source": "storage/uploads/91d62f1145cf2be6bc91084c3780d501.pptx",
+      "expected_evidence": "Slide 2 Technology Support table: Password Reset | High | Identity Services.",
+      "accepted_answers": [
+        "Identity Services, High priority",
+        "High priority, Identity Services"
+      ],
+      "required_facts": [
+        "Identity Services",
+        "High"
+      ],
+      "category": "pptx_native_table",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC09. Tests retrieval from the technology support table on slide 2. Similar facts also appear in TC10. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC09_multimodal.pptx"
+    },
+    {
+      "question": "What are the three stages of the technology support workflow shown in the Metro State Student Services Test Guide, in order?",
+      "expected_answer": "The workflow proceeds from Open Ticket to IT Diagnosis to Resolution.",
+      "expected_source": "storage/uploads/dd7a5d12cbf73ede539ad312b49fd6aa.docx",
+      "expected_evidence": "Embedded Technology Support Workflow diagram: Open Ticket -> IT Diagnosis -> Resolution.",
+      "accepted_answers": [
+        "Open Ticket, IT Diagnosis, Resolution",
+        "Open Ticket -> IT Diagnosis -> Resolution"
+      ],
+      "required_facts": [
+        "Open Ticket",
+        "IT Diagnosis",
+        "Resolution"
+      ],
+      "category": "docx_embedded_workflow",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC10. Tests extraction of an ordered workflow from an image embedded in a Word document. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC10_multimodal.docx"
+    },
+    {
+      "question": "What priority is assigned to Software Installation requests, and which team handles them according to the Metro State Student Services Test Guide?",
+      "expected_answer": "Software Installation requests have Normal priority and are handled by Desktop Support.",
+      "expected_source": "storage/uploads/dd7a5d12cbf73ede539ad312b49fd6aa.docx",
+      "expected_evidence": "Technology Support table: Software Installation | Normal | Desktop Support.",
+      "accepted_answers": [
+        "Normal priority, Desktop Support",
+        "Desktop Support, Normal priority"
+      ],
+      "required_facts": [
+        "Normal",
+        "Desktop Support"
+      ],
+      "category": "docx_native_table",
+      "difficulty": "medium",
+      "is_answerable": true,
+      "reviewer_notes": "TC10. Tests extraction of priority and responsible team from a native Word table. Similar facts also appear in TC09. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC10_multimodal.docx"
+    },
+    {
+      "question": "What registration assistance reference code is provided in the Metro State Student Services Test Guide?",
+      "expected_answer": "The registration assistance reference code is REG-482.",
+      "expected_source": "storage/uploads/dd7a5d12cbf73ede539ad312b49fd6aa.docx",
+      "expected_evidence": "Registration Assistance section: The registration support reference code is REG-482.",
+      "accepted_answers": [
+        "REG-482"
+      ],
+      "required_facts": [
+        "REG-482"
+      ],
+      "category": "docx_text",
+      "difficulty": "easy",
+      "is_answerable": true,
+      "reviewer_notes": "TC10. Text retrieval control within a multimodal Word document. The same reference code also appears in TC09. Original FP06 fixture: tests/fixtures/fp06_input_test_cases/TC10_multimodal.docx"
+    }
+  ]
+}

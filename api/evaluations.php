@@ -257,8 +257,29 @@ try {
                 'disagreements' => disagreementPrompts($results, $reviews),
             ]]);
         }
+        $availableDatasets = $database->query(
+            "SELECT dataset_id, dataset_name, version, status
+             FROM evaluation_datasets
+             ORDER BY dataset_id ASC"
+        )->fetchAll();
 
-        $dataset = $database->query(
+        $requestedDatasetId = null;
+
+        if (isset($_GET['dataset_id'])) {
+            $requestedDatasetId = filter_var(
+                $_GET['dataset_id'],
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => 1]]
+            );
+
+            if ($requestedDatasetId === false) {
+                evaluationResponse(422, [
+                    'ok' => false,
+                    'error' => 'A valid positive dataset ID is required.',
+                ]);
+            }
+        }
+        $datasetSql =
             "SELECT d.dataset_id, d.dataset_name, d.version, d.description, d.status,
                     COUNT(m.question_id) AS question_count,
                     SUM(q.review_status = 'reviewed') AS reviewed_count,
@@ -266,10 +287,27 @@ try {
                     COUNT(DISTINCT q.category) AS category_count
              FROM evaluation_datasets d
              LEFT JOIN evaluation_question_memberships m ON m.dataset_id = d.dataset_id
-             LEFT JOIN evaluation_questions q ON q.question_id = m.question_id
-             GROUP BY d.dataset_id
-             ORDER BY d.dataset_id DESC LIMIT 1"
-        )->fetch();
+             LEFT JOIN evaluation_questions q ON q.question_id = m.question_id";
+
+        if ($requestedDatasetId !== null) {
+            $datasetStatement = $database->prepare(
+                $datasetSql . " WHERE d.dataset_id = ? GROUP BY d.dataset_id"
+            );
+            $datasetStatement->execute([$requestedDatasetId]);
+            $dataset = $datasetStatement->fetch();
+
+            if (!$dataset) {
+                evaluationResponse(404, [
+                    'ok' => false,
+                    'error' => 'The requested evaluation dataset was not found.',
+                ]);
+            }
+        } else {
+            $dataset = $database->query(
+                $datasetSql .
+                " GROUP BY d.dataset_id ORDER BY d.dataset_id DESC LIMIT 1"
+            )->fetch();
+        }
         $questions = [];
         if ($dataset) {
             $statement = $database->prepare(
@@ -543,9 +581,9 @@ try {
 
 
         evaluationResponse(200, ['ok' => true, 'data' => compact(
-            'dataset', 'questions', 'evaluators', 'runs',
-            'responses', 'standaloneResponses', 'findings'
-        )]);
+        'dataset', 'availableDatasets', 'questions', 'evaluators', 'runs',
+        'responses', 'standaloneResponses', 'findings'
+      )]);
     }
 
     if ($method === 'POST') {

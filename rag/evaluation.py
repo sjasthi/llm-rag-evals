@@ -256,9 +256,61 @@ def run_evaluator(key: str, item: EvaluationInput) -> EvaluationResult:
 def load_seed(path: Path = DATASET_PATH) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
+def validate_existing_question(
+    existing: dict[str, Any],
+    incoming: dict[str, Any],
+) -> None:
+    """Prevent dataset imports from overwriting conflicting question data."""
 
-def seed_dataset() -> dict[str, int]:
-    seed = load_seed()
+    fields = [
+        "expected_answer",
+        "expected_source",
+        "expected_evidence",
+        "accepted_answers",
+        "required_facts",
+        "category",
+        "difficulty",
+        "is_answerable",
+        "reviewer_notes",
+        "review_status",
+    ]
+
+    differences = []
+
+    for field in fields:
+        existing_value = existing.get(field)
+
+        if field == "review_status":
+            incoming_value = incoming.get(field, "reviewed")
+        elif field in ("accepted_answers", "required_facts"):
+            incoming_value = incoming.get(field) or []
+        else:
+            incoming_value = incoming.get(field)
+
+        if field in ("accepted_answers", "required_facts"):
+            existing_value = _json_list(existing_value)
+            incoming_value = incoming_value or []
+
+        if field == "is_answerable":
+            existing_value = bool(existing_value)
+            incoming_value = bool(incoming_value)
+
+        if existing_value != incoming_value:
+            differences.append(field)
+
+    if differences:
+        raise ValueError(
+            "Conflicting Gold Standard question detected: "
+            f"{incoming['question']!r}. "
+            "Existing reference data differs in: "
+            + ", ".join(differences)
+            + ". Import aborted to protect existing reviewed questions."
+        )
+
+def seed_dataset(
+    dataset_path: Path = DATASET_PATH,
+) -> dict[str, int]:
+    seed = load_seed(dataset_path)
     settings = load_settings()
     with database_connection(settings) as connection:
         connection.start_transaction()
@@ -274,6 +326,32 @@ def seed_dataset() -> dict[str, int]:
                 dataset_id = int(cursor.lastrowid)
                 for order, question in enumerate(seed["questions"], start=1):
                     question_key = hashlib.sha256(question["question"].strip().encode("utf-8")).hexdigest()
+                    cursor.execute(
+                        """
+                        SELECT expected_answer,
+                               expected_source,
+                               expected_evidence,
+                               accepted_answers,
+                               required_facts,
+                               category,
+                               difficulty,
+                               is_answerable,
+                               reviewer_notes,
+                               review_status
+                        FROM evaluation_questions
+                        WHERE question_key = %s
+                            FOR UPDATE
+                        """,
+                        (question_key,),
+                    )
+
+                    existing_row = cursor.fetchone()
+
+                    if existing_row is not None:
+                        columns = [column[0] for column in cursor.description]
+                        existing_question = dict(zip(columns, existing_row))
+                        validate_existing_question(existing_question, question)
+
                     cursor.execute(
                         """INSERT INTO evaluation_questions
                            (question_key, question_text, expected_answer, expected_source, expected_evidence, accepted_answers,
@@ -434,12 +512,18 @@ def score_saved_response(response_id: int, evaluator_keys: list[str]) -> list[Ev
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed and run FP7 local RAG evaluators.")
     parser.add_argument("--seed", action="store_true", help="Import the versioned draft question dataset and evaluator definitions.")
+    parser.add_argument(
+        "--dataset-path",
+        type=Path,
+        default=DATASET_PATH,
+        help="Path to the Gold Standard JSON dataset to import (default: metrostate_v2.json).",
+    )
     parser.add_argument("--response-id", type=int, help="Score one response already linked to an evaluation question.")
     parser.add_argument("--evaluators", default="exact_contains,required_fact_coverage,token_f1,expected_source_accuracy,refusal_correctness")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     if args.seed:
-        result = seed_dataset()
+        result = seed_dataset(args.dataset_path)
         print(json.dumps(result, indent=2) if args.json else f"Seeded dataset {result['dataset_id']} with {result['questions']} questions and {result['evaluators']} local evaluators.")
         return
     if args.response_id:

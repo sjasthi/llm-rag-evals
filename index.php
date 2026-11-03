@@ -445,6 +445,18 @@ require __DIR__ . '/includes/header.php';
                         </div>
                         <span class="status status-ready">Answer key ready</span>
                     </div>
+                    <div class="evaluation-dataset-selector">
+                        <label for="evaluationDatasetSelect">
+                            <strong>Gold Standard Dataset</strong>
+                        </label>
+                        <select
+                            id="evaluationDatasetSelect"
+                            name="evaluationDatasetSelect"
+                            aria-label="Select Gold Standard dataset"
+                        >
+                            <option value="">Loading available datasets...</option>
+                        </select>
+                    </div>
                     <p id="evaluationDatasetSummary">Loading the reviewed test questions...</p>
                     <div class="evaluation-guide" aria-labelledby="datasetReviewGuideTitle">
                             <strong id="datasetReviewGuideTitle">This is the gold standard—not chat history</strong>

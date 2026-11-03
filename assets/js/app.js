@@ -52,6 +52,7 @@ $(function () {
     const $overviewChunkCount = $("#overviewChunkCount");
     const $evaluationQuestionCount = $("#evaluationQuestionCount");
     const $evaluationDatasetSummary = $("#evaluationDatasetSummary");
+    const $evaluationDatasetSelect = $("#evaluationDatasetSelect");
     const $evaluationQuestionList = $("#evaluationQuestionList");
     const $evaluationCategoryFilter = $("#evaluationCategoryFilter");
     const $evaluationStatusFilter = $("#evaluationStatusFilter");
@@ -1463,13 +1464,45 @@ function applicableEvaluators(methodKey, response, results) {
         });
     }
 
+    let evaluationDatasetRequestId = 0;
     function loadEvaluationDataset() {
-        $.getJSON("api/evaluations.php")
+        const requestId = ++evaluationDatasetRequestId;
+        const selectedDatasetId = $evaluationDatasetSelect.val();
+
+        const requestUrl = selectedDatasetId
+            ? "api/evaluations.php?dataset_id=" +
+              encodeURIComponent(selectedDatasetId)
+            : "api/evaluations.php";
+
+        $.getJSON(requestUrl)
             .done(function (response) {
+                if (requestId !== evaluationDatasetRequestId) {
+                    return;
+                }
+
                 const data = response.data;
                 evaluationQuestions = data.questions || [];
                 evaluatorCatalog = data.evaluators || [];
                 const dataset = data.dataset;
+                const availableDatasets = data.availableDatasets || [];
+                $evaluationDatasetSelect.empty();
+
+                availableDatasets.forEach(function (availableDataset) {
+                    const label =
+                        availableDataset.dataset_name +
+                        " v" + availableDataset.version +
+                        " (" + availableDataset.status + ")";
+
+                    $evaluationDatasetSelect.append(
+                        $("<option>")
+                            .val(String(availableDataset.dataset_id))
+                            .text(label)
+                    );
+                });
+
+                if (dataset) {
+                    $evaluationDatasetSelect.val(String(dataset.dataset_id));
+                }
                 if (!dataset) {
                     evaluationDatasetQuestionCount = 0;
                     evaluationRuns = [];
@@ -1524,6 +1557,9 @@ function applicableEvaluators(methodKey, response, results) {
                 renderFindings(data);
             })
             .fail(function () {
+                  if (requestId !== evaluationDatasetRequestId) {
+                      return;
+                  }
                 $evaluationDatasetSummary.text("Evaluation data is temporarily unavailable. Try again or contact the application administrator.");
                 $researchReadinessList.empty().append(
                     $("<li>").addClass("readiness-next").text("Study status is unavailable until the application data can be loaded.")
@@ -3378,6 +3414,9 @@ $evaluationLists.on("click", ".execute-standalone-scoring", function () {
         });
     });
 
+    $evaluationDatasetSelect.on("change", function () {
+        loadEvaluationDataset();
+    });
     loadApplicationHealth();
     loadDocuments();
     loadEvaluationDataset();

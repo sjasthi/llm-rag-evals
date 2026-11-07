@@ -1092,7 +1092,7 @@ $(function () {
 
     const evaluatorGoalRecommendations = {
         overall: {
-            primary: "Run the local eight across the full reviewed test set.",
+            primary: "Run the local ten across the full reviewed test set.",
             secondary: "Use the LLM judge and RAGAS on representative, difficult, changed, or failing answers; add human review where methods disagree.",
             caution: "Overall confidence comes from a profile of evidence. No single score proves that an answer is correct, complete, grounded, and useful.",
             reference: "Gold Standard recommended: it supplies verified correctness, source, fact, and answerability expectations.",
@@ -1656,10 +1656,33 @@ function applicableEvaluators(methodKey, response, results) {
                 className: "run-status-attention",
             };
         }
-        if (responseCount && !failed && completed + skipped >= responseCount * 13) {
+        const fullEvaluatorCount = 15;
+        const allResponsesFullyScored = responseCount > 0 &&
+            runResponses.every(function (response) {
+                const resolved =
+                    (Number(response.completed_result_count) || 0) +
+                    (Number(response.skipped_result_count) || 0);
+                const errors = Number(response.failed_result_count) || 0;
+                return !errors && resolved >= fullEvaluatorCount;
+            });
+        if (allResponsesFullyScored) {
             return { label: "Full evaluator set available", className: "run-status-completed" };
         }
-        if (responseCount && !localFailed && localCompleted + localSkipped >= responseCount * 8) {
+        const configuration = run.run_configuration_json || {};
+        const configuredLocalCount = Array.isArray(configuration.evaluators)
+            ? configuration.evaluators.length
+            : 0;
+        const recordedLocalCount = runResponses.reduce(function (maximum, response) {
+            const count =
+                (Number(response.local_completed_count) || 0) +
+                (Number(response.local_skipped_count) || 0) +
+                (Number(response.local_failed_count) || 0);
+            return Math.max(maximum, count);
+        }, 0);
+        const expectedLocalSlots = responseCount *
+            Math.max(configuredLocalCount, recordedLocalCount);
+        if (responseCount && expectedLocalSlots > 0 && !localFailed &&
+                localCompleted + localSkipped >= expectedLocalSlots) {
             return { label: "Local evaluation complete", className: "run-status-local" };
         }
         return { label: "Local evaluation incomplete", className: "run-status-attention" };
@@ -1679,7 +1702,19 @@ function applicableEvaluators(methodKey, response, results) {
         const completedCount = runResponses.reduce(function (total, response) {
             return total + (Number(response.completed_result_count) || 0);
         }, 0);
-        const localExpectedSlots = responseCount * 8;
+        const configuration = run.run_configuration_json || {};
+        const configuredLocalCount = Array.isArray(configuration.evaluators)
+            ? configuration.evaluators.length
+            : 0;
+        const recordedLocalCount = runResponses.reduce(function (maximum, response) {
+            const count =
+                (Number(response.local_completed_count) || 0) +
+                (Number(response.local_skipped_count) || 0) +
+                (Number(response.local_failed_count) || 0);
+            return Math.max(maximum, count);
+        }, 0);
+        const localExpectedSlots = responseCount *
+            Math.max(configuredLocalCount, recordedLocalCount);
         const state = runScoringState(run, runResponses);
         const $run = $("<article>").addClass("evaluation-run").attr("data-run-id", run.run_id);
         const $runHeading = $("<div>").addClass("evaluation-run-heading");
@@ -1702,7 +1737,6 @@ function applicableEvaluators(methodKey, response, results) {
             "Saved scope: " + responseCount + " answer" + (responseCount === 1 ? "" : "s") +
             (evaluationDatasetQuestionCount ? " from the " + evaluationDatasetQuestionCount + "-question Gold Standard." : ".")
         ));
-        const configuration = run.run_configuration_json || {};
         if (run.baseline_run_id) {
             const baseline = evaluationRuns.find(function (candidate) {
                 return Number(candidate.run_id) === Number(run.baseline_run_id);
@@ -1780,8 +1814,8 @@ function applicableEvaluators(methodKey, response, results) {
             .addClass("form-select form-select-sm run-evaluation-scope")
             .attr("aria-label", "Scoring scope")
             .append(
-                $("<option>").val("local8").text("Local 8 · every saved answer · no API calls"),
-                $("<option>").val("all13").text("All 13 · one selected answer · may use API quota")
+                $("<option>").val("local8").text("Local 10 · every saved answer · no API calls"),
+                $("<option>").val("all13").text("All 15 · one selected answer · may use API quota")
             );
         $scopeLabel.append($scope);
         const $targetSelect = $("<select>")
@@ -1815,7 +1849,7 @@ function applicableEvaluators(methodKey, response, results) {
             .prop("hidden", true)
             .text("Apply scores");
         const $status = $("<p>").addClass("run-evaluation-status").attr({ role: "status", "aria-live": "polite" }).text(
-            "Start with the local eight. Completed scores will be reused unless the advanced replacement option is selected."
+            "Start with the local ten. Completed scores will be reused unless the advanced replacement option is selected."
         );
         $evaluatePanel.append(
             $scopeLabel,
@@ -1829,7 +1863,7 @@ function applicableEvaluators(methodKey, response, results) {
 
         const $questionHeading = $("<div>").addClass("run-question-heading").append(
             $("<strong>").text("Answered questions"),
-            $("<small>").text("Open inspects evidence · Evaluate prepares all 13 methods for that answer")
+            $("<small>").text("Open inspects evidence · Evaluate prepares all 15 methods for that answer")
         );
         $run.append($questionHeading);
         const $buttons = $("<div>").addClass("evaluation-response-buttons");
@@ -1838,7 +1872,11 @@ function applicableEvaluators(methodKey, response, results) {
             const completed = Number(response.completed_result_count) || 0;
             const failedResults = Number(response.failed_result_count) || 0;
             const skippedResults = Number(response.skipped_result_count) || 0;
-            const notRun = Math.max(0, evaluatorCatalog.length - (Number(response.result_count) || 0));
+            const savedRunEvaluatorCount = evaluatorCatalog.filter(function (evaluator) {
+                return evaluator.evaluator_key !== "citation_coverage" &&
+                    evaluator.evaluator_key !== "citation_support";
+            }).length;
+            const notRun = Math.max(0, savedRunEvaluatorCount - (Number(response.result_count) || 0));
             const statusParts = [completed + " completed"];
             if (failedResults) {
                 statusParts.push(failedResults + " failed");
@@ -2569,7 +2607,7 @@ function applicableEvaluators(methodKey, response, results) {
         }
         $createNewTestRun.prop("disabled", true).text("Generating…");
         $previewNewTestRun.prop("disabled", true);
-        $newTestRunStatus.text("Generating and saving the test answers, then applying the local eight scores…");
+        $newTestRunStatus.text("Generating and saving the test answers, then applying the local ten scores…");
         $.ajax({
             url: "api/test_runs.php",
             method: "POST",
@@ -2582,7 +2620,7 @@ function applicableEvaluators(methodKey, response, results) {
                 const answerCount = response.data?.responses?.length || 0;
                 $newTestRunStatus.text(
                     "Test saved with " + answerCount + " answer" + (answerCount === 1 ? "" : "s") +
-                    " and the local eight scores. It is now available below."
+                    " and the local ten scores. It is now available below."
                 );
                 $createNewTestRun.prop("hidden", true).removeData("preflight");
                 loadEvaluationDataset();
@@ -2639,8 +2677,8 @@ function applicableEvaluators(methodKey, response, results) {
         $panel.find(".execute-run-evaluation").prop("hidden", true).removeData("preflight");
         $panel.find(".run-evaluation-status").text(
             includeAdvanced
-                ? "All 13 methods will target the exact saved answer selected above. Check the plan before applying scores."
-                : "The local eight will be applied to every saved answer without an external evaluator call. Check the plan first."
+                ? "All 15 methods will target the exact saved answer selected above. Check the plan before applying scores."
+                : "The local ten will be applied to every saved answer without an external evaluator call. Check the plan first."
         );
     });
 

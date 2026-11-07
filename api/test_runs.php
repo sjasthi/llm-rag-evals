@@ -1,7 +1,8 @@
 <?php
-
 declare(strict_types=1);
 
+require_once __DIR__ . '/evaluation_diagnostics.php';
+require_once __DIR__ . '/evaluation_process.php';
 require_once dirname(__DIR__) . '/config/env.php';
 
 loadEnv();
@@ -10,6 +11,7 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 const TEST_RUN_TIMEOUT_SECONDS = 300;
+set_time_limit(TEST_RUN_TIMEOUT_SECONDS + 30);
 
 function testRunResponse(int $status, array $payload): never
 {
@@ -212,48 +214,49 @@ function runTestCommand(array $payload): array
         }
     }
 
-    $process = proc_open(
-        $command,
-        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-        $pipes,
-        $root,
-        null,
-        ['bypass_shell' => true]
-    );
-    if (!is_resource($process)) {
-        throw new RuntimeException('Could not start the test-run process.');
-    }
-    fclose($pipes[0]);
-    stream_set_blocking($pipes[1], false);
-    stream_set_blocking($pipes[2], false);
-    $stdout = '';
-    $stderr = '';
     $startedAt = microtime(true);
-    $lastStatus = null;
-    while (true) {
-        $stdout .= stream_get_contents($pipes[1]);
-        $stderr .= stream_get_contents($pipes[2]);
-        $lastStatus = proc_get_status($process);
-        if (!$lastStatus['running']) {
-            break;
-        }
-        if ((microtime(true) - $startedAt) > TEST_RUN_TIMEOUT_SECONDS) {
-            proc_terminate($process);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
-            proc_close($process);
-            throw new RuntimeException('Test run timed out.');
-        }
-        usleep(100000);
+
+    $execution = evaluationRunSupervisedCommand(
+        $command,
+        $python,
+        $root,
+        TEST_RUN_TIMEOUT_SECONDS
+    );
+
+    $stdout = $execution['stdout'];
+    $stderr = $execution['stderr'];
+    $exitCode = $execution['exit_code'];
+
+    if ($execution['timed_out']) {
+        testRunDiagnosticLog('python_process_timeout', [
+            'elapsed_seconds' => round(microtime(true) - $startedAt, 2),
+            'timeout_seconds' => TEST_RUN_TIMEOUT_SECONDS,
+            'process_id' => null,
+            'stderr_bytes' => strlen($stderr),
+            'stdout_bytes' => strlen($stdout),
+        ]);
+
+        testRunResponse(504, [
+            'ok' => false,
+            'error' => 'The test run exceeded the 5-minute execution limit and was stopped. Some answers may already have been saved. Check Evaluation before retrying.',
+        ]);
     }
-    $stdout .= stream_get_contents($pipes[1]);
-    $stderr .= stream_get_contents($pipes[2]);
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-    $closeCode = proc_close($process);
-    $exitCode = (int) ($lastStatus['exitcode'] ?? $closeCode);
+
     if ($exitCode !== 0) {
-        testRunResponse(422, ['ok' => false, 'error' => testRunUserError(trim($stderr))]);
+        $errorLogFile = testRunSavePythonError($stderr);
+
+        testRunDiagnosticLog('python_process_failed', [
+            'exit_code' => $exitCode,
+            'elapsed_seconds' => round(microtime(true) - $startedAt, 2),
+            'stderr_bytes' => strlen($stderr),
+            'stdout_bytes' => strlen($stdout),
+            'error_log_file' => $errorLogFile,
+        ]);
+
+        testRunResponse(422, [
+            'ok' => false,
+            'error' => testRunUserError(trim($stderr)),
+        ]);
     }
     $result = json_decode($stdout, true, 64, JSON_THROW_ON_ERROR);
     if (!is_array($result) || !isset($result['preflight'])) {
@@ -276,7 +279,14 @@ try {
         testRunResponse(400, ['ok' => false, 'error' => 'Request body must contain a JSON object.']);
     }
     testRunResponse(200, ['ok' => true, 'data' => runTestCommand($payload)]);
-} catch (Throwable $error) {
+}  catch (Throwable $error) {
+    testRunDiagnosticLog('php_endpoint_exception', [
+        'exception_type' => get_class($error),
+        'message_length' => strlen($error->getMessage()),
+        'file' => basename($error->getFile()),
+        'line' => $error->getLine(),
+    ]);
+
     error_log('Browser test-run endpoint failure: ' . $error->getMessage());
     testRunResponse(500, [
         'ok' => false,

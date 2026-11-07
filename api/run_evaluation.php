@@ -1,7 +1,8 @@
 <?php
-
 declare(strict_types=1);
 
+require_once __DIR__ . '/evaluation_diagnostics.php';
+require_once __DIR__ . '/evaluation_process.php';
 require_once dirname(__DIR__) . '/config/env.php';
 
 loadEnv();
@@ -10,6 +11,9 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 const RUN_EVALUATION_TIMEOUT_SECONDS = 300;
+
+// Allow the PHP request to wait for advanced Python evaluations.
+set_time_limit(RUN_EVALUATION_TIMEOUT_SECONDS + 30);
 
 function runEvaluationResponse(int $status, array $payload): never
 {
@@ -103,51 +107,48 @@ function runEvaluationCommand(array $payload): array
         }
     }
 
-    $process = proc_open(
-        $command,
-        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-        $pipes,
-        $root,
-        null,
-        ['bypass_shell' => true]
-    );
-    if (!is_resource($process)) {
-        throw new RuntimeException('Could not start the evaluation process.');
-    }
-    fclose($pipes[0]);
-    stream_set_blocking($pipes[1], false);
-    stream_set_blocking($pipes[2], false);
-    $stdout = '';
-    $stderr = '';
     $startedAt = microtime(true);
-    $lastStatus = null;
-    while (true) {
-        $stdout .= stream_get_contents($pipes[1]);
-        $stderr .= stream_get_contents($pipes[2]);
-        $lastStatus = proc_get_status($process);
-        if (!$lastStatus['running']) {
-            break;
-        }
-        if ((microtime(true) - $startedAt) > RUN_EVALUATION_TIMEOUT_SECONDS) {
-            proc_terminate($process);
-            fclose($pipes[1]);
-            fclose($pipes[2]);
-            proc_close($process);
-            throw new RuntimeException('Evaluation timed out. Try fewer responses.');
-        }
-        usleep(100000);
+
+    $execution = evaluationRunSupervisedCommand(
+        $command,
+        $python,
+        $root,
+        RUN_EVALUATION_TIMEOUT_SECONDS
+    );
+
+    $stdout = $execution['stdout'];
+    $stderr = $execution['stderr'];
+    $exitCode = $execution['exit_code'];
+
+    if ($execution['timed_out']) {
+        testRunDiagnosticLog('saved_answer_scoring_timeout', [
+            'elapsed_seconds' => round(microtime(true) - $startedAt, 2),
+            'timeout_seconds' => RUN_EVALUATION_TIMEOUT_SECONDS,
+            'process_id' => null,
+            'stderr_bytes' => strlen($stderr),
+            'stdout_bytes' => strlen($stdout),
+        ]);
+
+        runEvaluationResponse(504, [
+            'ok' => false,
+            'error' => 'Scoring exceeded the 5-minute execution limit and was stopped. Previously saved answers remain available. Some scoring results may already have been saved. Check Evaluation before retrying with fewer responses.',
+        ]);
     }
-    $stdout .= stream_get_contents($pipes[1]);
-    $stderr .= stream_get_contents($pipes[2]);
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-    $closeCode = proc_close($process);
-    $exitCode = (int) ($lastStatus['exitcode'] ?? $closeCode);
+
     if ($exitCode !== 0) {
-        $technicalError = trim($stderr);
+        $errorLogFile = testRunSavePythonError($stderr);
+
+        testRunDiagnosticLog('saved_answer_scoring_failed', [
+            'exit_code' => $exitCode,
+            'elapsed_seconds' => round(microtime(true) - $startedAt, 2),
+            'stderr_bytes' => strlen($stderr),
+            'stdout_bytes' => strlen($stdout),
+            'error_log_file' => $errorLogFile,
+        ]);
+
         runEvaluationResponse(422, [
             'ok' => false,
-            'error' => runEvaluationUserError($technicalError),
+            'error' => runEvaluationUserError(trim($stderr)),
         ]);
     }
     $result = json_decode($stdout, true, 32, JSON_THROW_ON_ERROR);
@@ -172,6 +173,13 @@ try {
     }
     runEvaluationResponse(200, ['ok' => true, 'data' => runEvaluationCommand($payload)]);
 } catch (Throwable $error) {
+    testRunDiagnosticLog('saved_answer_scoring_exception', [
+        'exception_type' => get_class($error),
+        'message_length' => strlen($error->getMessage()),
+        'file' => basename($error->getFile()),
+        'line' => $error->getLine(),
+    ]);
+
     error_log('Run evaluation endpoint failure: ' . $error->getMessage());
     runEvaluationResponse(500, [
         'ok' => false,

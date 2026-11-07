@@ -63,7 +63,7 @@ jobs:
         run: python rag/ingest.py --init-schema --json
 
       - name: Run provider-free tests
-        run: python -m unittest discover -s tests -v
+        run: python -m pytest tests -v
 
       - name: Verify Python dependency health
         run: python -m pip check

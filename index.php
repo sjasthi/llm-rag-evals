@@ -18,6 +18,8 @@ function modelDisplayName(string $model): string
     $labels = [
         'gemini-2.5-flash' => 'Gemini 2.5 Flash — standard',
         'gemini-3.1-flash-lite' => 'Gemini 3.1 Flash-Lite — faster',
+        'gemini-3.6-flash' => 'Gemini 3.6 Flash',
+        'qwen2.5vl:7b' => 'Qwen 2.5 VL 7B - Local Ollama',
     ];
 
     return $labels[$model] ?? ucwords(str_replace(['-', '_'], ' ', $model));

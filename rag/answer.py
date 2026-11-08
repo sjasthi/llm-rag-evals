@@ -21,7 +21,8 @@ from llm import (
     build_grounded_prompt,
     estimate_generation_cost,
     estimated_generation_application_cost,
-    generate_with_gemini,
+    generate_grounded_answer,
+    provider_for_model,
 )
 from provenance import code_provenance
 from query import (
@@ -61,7 +62,7 @@ def answer_question(
     *,
     top_k: int,
     save: bool = True,
-    generator: AnswerGenerator = generate_with_gemini,
+    generator: AnswerGenerator = generate_grounded_answer,
     question_id: int | None = None,
     run_id: int | None = None,
     retrieval_method: str = "chroma_vector",
@@ -95,6 +96,7 @@ def answer_question(
         raise ValueError("top_p must be between 0.0 and 1.0")
     settings = replace(
         base_settings,
+        llm_provider=provider_for_model(selected_model),
         llm_chat_model=selected_model,
         llm_temperature=selected_temperature,
         llm_top_p=selected_top_p,
@@ -313,8 +315,13 @@ def main() -> None:
                 print(prompt)
             return
 
-        estimated_call_cost = estimated_generation_application_cost(settings)
-        if not args.allow_paid:
+        selected_settings = replace(
+            settings,
+            llm_provider=provider_for_model(args.model),
+            llm_chat_model=args.model,
+        )
+        estimated_call_cost = estimated_generation_application_cost(selected_settings)
+        if selected_settings.llm_provider != "ollama" and not args.allow_paid:
             parser.error("Answer generation requires --allow-paid.")
         if estimated_call_cost is None and not args.allow_unknown_cost:
             parser.error(

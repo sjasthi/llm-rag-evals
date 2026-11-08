@@ -12,7 +12,7 @@ from dataclasses import replace
 from answer import answer_question
 from database import database_connection, get_or_create_model_setting
 from evaluation import score_saved_response
-from llm import estimated_generation_application_cost
+from llm import estimated_generation_application_cost, provider_for_model
 from provenance import code_provenance
 from query import retrieval_provenance
 from settings import load_settings
@@ -152,9 +152,11 @@ def create_run(
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,49}", category.strip()):
             raise ValueError(f"Invalid source category {category!r}")
     base_settings = load_settings()
+    selected_model = model.strip() if model is not None else base_settings.llm_chat_model
     settings = replace(
         base_settings,
-        llm_chat_model=(model.strip() if model is not None else base_settings.llm_chat_model),
+        llm_provider=provider_for_model(selected_model),
+        llm_chat_model=selected_model,
         llm_temperature=(
             float(temperature) if temperature is not None else base_settings.llm_temperature
         ),
@@ -329,14 +331,25 @@ def create_run(
         )
         preflight: dict[str, object] = {
             "response_count": len(questions),
-            "paid_call_count": len(questions),
+            "paid_call_count": (
+                0 if settings.llm_provider == "ollama" else len(questions)
+            ),
             "estimated_cost_per_response": per_response_cost,
             "estimated_cost": estimated_cost,
-            "cost_status": "unknown" if estimated_cost is None else "estimated",
+            "cost_status": (
+                "local"
+                if settings.llm_provider == "ollama"
+                else "unknown" if estimated_cost is None else "estimated"
+            ),
             "cost_note": (
-                "Provider pricing is not configured, so paid-call cost is unknown."
-                if estimated_cost is None
-                else "Estimate uses configured per-million token rates and conservative token assumptions."
+                "Local Ollama inference has no external generation API charge; "
+                "hardware and electricity costs are excluded."
+                if settings.llm_provider == "ollama"
+                else (
+                    "Provider pricing is not configured, so paid-call cost is unknown."
+                    if estimated_cost is None
+                    else "Estimate uses configured per-million token rates and conservative token assumptions."
+                )
             ),
             "max_responses": max_responses,
             "max_estimated_cost": max_estimated_cost,
@@ -372,9 +385,9 @@ def create_run(
         }
         if len(questions) > max_responses:
             raise ValueError(
-                f"Plan has {len(questions)} paid responses; raise max_responses deliberately to continue."
+                f"Plan has {len(questions)} responses; raise max_responses deliberately to continue."
             )
-        if not dry_run and not allow_paid:
+        if not dry_run and settings.llm_provider != "ollama" and not allow_paid:
             raise ValueError("Baseline model-backed execution requires allow_paid=True / --allow-paid.")
         if not dry_run and estimated_cost is None and not allow_unknown_cost:
             raise ValueError(

@@ -76,6 +76,22 @@ def normalize_text(value: str) -> str:
     value = unicodedata.normalize("NFKC", value).lower()
     return " ".join(TOKEN_PATTERN.findall(value))
 
+def lexical_comparisons(item: EvaluationInput) -> tuple[list[str], list[tuple[str, list[str]]]]:
+    """Prepare citation-cleaned answer tokens and reviewed reference tokens."""
+    cleaned_answer = re.sub(r"\[\s*\d+\s*\]", "", item.actual_answer)
+    actual_tokens = TOKEN_PATTERN.findall(normalize_text(cleaned_answer))
+
+    references = []
+    for reference in [item.expected_answer, *item.accepted_answers]:
+        if not reference.strip():
+            continue
+
+        reference_tokens = TOKEN_PATTERN.findall(normalize_text(reference))
+        if reference_tokens:
+            references.append((reference, reference_tokens))
+
+    return actual_tokens, references
+
 def exact_contains(item: EvaluationInput) -> tuple[float, bool, str, dict[str, Any]]:
     actual = normalize_text(item.actual_answer)
     candidates = [item.expected_answer, *item.accepted_answers]
@@ -95,15 +111,49 @@ def required_fact_coverage(item: EvaluationInput) -> tuple[float | None, bool | 
     return score, score == 1.0, f"Matched {len(matched)} of {len(item.required_facts)} required facts.", {"matched": matched, "missing": missing}
 
 def token_f1(item: EvaluationInput) -> tuple[float, bool, str, dict[str, Any]]:
-    expected = TOKEN_PATTERN.findall(normalize_text(item.expected_answer))
-    actual = TOKEN_PATTERN.findall(normalize_text(item.actual_answer))
-    expected_counts = {token: expected.count(token) for token in set(expected)}
-    actual_counts = {token: actual.count(token) for token in set(actual)}
-    overlap = sum(min(count, actual_counts.get(token, 0)) for token, count in expected_counts.items())
-    precision = overlap / len(actual) if actual else 0.0
-    recall = overlap / len(expected) if expected else 0.0
-    score = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    return score, score >= 0.7, f"Token F1 is {score:.3f} (descriptive threshold 0.70).", {"precision": precision, "recall": recall, "overlap_tokens": overlap}
+    actual, references = lexical_comparisons(item)
+
+    best_score = -1.0
+    best_details: dict[str, Any] = {}
+
+    for reference, expected in references:
+        expected_counts = {
+            token: expected.count(token) for token in set(expected)
+        }
+        actual_counts = {
+            token: actual.count(token) for token in set(actual)
+        }
+
+        overlap = sum(
+            min(count, actual_counts.get(token, 0))
+            for token, count in expected_counts.items()
+        )
+
+        precision = overlap / len(actual) if actual else 0.0
+        recall = overlap / len(expected) if expected else 0.0
+        score = (
+            2 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+
+        if score > best_score:
+            best_score = score
+            best_details = {
+                "precision": precision,
+                "recall": recall,
+                "overlap_tokens": overlap,
+                "selected_reference": reference,
+            }
+
+    score = max(best_score, 0.0)
+
+    return (
+        score,
+        score >= 0.7,
+        f"Token F1 is {score:.3f} (descriptive threshold 0.70).",
+        best_details,
+    )
 
 def _lcs_length(left: list[str], right: list[str]) -> int:
     previous = [0] * (len(right) + 1)
@@ -115,14 +165,39 @@ def _lcs_length(left: list[str], right: list[str]) -> int:
     return previous[-1]
 
 def rouge_l(item: EvaluationInput) -> tuple[float, bool, str, dict[str, Any]]:
-    expected = TOKEN_PATTERN.findall(normalize_text(item.expected_answer))
-    actual = TOKEN_PATTERN.findall(normalize_text(item.actual_answer))
-    lcs = _lcs_length(expected, actual)
-    precision = lcs / len(actual) if actual else 0.0
-    recall = lcs / len(expected) if expected else 0.0
-    score = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
-    return score, score >= 0.7, f"ROUGE-L F1 is {score:.3f} (descriptive threshold 0.70).", {"precision": precision, "recall": recall, "lcs_tokens": lcs}
+    actual, references = lexical_comparisons(item)
 
+    best_score = -1.0
+    best_details: dict[str, Any] = {}
+
+    for reference, expected in references:
+        lcs = _lcs_length(expected, actual)
+
+        precision = lcs / len(actual) if actual else 0.0
+        recall = lcs / len(expected) if expected else 0.0
+        score = (
+            2 * precision * recall / (precision + recall)
+            if precision + recall
+            else 0.0
+        )
+
+        if score > best_score:
+            best_score = score
+            best_details = {
+                "precision": precision,
+                "recall": recall,
+                "lcs_tokens": lcs,
+                "selected_reference": reference,
+            }
+
+    score = max(best_score, 0.0)
+
+    return (
+        score,
+        score >= 0.7,
+        f"ROUGE-L F1 is {score:.3f} (descriptive threshold 0.70).",
+        best_details,
+    )
 
 def semantic_similarity(item: EvaluationInput) -> tuple[float, bool, str, dict[str, Any]]:
     from sentence_transformers import util

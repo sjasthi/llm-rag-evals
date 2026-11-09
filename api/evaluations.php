@@ -45,10 +45,61 @@ function evaluatorLayer(array $row): string
     return is_string($configuration['layer'] ?? null) ? $configuration['layer'] : 'baseline';
 }
 
+function preferredEvaluatorResultsSql(): string
+{
+    return "
+        SELECT ranked.response_id, ranked.evaluator_id,
+               ranked.result_id, ranked.status,
+               ranked.normalized_score
+        FROM (
+            SELECT result.response_id, result.evaluator_id,
+                   result.result_id, result.status,
+                   result.normalized_score,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY result.response_id, definition.evaluator_key
+                       ORDER BY
+                           CASE WHEN result.status='completed' THEN 0 ELSE 1 END,
+                           CAST(SUBSTRING_INDEX(definition.version, '.', 1) AS UNSIGNED) DESC,
+                           CAST(SUBSTRING_INDEX(
+                               SUBSTRING_INDEX(definition.version, '.', 2), '.', -1
+                           ) AS UNSIGNED) DESC,
+                           definition.evaluator_id DESC
+                   ) AS preference_rank
+            FROM evaluator_results result
+            JOIN evaluator_definitions definition
+              ON definition.evaluator_id=result.evaluator_id
+        ) ranked
+        WHERE ranked.preference_rank=1
+    ";
+}
+function preferredEvaluatorResults(array $results): array
+{
+    $selected = [];
+
+    foreach ($results as $result) {
+        if (($result['status'] ?? '') !== 'completed') {
+            continue;
+        }
+
+        $key = (string) ($result['evaluator_key'] ?? '');
+        if ($key === '') {
+            continue;
+        }
+
+        $version = (string) ($result['version'] ?? '0');
+
+        if (!isset($selected[$key])
+            || version_compare($version, (string) ($selected[$key]['version'] ?? '0'), '>')) {
+            $selected[$key] = $result;
+        }
+    }
+
+    return array_values($selected);
+}
 function disagreementPrompts(array $results, array $reviews): array
 {
     $scores = [];
-    foreach ($results as $result) {
+    foreach (preferredEvaluatorResults($results) as $result) {
         if (($result['status'] ?? '') === 'completed' && $result['normalized_score'] !== null) {
             $scores[$result['evaluator_key']] = (float) $result['normalized_score'];
         }
@@ -195,6 +246,8 @@ try {
                         MAX(CASE WHEN attempt.status='completed' THEN attempt.normalized_score END) AS attempt_max,
                         STDDEV_POP(CASE WHEN attempt.status='completed' THEN attempt.normalized_score END) AS attempt_stddev
                  FROM evaluator_results er
+                 JOIN (" . preferredEvaluatorResultsSql() . ") preferred
+                   ON preferred.result_id=er.result_id
                  JOIN evaluator_definitions e ON e.evaluator_id=er.evaluator_id
                  LEFT JOIN (
                     SELECT global_result.evaluator_id,
@@ -375,7 +428,7 @@ try {
                          SUM(result.status='failed') AS evaluator_error_count,
                         SUM(result.status='skipped') AS evaluator_skipped_count
                  FROM rag_responses response
-                 JOIN evaluator_results result ON result.response_id=response.response_id
+                 JOIN (" . preferredEvaluatorResultsSql() . ") result ON result.response_id=response.response_id
                  GROUP BY response.run_id
              ) result_summary ON result_summary.run_id=run.run_id
              LEFT JOIN (
@@ -418,7 +471,7 @@ try {
              LEFT JOIN evaluation_question_memberships membership
                ON membership.dataset_id=run.dataset_id
               AND membership.question_id=response.question_id
-             LEFT JOIN evaluator_results result ON result.response_id=response.response_id
+             LEFT JOIN (" . preferredEvaluatorResultsSql() . ") result ON result.response_id=response.response_id
              LEFT JOIN evaluator_definitions definition ON definition.evaluator_id=result.evaluator_id
              GROUP BY response.response_id
              ORDER BY response.run_id DESC,
@@ -475,28 +528,59 @@ try {
         $metricSummaries = normalizeJsonColumns($database->query(
             "SELECT definition.evaluator_key, definition.display_name, definition.family,
                     definition.dimension, definition.configuration_json, definition.is_local,
-                    COUNT(result.result_id) AS result_count,
-                    SUM(result.status='completed') AS completed_count,
-                    SUM(result.status='skipped') AS skipped_count,
-                    SUM(result.status='failed') AS failed_count,
-                    AVG(CASE WHEN result.status='completed' THEN result.normalized_score END) AS mean_score,
-                    MAX(COALESCE(attempt_summary.attempt_count, 0)) AS attempt_count,
-                    MAX(COALESCE(attempt_summary.mean_runtime_ms, 0)) AS mean_runtime_ms,
-                    MAX(attempt_summary.estimated_cost) AS estimated_cost,
-                    MAX(COALESCE(attempt_summary.priced_count, 0)) AS priced_attempt_count,
-                    MAX(COALESCE(attempt_summary.unpriced_count, 0)) AS unpriced_attempt_count
-             FROM evaluator_definitions definition
-             LEFT JOIN evaluator_results result ON result.evaluator_id=definition.evaluator_id
+                    COALESCE(scores.result_count, 0) AS result_count,
+                    COALESCE(scores.completed_count, 0) AS completed_count,
+                    COALESCE(scores.skipped_count, 0) AS skipped_count,
+                    COALESCE(scores.failed_count, 0) AS failed_count,
+                    scores.mean_score,
+                    COALESCE(attempt_summary.attempt_count, 0) AS attempt_count,
+                    COALESCE(attempt_summary.mean_runtime_ms, 0) AS mean_runtime_ms,
+                    attempt_summary.estimated_cost,
+                    COALESCE(attempt_summary.priced_attempt_count, 0) AS priced_attempt_count,
+                    COALESCE(attempt_summary.unpriced_attempt_count, 0) AS unpriced_attempt_count
+             FROM (
+                 SELECT ranked.*
+                 FROM (
+                     SELECT d.*,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY d.evaluator_key
+                                ORDER BY
+                                    CAST(SUBSTRING_INDEX(d.version, '.', 1) AS UNSIGNED) DESC,
+                                    CAST(SUBSTRING_INDEX(
+                                        SUBSTRING_INDEX(d.version, '.', 2), '.', -1
+                                    ) AS UNSIGNED) DESC,
+                                    d.evaluator_id DESC
+                            ) AS definition_rank
+                     FROM evaluator_definitions d
+                     WHERE d.is_active=TRUE
+                 ) ranked
+                 WHERE ranked.definition_rank=1
+             ) definition
              LEFT JOIN (
-                 SELECT evaluator_id, COUNT(*) AS attempt_count,
-                        AVG(COALESCE(runtime_ms, 0)) AS mean_runtime_ms,
-                        SUM(estimated_cost) AS estimated_cost,
-                        SUM(status<>'skipped' AND estimated_cost IS NOT NULL) AS priced_count,
-                        SUM(status<>'skipped' AND estimated_cost IS NULL) AS unpriced_count
-                 FROM evaluator_result_attempts GROUP BY evaluator_id
-             ) attempt_summary ON attempt_summary.evaluator_id=definition.evaluator_id
-             WHERE definition.is_active=TRUE
-             GROUP BY definition.evaluator_id ORDER BY definition.evaluator_id"
+                 SELECT d.evaluator_key,
+                        COUNT(r.result_id) AS result_count,
+                        SUM(r.status='completed') AS completed_count,
+                        SUM(r.status='skipped') AS skipped_count,
+                        SUM(r.status='failed') AS failed_count,
+                        AVG(CASE WHEN r.status='completed' THEN r.normalized_score END) AS mean_score
+                 FROM (" . preferredEvaluatorResultsSql() . ") r
+                 JOIN evaluator_definitions d ON d.evaluator_id=r.evaluator_id
+                 GROUP BY d.evaluator_key
+             ) scores ON scores.evaluator_key=definition.evaluator_key
+             LEFT JOIN (
+                 SELECT d.evaluator_key,
+                        COUNT(a.evaluator_id) AS attempt_count,
+                        AVG(COALESCE(a.runtime_ms, 0)) AS mean_runtime_ms,
+                        SUM(a.estimated_cost) AS estimated_cost,
+                        COALESCE(SUM(a.status<>'skipped' AND a.estimated_cost IS NOT NULL), 0)
+                            AS priced_attempt_count,
+                        COALESCE(SUM(a.status<>'skipped' AND a.estimated_cost IS NULL), 0)
+                            AS unpriced_attempt_count
+                 FROM evaluator_definitions d
+                 JOIN evaluator_result_attempts a ON a.evaluator_id=d.evaluator_id
+                 GROUP BY d.evaluator_key
+             ) attempt_summary ON attempt_summary.evaluator_key=definition.evaluator_key
+             ORDER BY definition.evaluator_key"
         )->fetchAll(), ['configuration_json']);
         foreach ($metricSummaries as &$summary) {
             $summary['layer'] = $summary['configuration_json']['layer'] ?? 'baseline';
@@ -513,11 +597,11 @@ try {
                     MAX(result.normalized_score) AS max_score
              FROM evaluation_runs run
              JOIN rag_responses response ON response.run_id=run.run_id
-             JOIN evaluator_results result ON result.response_id=response.response_id
+             JOIN (" . preferredEvaluatorResultsSql() . ") result ON result.response_id=response.response_id
              JOIN evaluator_definitions definition ON definition.evaluator_id=result.evaluator_id
              WHERE result.status='completed'
-             GROUP BY run.run_id, definition.evaluator_id
-             ORDER BY run.run_id DESC, definition.evaluator_id"
+             GROUP BY run.run_id, definition.evaluator_key, definition.display_name, definition.dimension
+             ORDER BY run.run_id DESC, definition.evaluator_key"
         )->fetchAll();
 
         $matchedComparisons = $database->query(

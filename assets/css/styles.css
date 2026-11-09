@@ -664,6 +664,18 @@ textarea.form-control { min-height: 8rem; resize: vertical; }
 .run-evaluation-force { display: flex; gap: 0.4rem; align-items: center; color: var(--forest-800); font-size: 0.62rem; }
 .run-evaluation-buttons { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .run-evaluation-status { margin: 0; color: var(--muted); font-size: 0.6rem; line-height: 1.45; }
+.evaluation-completion-notice {
+    margin: 0.6rem 0;
+    padding: 0.7rem 0.85rem;
+    color: #174ea6;
+    background: #eaf3ff;
+    border: 1px solid #b9d5fa;
+    border-left: 4px solid #2563eb;
+    border-radius: 0.5rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1.5;
+}
 .run-metric-comparison { margin-top: 0.65rem; padding-top: 0.55rem; border-top: 1px solid var(--line); }
 .run-metric-comparison > summary { color: var(--blue); font-size: 0.62rem; font-weight: 850; cursor: pointer; }
 .run-metric-table { display: grid; margin-top: 0.45rem; overflow: hidden; border: 1px solid var(--line); border-radius: 0.5rem; }

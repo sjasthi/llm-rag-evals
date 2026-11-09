@@ -112,6 +112,47 @@ $(function () {
     let evaluationDatasetQuestionCount = 0;
     let evaluationRuns = [];
     let evaluatorCatalog = [];
+    let dashboardEvaluatorCatalog = [];
+
+    function refreshDashboardEvaluatorCatalog() {
+        const methods = new Map();
+
+        evaluatorCatalog.forEach(function (evaluator) {
+            const key = String(evaluator.evaluator_key || "");
+            if (!key) {
+                return;
+            }
+
+            const existing = methods.get(key);
+            if (!existing) {
+                methods.set(key, evaluator);
+                return;
+            }
+
+            const versionParts = function (value) {
+                return String(value || "0").split(".").map(function (part) {
+                    return Number(part) || 0;
+                });
+            };
+
+            const currentParts = versionParts(evaluator.version);
+            const existingParts = versionParts(existing.version);
+
+            for (let i = 0; i < Math.max(currentParts.length, existingParts.length); i++) {
+                const difference = (currentParts[i] || 0) - (existingParts[i] || 0);
+                if (difference > 0) {
+                    methods.set(key, evaluator);
+                    break;
+                }
+                if (difference < 0) {
+                    break;
+                }
+            }
+        });
+
+        dashboardEvaluatorCatalog = Array.from(methods.values());
+    }
+
     let currentEvaluationResponseId = null;
     let evaluationResponseContexts = new Map();
     let indexedDocuments = [];
@@ -1179,6 +1220,7 @@ $(function () {
             judge: "LLM judge",
             ragas: "RAGAS",
             model: "Model-backed metric",
+            citation: "AI citation analysis",
         }[evaluatorMethodKey(evaluator)];
     }
 
@@ -1467,8 +1509,14 @@ function applicableEvaluators(methodKey, response, results) {
     }
 
     let evaluationDatasetRequestId = 0;
-    function loadEvaluationDataset() {
+    function loadEvaluationDataset(completionMessage = null, completionRunId = null) {
         const requestId = ++evaluationDatasetRequestId;
+        const completionTarget = function () {
+            const $run = $evaluationRunList
+                .find('.evaluation-run[data-run-id="' + completionRunId + '"]')
+                .first();
+            return $run.length ? $run : $evaluationRunList;
+        };
         const selectedDatasetId = $evaluationDatasetSelect.val();
 
         const requestUrl = selectedDatasetId
@@ -1485,6 +1533,7 @@ function applicableEvaluators(methodKey, response, results) {
                 const data = response.data;
                 evaluationQuestions = data.questions || [];
                 evaluatorCatalog = data.evaluators || [];
+                refreshDashboardEvaluatorCatalog();
                 const dataset = data.dataset;
                 const availableDatasets = data.availableDatasets || [];
                 $evaluationDatasetSelect.empty();
@@ -1534,13 +1583,13 @@ function applicableEvaluators(methodKey, response, results) {
                     dataset.dataset_name + " " + dataset.version + ": " + dataset.reviewed_count + " of " + dataset.question_count +
                     " reviewed; " + dataset.unanswerable_count + " unanswerable cases across " + dataset.category_count + " categories."
                 );
-                $evaluatorCount.text(evaluatorCatalog.length);
-                $overviewEvaluatorCount.text(evaluatorCatalog.length);
+                $evaluatorCount.text(dashboardEvaluatorCatalog.length);
+                $overviewEvaluatorCount.text(dashboardEvaluatorCatalog.length);
                 $experimentHumanReviewCount.text(data.findings?.human_review_count || 0);
                 renderResearchReadiness(dataset, evaluationRuns, data.findings || {});
                 $evaluatorSummary.text(
                     "Choose a saved test or standalone Chat answer to inspect its evaluation results. " +
-                    "The catalog contains " + evaluatorCatalog.length + " evaluation methods, " +
+                    "The catalog contains " + dashboardEvaluatorCatalog.length + " evaluation methods, " +
                     "including optional advanced and citation metrics. " +
                     "Scoring can reuse saved results, and local checks do not require an external API call."
                 );
@@ -1557,11 +1606,27 @@ function applicableEvaluators(methodKey, response, results) {
                     data.standaloneResponses || []
                 );
                 renderFindings(data);
+                if (completionMessage) {
+                    $(".evaluation-completion-notice").remove();
+                    $("<p>")
+                        .addClass("run-evaluation-status evaluation-completion-notice")
+                        .attr({ role: "status", "aria-live": "polite" })
+                        .text(completionMessage)
+                        .insertBefore(completionTarget());
+                }
             })
             .fail(function () {
                   if (requestId !== evaluationDatasetRequestId) {
                       return;
                   }
+                if (completionMessage) {
+                    $(".evaluation-completion-notice").remove();
+                    $("<p>")
+                        .addClass("run-evaluation-status evaluation-completion-notice")
+                        .attr({ role: "alert" })
+                        .text("Scoring finished, but saved results could not be refreshed. Reload the dataset to verify the updated scores.")
+                        .insertBefore(completionTarget());
+                }
                 $evaluationDatasetSummary.text("Evaluation data is temporarily unavailable. Try again or contact the application administrator.");
                 $researchReadinessList.empty().append(
                     $("<li>").addClass("readiness-next").text("Study status is unavailable until the application data can be loaded.")
@@ -1874,7 +1939,7 @@ function applicableEvaluators(methodKey, response, results) {
             const completed = Number(response.completed_result_count) || 0;
             const failedResults = Number(response.failed_result_count) || 0;
             const skippedResults = Number(response.skipped_result_count) || 0;
-            const savedRunEvaluatorCount = evaluatorCatalog.filter(function (evaluator) {
+            const savedRunEvaluatorCount = dashboardEvaluatorCatalog.filter(function (evaluator) {
                 return evaluator.evaluator_key !== "citation_coverage" &&
                     evaluator.evaluator_key !== "citation_support";
             }).length;
@@ -1935,7 +2000,7 @@ function applicableEvaluators(methodKey, response, results) {
             $("<strong>").text("This test"),
             $("<strong>").text("All tests")
         ));
-        evaluatorCatalog.forEach(function (evaluator) {
+        dashboardEvaluatorCatalog.forEach(function (evaluator) {
             const current = scopedMetrics.find(function (metric) {
                 return metric.evaluator_key === evaluator.evaluator_key;
             });
@@ -2745,9 +2810,50 @@ function applicableEvaluators(methodKey, response, results) {
             timeout: 310000,
             data: JSON.stringify(runEvaluationPayload($panel, "evaluate")),
         })
-            .done(function () {
-                $status.text("Scoring completed. Refreshing the saved results…");
-                loadEvaluationDataset();
+            .done(function (response) {
+                const outcomes = response.data?.outcomes || {};
+                const items = [
+                    ...(outcomes.local || []),
+                    ...(outcomes.advanced || [])
+                ];
+
+                const reused = items.filter(function (item) {
+                    return item.action === "reuse";
+                }).length;
+
+                const executed = items.filter(function (item) {
+                    return item.result && item.action !== "reuse";
+                });
+
+                const completed = executed.filter(function (item) {
+                    return item.result.status === "completed";
+                }).length;
+
+                const failed = executed.filter(function (item) {
+                    return item.result.status === "failed";
+                }).length;
+
+                const skipped = executed.filter(function (item) {
+                    return item.result.status === "skipped";
+                }).length;
+
+                const unknown = items.length - reused - completed - failed - skipped;
+                const hasWarnings = failed > 0 || skipped > 0 || unknown > 0;
+
+                const message = (
+                    hasWarnings
+                        ? "Evaluation finished with warnings: "
+                        : "Evaluation completed: "
+                ) +
+                    completed + " new score(s) completed · " +
+                    reused + " existing score(s) reused · " +
+                    failed + " failed · " +
+                    skipped + " skipped" +
+                    (unknown ? " · " + unknown + " unknown" : "");
+
+                $status.text("Scoring finished. Refreshing saved results…");
+
+                loadEvaluationDataset(message, Number($panel.data("runId")));
             })
             .fail(function (xhr) {
                 $status.text(xhr.responseJSON?.error || "The selected scoring request failed.");

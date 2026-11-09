@@ -4,35 +4,47 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from evaluator_catalog import definition_for
 
 
 def active_evaluator(connection: Any, evaluator_key: str) -> dict[str, Any]:
+    version = definition_for(evaluator_key)["version"]
+
     with connection.cursor(dictionary=True) as cursor:
         cursor.execute(
             """SELECT evaluator_id, evaluator_key, version, configuration_json
                FROM evaluator_definitions
-               WHERE evaluator_key=%s AND is_active=TRUE
-               ORDER BY evaluator_id DESC LIMIT 1""",
-            (evaluator_key,),
+               WHERE evaluator_key=%s AND version=%s AND is_active=TRUE
+               LIMIT 1""",
+            (evaluator_key, version),
         )
         row = cursor.fetchone()
+
     if not row:
-        raise ValueError(f"Evaluator definition {evaluator_key!r} is not seeded.")
+        raise ValueError(
+            f"Evaluator definition {evaluator_key!r} "
+            f"version {version!r} is not seeded or active."
+        )
+
     return row
 
 
 def reusable_result_exists(connection: Any, response_id: int, evaluator_key: str) -> bool:
+    version = definition_for(evaluator_key)["version"]
+
     with connection.cursor() as cursor:
         cursor.execute(
             """SELECT 1
                FROM evaluator_results result
                JOIN evaluator_definitions definition
                  ON definition.evaluator_id=result.evaluator_id
-               WHERE result.response_id=%s AND definition.evaluator_key=%s
+               WHERE result.response_id=%s
+                 AND definition.evaluator_key=%s
+                 AND definition.version=%s
                  AND definition.is_active=TRUE
                  AND result.status IN ('completed', 'skipped')
                LIMIT 1""",
-            (response_id, evaluator_key),
+            (response_id, evaluator_key, version),
         )
         return cursor.fetchone() is not None
 

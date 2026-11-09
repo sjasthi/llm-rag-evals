@@ -7,12 +7,14 @@ import sys
 import unittest
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
-from ragas.llms.base import InstructorBaseRagasLLM
+from unittest.mock import MagicMock, patch
 
+from ragas.llms.base import InstructorBaseRagasLLM
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "rag"))
+
+from evaluation_store import active_evaluator, reusable_result_exists
 
 from advanced_evaluation import (  # noqa: E402
     AsyncCompatibleRagasLLM,
@@ -2064,6 +2066,46 @@ class AdvancedEvaluationTests(unittest.TestCase):
         self.assertEqual(outcomes[0]["result"]["normalized_score"], 0.5)
         self.assertEqual(outcomes[0]["result"]["status"], "completed")
         self.assertEqual(outcomes[0]["usage"]["total_tokens"], 150)
+
+    def test_active_evaluator_selects_catalog_version(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = {
+            "evaluator_id": 48,
+            "evaluator_key": "token_f1",
+            "version": "1.1",
+            "configuration_json": None,
+        }
+
+        with patch(
+            "evaluation_store.definition_for",
+            return_value={"version": "1.1"},
+        ):
+            result = active_evaluator(connection, "token_f1")
+
+        self.assertEqual(48, result["evaluator_id"])
+        sql, parameters = cursor.execute.call_args.args
+
+        self.assertIn("version=%s", sql)
+        self.assertEqual(("token_f1", "1.1"), parameters)
+
+    def test_result_reuse_requires_catalog_version(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = None
+
+        with patch(
+            "evaluation_store.definition_for",
+            return_value={"version": "1.1"},
+        ):
+            reusable = reusable_result_exists(connection, 222, "token_f1")
+
+        self.assertFalse(reusable)
+        sql, parameters = cursor.execute.call_args.args
+
+        self.assertIn("definition.version=%s", sql)
+        self.assertIn("result.status IN ('completed', 'skipped')", sql)
+        self.assertEqual((222, "token_f1", "1.1"), parameters)
 
 if __name__ == "__main__":
     unittest.main()

@@ -628,6 +628,177 @@ class LocalEvaluatorTests(unittest.TestCase):
             set(REFERENCE_FREE_EVALUATORS),
         )
 
+    def test_lexical_metrics_accept_reviewed_concise_answer(self) -> None:
+        item = sample_evaluation_input(
+            expected_answer="The campus saved 2,300 gallons of water in March.",
+            actual_answer="2,300 gallons [1]",
+            accepted_answers=["2,300 gallons", "2300 gallons"],
+            required_facts=["2,300 gallons"],
+        )
+
+        for evaluator in (token_f1, rouge_l):
+            with self.subTest(evaluator=evaluator.__name__):
+                score, passed, _explanation, details = evaluator(item)
+
+                self.assertAlmostEqual(1.0, score)
+                self.assertTrue(passed)
+                self.assertEqual(
+                    "2,300 gallons",
+                    details["selected_reference"],
+                )
+    def test_lexical_metrics_do_not_treat_wrong_number_as_exact_match(self) -> None:
+        item = sample_evaluation_input(
+            expected_answer="The campus saved 2,300 gallons of water in March.",
+            actual_answer="The campus saved 2,400 gallons in March. [1]",
+            accepted_answers=["2,300 gallons", "2300 gallons"],
+            required_facts=["2,300 gallons"],
+        )
+
+        for evaluator in (token_f1, rouge_l):
+            with self.subTest(evaluator=evaluator.__name__):
+                score, _passed, _explanation, details = evaluator(item)
+
+                self.assertGreater(score, 0.0)
+                self.assertLess(score, 1.0)
+                self.assertIn(
+                    details["selected_reference"],
+                    [item.expected_answer, *item.accepted_answers],
+                )
+
+    def test_lexical_metrics_penalize_unsupported_extra_claim(self) -> None:
+        item = sample_evaluation_input(
+            expected_answer="The campus saved 2,300 gallons of water in March.",
+            actual_answer=(
+                "March saved 2,300 gallons, "
+                "but April saved zero gallons. [1]"
+            ),
+            accepted_answers=["2,300 gallons", "2300 gallons"],
+            required_facts=["2,300 gallons"],
+        )
+
+        for evaluator in (token_f1, rouge_l):
+            with self.subTest(evaluator=evaluator.__name__):
+                score, _passed, _explanation, details = evaluator(item)
+
+                self.assertGreater(score, 0.0)
+                self.assertLess(score, 1.0)
+                self.assertLess(details["precision"], 1.0)
+                self.assertIn(
+                    details["selected_reference"],
+                    [item.expected_answer, *item.accepted_answers],
+                )
+
+    def test_lexical_metrics_reject_unrelated_answer(self) -> None:
+        item = sample_evaluation_input(
+            expected_answer="The campus saved 2,300 gallons of water in March.",
+            actual_answer="The library closes at 9 PM. [1]",
+            accepted_answers=["2,300 gallons", "2300 gallons"],
+            required_facts=["2,300 gallons"],
+        )
+
+        for evaluator in (token_f1, rouge_l):
+            with self.subTest(evaluator=evaluator.__name__):
+                score, passed, _explanation, details = evaluator(item)
+
+                self.assertGreaterEqual(score, 0.0)
+                self.assertLess(score, 0.3)
+                self.assertFalse(passed)
+                self.assertIn(
+                    details["selected_reference"],
+                    [item.expected_answer, *item.accepted_answers],
+                )
+
+    def test_lexical_metrics_accept_reviewed_date_variant(self) -> None:
+        item = sample_evaluation_input(
+            expected_answer=(
+                "Fall 2026 registration begins on Monday, March 23, 2026."
+            ),
+            actual_answer="March 23, 2026 [1]",
+            accepted_answers=[
+                "March 23, 2026",
+                "Monday, March 23, 2026",
+            ],
+            required_facts=["March 23, 2026"],
+        )
+
+        for evaluator in (token_f1, rouge_l):
+            with self.subTest(evaluator=evaluator.__name__):
+                score, passed, _explanation, details = evaluator(item)
+
+                self.assertAlmostEqual(1.0, score)
+                self.assertTrue(passed)
+                self.assertEqual(
+                    "March 23, 2026",
+                    details["selected_reference"],
+                )
+
+    def test_lexical_metrics_distinguish_named_entities(self) -> None:
+        correct = sample_evaluation_input(
+            expected_answer="The project coordinator is Alice Johnson.",
+            actual_answer="Alice Johnson [1]",
+            accepted_answers=["Alice Johnson"],
+            required_facts=["Alice Johnson"],
+        )
+
+        incorrect = sample_evaluation_input(
+            expected_answer="The project coordinator is Alice Johnson.",
+            actual_answer="Bob Smith [1]",
+            accepted_answers=["Alice Johnson"],
+            required_facts=["Alice Johnson"],
+        )
+
+        for evaluator in (token_f1, rouge_l):
+            with self.subTest(evaluator=evaluator.__name__):
+                correct_score, correct_passed, _, correct_details = evaluator(correct)
+                incorrect_score, incorrect_passed, _, _ = evaluator(incorrect)
+
+                self.assertAlmostEqual(1.0, correct_score)
+                self.assertTrue(correct_passed)
+                self.assertEqual(
+                    "Alice Johnson",
+                    correct_details["selected_reference"],
+                )
+
+                self.assertLess(incorrect_score, correct_score)
+                self.assertFalse(incorrect_passed)
+
+    def test_lexical_metrics_distinguish_complete_and_partial_facts(self) -> None:
+        common = {
+            "expected_answer": (
+                "March saved 2,300 gallons and April saved 3,150 gallons."
+            ),
+            "accepted_answers": [
+                "March: 2,300 gallons; April: 3,150 gallons"
+            ],
+            "required_facts": [
+                "March: 2,300 gallons",
+                "April: 3,150 gallons",
+            ],
+        }
+
+        complete = sample_evaluation_input(
+            **common,
+            actual_answer="March: 2,300 gallons; April: 3,150 gallons [1]",
+        )
+
+        partial = sample_evaluation_input(
+            **common,
+            actual_answer="March: 2,300 gallons [1]",
+        )
+
+        for evaluator in (token_f1, rouge_l):
+            with self.subTest(evaluator=evaluator.__name__):
+                complete_score, complete_passed, _, complete_details = evaluator(complete)
+                partial_score, _, _, _ = evaluator(partial)
+
+                self.assertAlmostEqual(1.0, complete_score)
+                self.assertTrue(complete_passed)
+                self.assertEqual(
+                    common["accepted_answers"][0],
+                    complete_details["selected_reference"],
+                )
+                self.assertLess(partial_score, complete_score)
+
 class EvaluationDatasetTests(unittest.TestCase):
     def test_v2_dataset_has_fifty_unique_reviewed_questions(self) -> None:
         dataset = load_seed()

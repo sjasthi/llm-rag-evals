@@ -1,4 +1,10 @@
-"""Run the complete FP5 retrieval-to-grounded-answer command-line workflow."""
+"""Run the complete FP5 retrieval-to-grounded-answer command-line workflow.
+
+Version 2.0 adds optional conversation memory: pass ``conversation_id`` (or
+``start_conversation``) to answer a follow-up using the bounded recent history
+described in conversation.py. Without a conversation the workflow is the
+unchanged single-turn Version 1 path used by evaluation runs.
+"""
 
 from __future__ import annotations
 
@@ -6,11 +12,23 @@ import argparse
 import json
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, replace
 
 from citation_validator import CitationValidation, validate_citations
 
+from conversation import (
+    DEFAULT_HISTORY_MESSAGES,
+    UNKNOWN_CONVERSATION_EXIT_CODE,
+    ConversationMessage,
+    UnknownConversationError,
+    append_exchange,
+    bounded_history,
+    contextual_retrieval_query,
+    create_conversation,
+    load_recent_messages,
+    require_conversation,
+)
 from database import (
     database_connection,
     get_or_create_model_setting,
@@ -56,6 +74,24 @@ class AnswerResult:
     response_id: int | None
     persistence_error: str | None
     citation_validation: CitationValidation | None = None
+    conversation_id: int | None = None
+    retrieval_query: str | None = None
+    history_messages_used: int = 0
+
+
+def load_conversation_history(
+    conversation_id: int,
+    settings: Settings,
+    *,
+    max_messages: int = DEFAULT_HISTORY_MESSAGES,
+    user_id: int | None = None,
+) -> list[ConversationMessage]:
+    """Verify the conversation exists (and is owned) and return its bounded history."""
+    with database_connection(settings) as connection:
+        require_conversation(connection, conversation_id, user_id=user_id)
+        messages = load_recent_messages(connection, conversation_id, limit=max_messages)
+    return bounded_history(messages, max_messages=max_messages)
+
 
 def answer_question(
     question: str,
@@ -73,7 +109,11 @@ def answer_question(
     top_p: float | None = None,
     model: str | None = None,
     content_reranking: bool = True,
-
+    conversation_id: int | None = None,
+    start_conversation: bool = False,
+    history: Sequence[ConversationMessage] | None = None,
+    history_messages: int = DEFAULT_HISTORY_MESSAGES,
+    user_id: int | None = None,
 ) -> AnswerResult:
     if not question.strip():
         raise ValueError("Question cannot be empty")
@@ -81,6 +121,14 @@ def answer_question(
         raise ValueError("top_k must be greater than zero")
     if retrieval_method not in {"chroma_vector", "mysql_keyword","hybrid_rrf"}:
         raise ValueError(f"Unsupported retrieval method {retrieval_method!r}")
+    if conversation_id is not None and start_conversation:
+        raise ValueError("Use either conversation_id or start_conversation, not both")
+    if conversation_id is not None and conversation_id <= 0:
+        raise ValueError("conversation_id must be a positive integer")
+    if history_messages < 0:
+        raise ValueError("history_messages cannot be negative")
+    if user_id is not None and user_id <= 0:
+        raise ValueError("user_id must be a positive integer")
 
     base_settings = load_settings()
     selected_temperature = (
@@ -102,8 +150,19 @@ def answer_question(
         llm_top_p=selected_top_p,
     )
     started_at = time.perf_counter()
+    if history is None:
+        history = (
+            load_conversation_history(
+                conversation_id, settings, max_messages=history_messages, user_id=user_id
+            )
+            if conversation_id is not None
+            else []
+        )
+    else:
+        history = bounded_history(history, max_messages=history_messages)
+    retrieval_query = contextual_retrieval_query(question, history)
     contexts = search_with_optional_reranking(
-        question=question,
+        question=retrieval_query,
         retrieval_method=retrieval_method,
         top_k=top_k,
         categories=categories,
@@ -111,7 +170,7 @@ def answer_question(
     )
     if not contexts:
         raise RuntimeError(f"{retrieval_method} returned no matching source chunks.")
-    prompt = build_grounded_prompt(question, contexts)
+    prompt = build_grounded_prompt(question, contexts, history=history)
     generated = generator(prompt, settings)
     if isinstance(generated, GenerationExecution):
         answer = generated.answer
@@ -192,8 +251,31 @@ def answer_question(
                             or settings.llm_output_cost_per_million
                         ),
                         "code_provenance": captured_code,
+                        **(
+                            {
+                                "conversation": {
+                                    "history_messages_used": len(history),
+                                    "retrieval_query": retrieval_query,
+                                }
+                            }
+                            if conversation_id is not None or start_conversation
+                            else {}
+                        ),
                     },
                 )
+                if start_conversation:
+                    conversation_id = create_conversation(
+                        connection, question.strip(), user_id=user_id
+                    )
+                if conversation_id is not None:
+                    append_exchange(
+                        connection,
+                        conversation_id,
+                        question=question.strip(),
+                        answer=answer,
+                        response_id=response_id,
+                        user_id=user_id,
+                    )
         except Exception as error:
             persistence_error = str(error)
 
@@ -218,6 +300,9 @@ def answer_question(
         response_id=response_id,
         persistence_error=persistence_error,
         citation_validation=citation_validation,
+        conversation_id=conversation_id,
+        retrieval_query=retrieval_query,
+        history_messages_used=len(history),
     )
 
 def dry_run(
@@ -226,15 +311,20 @@ def dry_run(
     retrieval_method: str = "chroma_vector",
     categories: list[str] | None = None,
     content_reranking: bool = True,
-) -> tuple[str, list[SearchResult]]:
+    history: Sequence[ConversationMessage] | None = None,
+) -> tuple[str, list[SearchResult], str]:
+    """Build the prompt without calling the model; returns (prompt, sources, search query)."""
+    history = list(history or [])
+    retrieval_query = contextual_retrieval_query(question, history)
     contexts = search_with_optional_reranking(
-        question=question,
+        question=retrieval_query,
         retrieval_method=retrieval_method,
         top_k=top_k,
         categories=categories,
         content_reranking=content_reranking,
     )
-    return build_grounded_prompt(question, contexts), contexts
+    return build_grounded_prompt(question, contexts, history=history), contexts, retrieval_query
+
 
 def main() -> None:
     settings = load_settings()
@@ -254,6 +344,28 @@ def main() -> None:
     parser.add_argument(
         "--categories",
         help="Optional comma-separated corpus category subset for a controlled variant.",
+    )
+    conversation_group = parser.add_mutually_exclusive_group()
+    conversation_group.add_argument(
+        "--conversation-id",
+        type=int,
+        help="Answer as a follow-up in this existing conversation.",
+    )
+    conversation_group.add_argument(
+        "--new-conversation",
+        action="store_true",
+        help="Start a conversation and save this question as its first turn.",
+    )
+    parser.add_argument(
+        "--user-id",
+        type=int,
+        help="Signed-in user the conversation belongs to; other users' conversations are rejected.",
+    )
+    parser.add_argument(
+        "--history-messages",
+        type=int,
+        default=DEFAULT_HISTORY_MESSAGES,
+        help="Most recent conversation messages to use as memory.",
     )
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--no-save", action="store_true")
@@ -284,16 +396,33 @@ def main() -> None:
         parser.error("--top-p must be between 0.0 and 1.0")
     if args.max_estimated_cost < 0:
         parser.error("--max-estimated-cost cannot be negative")
+    if args.conversation_id is not None and args.conversation_id <= 0:
+        parser.error("--conversation-id must be a positive integer")
+    if args.history_messages < 0:
+        parser.error("--history-messages cannot be negative")
+    if args.user_id is not None and args.user_id <= 0:
+        parser.error("--user-id must be a positive integer")
 
     try:
         if args.dry_run:
             categories = [value.strip() for value in (args.categories or "").split(",") if value.strip()]
-            prompt, contexts = dry_run(
+            history = (
+                load_conversation_history(
+                    args.conversation_id,
+                    settings,
+                    max_messages=args.history_messages,
+                    user_id=args.user_id,
+                )
+                if args.conversation_id is not None
+                else []
+            )
+            prompt, contexts, retrieval_query = dry_run(
                 args.question,
                 args.top_k,
                 args.retrieval,
                 categories,
                 content_reranking=not args.no_content_reranking,
+                history=history,
             )
             if args.json:
                 print(
@@ -307,6 +436,9 @@ def main() -> None:
                             "top_p": args.top_p,
                             "prompt": prompt,
                             "sources": [asdict(context) for context in contexts],
+                            "conversation_id": args.conversation_id,
+                            "retrieval_query": retrieval_query,
+                            "history_messages_used": len(history),
                         },
                         indent=2,
                     )
@@ -347,7 +479,14 @@ def main() -> None:
             top_p=args.top_p,
             model=args.model,
             content_reranking=not args.no_content_reranking,
+            conversation_id=args.conversation_id,
+            start_conversation=args.new_conversation,
+            history_messages=args.history_messages,
+            user_id=args.user_id,
         )
+    except UnknownConversationError as error:
+        print(f"Answer generation failed: {error}", file=sys.stderr)
+        raise SystemExit(UNKNOWN_CONVERSATION_EXIT_CODE) from error
     except Exception as error:
         print(f"Answer generation failed: {error}", file=sys.stderr)
         raise SystemExit(1) from error
@@ -371,6 +510,12 @@ def main() -> None:
         print("Generation cost: unavailable (provider pricing or usage was not recorded)")
     if result.response_id is not None:
         print(f"Saved MySQL response_id={result.response_id}")
+    if result.conversation_id is not None:
+        print(
+            f"Conversation {result.conversation_id}: used "
+            f"{result.history_messages_used} earlier message(s); "
+            f"search query: {result.retrieval_query}"
+        )
     elif result.persistence_error:
         print(f"Warning: answer was not saved: {result.persistence_error}", file=sys.stderr)
 

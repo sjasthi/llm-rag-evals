@@ -25,6 +25,49 @@ $(function () {
     const $answerText = $("#answerText");
     const $answerMeta = $("#answerMeta");
     const $sourceList = $("#sourceList");
+    const $conversationThread = $("#conversationThread");
+    const $conversationStatus = $("#conversationStatus");
+    const $conversationTurns = $("#conversationTurns");
+    const $newConversationButton = $("#newConversationButton");
+    // Conversation memory: the server stores every turn; the page only keeps
+    // the active thread id and the completed turns it has displayed.
+    let conversationId = null;
+    let conversationTurns = [];
+    // True when the newest turn is displayed in the answer panel (just answered);
+    // false after reopening a saved chat, where every turn is listed in the thread.
+    let latestTurnInAnswerPanel = true;
+
+    // Accounts: the signed-in user owns their conversations. Every request to the
+    // server carries the session's CSRF token.
+    const $accountSignedOut = $("#accountSignedOut");
+    const $accountSignedIn = $("#accountSignedIn");
+    const $accountForm = $("#accountForm");
+    const $accountUsername = $("#accountUsername");
+    const $accountPassword = $("#accountPassword");
+    const $accountDisplayName = $("#accountDisplayName");
+    const $accountDisplayNameField = $("#accountDisplayNameField");
+    const $accountPasswordHint = $("#accountPasswordHint");
+    const $accountError = $("#accountError");
+    const $accountSubmitButton = $("#accountSubmitButton");
+    const $signInModeButton = $("#signInModeButton");
+    const $registerModeButton = $("#registerModeButton");
+    const $accountDisplayNameLabel = $("#accountDisplayNameLabel");
+    const $signOutButton = $("#signOutButton");
+    const $refreshChatsButton = $("#refreshChatsButton");
+    const $recentChatList = $("#recentChatList");
+    const $recentChatsEmpty = $("#recentChatsEmpty");
+    let currentUser = null;
+    let csrfToken = "";
+    let accountMode = "login";
+    let registrationAllowed = true;
+
+    $.ajaxSetup({
+        beforeSend: function (xhr) {
+            if (csrfToken) {
+                xhr.setRequestHeader("X-CSRF-Token", csrfToken);
+            }
+        },
+    });
     const $documentForm = $("#documentUploadForm");
     const $documentFile = $("#documentFile");
     const $documentTitle = $("#documentTitle");
@@ -241,13 +284,246 @@ $(function () {
 
     function setBusy(isBusy) {
         $questionInput.prop("disabled", isBusy);
-        $askButton.prop("disabled", isBusy || !generationEnabled);
+        $askButton.prop("disabled", isBusy || !generationEnabled || !currentUser);
         $clearButton.prop("disabled", isBusy);
         $previewSourcesButton.prop("disabled", isBusy);
         $resetChatSettings.prop("disabled", isBusy);
         $chatSettingsControls.prop("disabled", isBusy);
         $suggestionButtons.prop("disabled", isBusy);
+        $newConversationButton.prop("disabled", isBusy);
     }
+
+    function renderConversation() {
+        // After an answer the newest turn is shown in the answer panel, so only
+        // earlier turns are listed here. A reopened chat lists every turn.
+        const earlierTurns = latestTurnInAnswerPanel ? conversationTurns.slice(0, -1) : conversationTurns;
+        $conversationTurns.empty();
+        earlierTurns.forEach(function (turn) {
+            const $item = $("<li>").addClass("conversation-turn");
+            $("<p>").addClass("conversation-question").text(turn.question).appendTo($item);
+            $("<p>").addClass("conversation-answer").text(turn.answer).appendTo($item);
+            $item.appendTo($conversationTurns);
+        });
+        const count = conversationTurns.length;
+        $conversationStatus.text(
+            "Conversation in progress · " + count + " question" + (count === 1 ? "" : "s")
+        );
+        $conversationThread.prop("hidden", conversationId === null);
+        $recentChatList.find(".recent-chat").each(function () {
+            $(this).toggleClass("active", Number($(this).data("conversationId")) === conversationId);
+        });
+    }
+
+    function startNewConversation() {
+        conversationId = null;
+        conversationTurns = [];
+        latestTurnInAnswerPanel = true;
+        renderConversation();
+    }
+
+    function shortDate(value) {
+        const date = new Date(String(value || "").replace(" ", "T"));
+        if (Number.isNaN(date.getTime())) {
+            return "";
+        }
+        return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
+    function renderRecentChats(conversations) {
+        $recentChatList.empty();
+        $recentChatsEmpty.prop("hidden", conversations.length > 0);
+        conversations.forEach(function (chat) {
+            const id = Number(chat.conversation_id);
+            const count = Number(chat.question_count) || 0;
+            const $item = $("<li>").addClass("recent-chat").attr("data-conversation-id", id);
+            const $open = $("<button>")
+                .addClass("recent-chat-open")
+                .attr("type", "button")
+                .attr("data-conversation-id", id);
+            $("<strong>").text(chat.title || "Untitled chat").appendTo($open);
+            $("<span>")
+                .text(count + " question" + (count === 1 ? "" : "s") + " · " + shortDate(chat.updated_at))
+                .appendTo($open);
+            const $remove = $("<button>")
+                .addClass("recent-chat-remove")
+                .attr("type", "button")
+                .attr("data-conversation-id", id)
+                .attr("aria-label", "Remove " + (chat.title || "chat") + " from recent chats")
+                .text("Remove");
+            $item.append($open, $remove).appendTo($recentChatList);
+        });
+        renderConversation();
+    }
+
+    function loadRecentChats() {
+        if (!currentUser) {
+            renderRecentChats([]);
+            return;
+        }
+        $.ajax({ url: "api/conversations.php", method: "GET", dataType: "json" })
+            .done(function (response) {
+                renderRecentChats(response?.data?.conversations || []);
+            })
+            .fail(function (xhr) {
+                if (xhr.status === 401) {
+                    applySession({ user: null, csrf_token: csrfToken });
+                }
+            });
+    }
+
+    function openConversation(id) {
+        if (!currentUser) {
+            return;
+        }
+        $.ajax({
+            url: "api/conversations.php",
+            method: "GET",
+            dataType: "json",
+            data: { conversation_id: id },
+        })
+            .done(function (response) {
+                const messages = response?.data?.messages || [];
+                const turns = [];
+                messages.forEach(function (message) {
+                    if (message.role === "user") {
+                        turns.push({ question: message.content, answer: "" });
+                    } else if (turns.length) {
+                        turns[turns.length - 1].answer = message.content;
+                    }
+                });
+                conversationId = Number(response.data.conversation.conversation_id);
+                conversationTurns = turns;
+                latestTurnInAnswerPanel = false;
+                resetAnswer();
+                renderConversation();
+                $questionInput.val("").trigger("focus");
+            })
+            .fail(function (xhr) {
+                if (xhr.responseJSON?.conversation_reset) {
+                    startNewConversation();
+                    loadRecentChats();
+                }
+                showError(xhr.responseJSON?.error || "That chat could not be opened. Try again.");
+            });
+    }
+
+    function setAccountMode(mode) {
+        accountMode = mode === "register" && registrationAllowed ? "register" : "login";
+        const registering = accountMode === "register";
+        $signInModeButton.toggleClass("active", !registering).attr("aria-pressed", String(!registering));
+        $registerModeButton.toggleClass("active", registering).attr("aria-pressed", String(registering));
+        $registerModeButton.prop("hidden", !registrationAllowed);
+        $accountDisplayNameField.prop("hidden", !registering);
+        $accountPasswordHint.prop("hidden", !registering);
+        $accountPassword.attr("autocomplete", registering ? "new-password" : "current-password");
+        $accountSubmitButton.text(registering ? "Create account" : "Sign in");
+        $accountError.prop("hidden", true).text("");
+    }
+
+    function applySession(session) {
+        const previousUser = currentUser ? currentUser.username : null;
+        currentUser = session.user || null;
+        if (session.csrf_token) {
+            csrfToken = String(session.csrf_token);
+        }
+        if (typeof session.registration_allowed === "boolean") {
+            registrationAllowed = session.registration_allowed;
+        }
+        $accountSignedOut.prop("hidden", currentUser !== null);
+        $accountSignedIn.prop("hidden", currentUser === null);
+        $accountDisplayNameLabel.text(currentUser ? currentUser.display_name : "");
+        if ((currentUser ? currentUser.username : null) !== previousUser) {
+            // Never carry one person's chat into another person's session.
+            startNewConversation();
+            resetAnswer();
+        }
+        setAccountMode(accountMode);
+        setBusy(false);
+        loadRecentChats();
+    }
+
+    function loadSession() {
+        $.ajax({ url: "api/auth.php", method: "GET", dataType: "json" })
+            .done(applySession)
+            .fail(function () {
+                applySession({ user: null });
+            });
+    }
+
+    $signInModeButton.on("click", function () { setAccountMode("login"); });
+    $registerModeButton.on("click", function () { setAccountMode("register"); });
+
+    $accountForm.on("submit", function (event) {
+        event.preventDefault();
+        const username = String($accountUsername.val() || "").trim();
+        const password = String($accountPassword.val() || "");
+        if (!username || !password) {
+            $accountError.prop("hidden", false).text("Enter your username and password.");
+            return;
+        }
+        $accountSubmitButton.prop("disabled", true);
+        $.ajax({
+            url: "api/auth.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({
+                action: accountMode,
+                username: username,
+                password: password,
+                display_name: String($accountDisplayName.val() || "").trim(),
+            }),
+        })
+            .done(function (session) {
+                $accountPassword.val("");
+                $accountDisplayName.val("");
+                accountMode = "login";
+                applySession(session);
+            })
+            .fail(function (xhr) {
+                $accountError
+                    .prop("hidden", false)
+                    .text(xhr.responseJSON?.error || "You could not be signed in. Try again.");
+            })
+            .always(function () {
+                $accountSubmitButton.prop("disabled", false);
+            });
+    });
+
+    $signOutButton.on("click", function () {
+        $.ajax({
+            url: "api/auth.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({ action: "logout" }),
+        }).always(function (session) {
+            applySession(session && session.ok ? session : { user: null });
+        });
+    });
+
+    $refreshChatsButton.on("click", loadRecentChats);
+
+    $recentChatList.on("click", ".recent-chat-open", function () {
+        openConversation(Number($(this).data("conversationId")));
+    });
+
+    $recentChatList.on("click", ".recent-chat-remove", function () {
+        const id = Number($(this).data("conversationId"));
+        $.ajax({
+            url: "api/conversations.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({ action: "archive", conversation_id: id }),
+        }).always(function () {
+            if (id === conversationId) {
+                startNewConversation();
+                resetAnswer();
+            }
+            loadRecentChats();
+        });
+    });
 
     function showLoading(previewOnly) {
         $emptyState.prop("hidden", true);
@@ -399,6 +675,12 @@ $(function () {
         }
         addMeta("Retrieval", retrievalDisplayName(result.retrieval_method));
         addMeta("Sources retrieved", String(result.top_k ?? "unknown"));
+        if (Number(result.history_messages_used) > 0) {
+            addMeta("Earlier messages used", String(result.history_messages_used));
+        }
+        if (result.retrieval_query && result.retrieval_query !== result.question) {
+            addMeta("Searched for", result.retrieval_query);
+        }
         if (!previewOnly) {
             addMeta("Latency", String(result.latency_ms ?? "unknown") + " ms");
         }
@@ -457,6 +739,7 @@ $(function () {
                 top_k: configuration.top_k,
                 temperature: configuration.temperature,
                 top_p: configuration.top_p,
+                conversation_id: conversationId,
             }),
         })
             .done(function (response) {
@@ -465,10 +748,29 @@ $(function () {
                     return;
                 }
                 showAnswer(response.data, previewOnly);
+                if (!previewOnly && response.data.conversation_id) {
+                    conversationId = Number(response.data.conversation_id);
+                    conversationTurns.push({
+                        question: response.data.question || question,
+                        answer: response.data.answer || "",
+                    });
+                    latestTurnInAnswerPanel = true;
+                    renderConversation();
+                    $questionInput.val("");
+                    loadRecentChats();
+                }
             })
             .fail(function (xhr, status) {
                 if (status === "abort") {
                     return;
+                }
+                if (xhr.responseJSON?.conversation_reset) {
+                    startNewConversation();
+                    loadRecentChats();
+                }
+                if (xhr.responseJSON?.sign_in_required) {
+                    applySession({ user: null });
+                    $accountUsername.trigger("focus");
                 }
                 const message = xhr.responseJSON?.error || "The answer could not be generated. Try again.";
                 showError(message);
@@ -493,6 +795,13 @@ $(function () {
         resetAnswer();
     });
 
+    $newConversationButton.on("click", function () {
+        startNewConversation();
+        $questionInput.val("").prop("disabled", false).trigger("focus");
+        setBusy(false);
+        resetAnswer();
+    });
+
     $resetChatSettings.on("click", function () {
         $chatSettingsControls.each(function () {
             $(this).val(String($(this).data("default")));
@@ -502,6 +811,8 @@ $(function () {
 
     $chatSettingsControls.on("change", updateChatSettingsSummary);
     updateChatSettingsSummary();
+    setAccountMode("login");
+    loadSession();
 
     $suggestionButtons.on("click", function () {
         $questionInput.val($(this).data("question")).trigger("focus");

@@ -19,6 +19,7 @@ V2_UPGRADED_COLUMNS = {
         "extraction_method_snapshot",
     ),
     "model_settings": ("chunking_strategy", "chunking_configuration_json"),
+    "conversations": ("user_id",),
 }
 
 
@@ -63,6 +64,18 @@ class V2SchemaTests(unittest.TestCase):
             with self.subTest(constraint=constraint_name):
                 self.assertIn(f"CONSTRAINT {constraint_name}", SCHEMA_SQL)
                 self.assertIn(f"ADD CONSTRAINT {constraint_name}", DATABASE_PY)
+
+    def test_user_accounts_own_conversations(self) -> None:
+        users = table_body("users")
+        self.assertIn("password_hash VARCHAR(255) NOT NULL", users)
+        self.assertIn("UNIQUE KEY uq_users_username (username)", users)
+        conversations = table_body("conversations")
+        self.assertIn("REFERENCES users (user_id)", conversations)
+        self.assertIn("ADD CONSTRAINT fk_conversations_user", DATABASE_PY)
+        self.assertLess(
+            SCHEMA_SQL.index("CREATE TABLE IF NOT EXISTS users ("),
+            SCHEMA_SQL.index("CREATE TABLE IF NOT EXISTS conversations ("),
+        )
 
 
 if __name__ == "__main__":

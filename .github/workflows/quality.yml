@@ -82,6 +82,11 @@ jobs:
       - name: Verify PHP environment precedence
         run: php tests/php_env_precedence.php
 
+      - name: Test Chat accounts through the PHP endpoints
+        env:
+          REQUIRE_ACCOUNT_HTTP_TESTS: "1"
+        run: python -m unittest tests.test_user_accounts_http -v
+
       - name: Check browser JavaScript syntax
         run: node --check assets/js/app.js
 

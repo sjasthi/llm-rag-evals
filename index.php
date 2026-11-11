@@ -184,6 +184,46 @@ require __DIR__ . '/includes/header.php';
                         <a href="#evaluation">See the gold-standard questions</a>
                     </div>
 
+                    <div class="chat-account" id="chatAccount" aria-live="polite">
+                        <div id="accountSignedOut">
+                            <div class="chat-account-heading">
+                                <strong>Your chats</strong>
+                                <div class="account-mode" role="group" aria-label="Account form">
+                                    <button class="account-mode-button active" id="signInModeButton" type="button" aria-pressed="true">Sign in</button>
+                                    <button class="account-mode-button" id="registerModeButton" type="button" aria-pressed="false">Create account</button>
+                                </div>
+                            </div>
+                            <p class="chat-account-help">Sign in to ask questions. Your chats are saved to your account so you can continue them later.</p>
+                            <form class="account-form" id="accountForm" novalidate>
+                                <label for="accountUsername">Username</label>
+                                <input class="form-control form-control-sm" id="accountUsername" name="username" autocomplete="username" maxlength="50" required>
+                                <div id="accountDisplayNameField" hidden>
+                                    <label for="accountDisplayName">Display name <small>(optional)</small></label>
+                                    <input class="form-control form-control-sm" id="accountDisplayName" name="display_name" autocomplete="name" maxlength="100">
+                                </div>
+                                <label for="accountPassword">Password</label>
+                                <input class="form-control form-control-sm" id="accountPassword" name="password" type="password" autocomplete="current-password" maxlength="72" required>
+                                <p class="account-hint" id="accountPasswordHint" hidden>At least 8 characters.</p>
+                                <div class="alert alert-danger account-error" id="accountError" role="alert" hidden></div>
+                                <button class="btn btn-primary btn-sm" id="accountSubmitButton" type="submit">Sign in</button>
+                            </form>
+                        </div>
+                        <div id="accountSignedIn" hidden>
+                            <div class="chat-account-heading">
+                                <span>Signed in as <strong id="accountDisplayNameLabel"></strong></span>
+                                <button class="btn btn-sm btn-outline-secondary" id="signOutButton" type="button">Sign out</button>
+                            </div>
+                            <div class="recent-chats">
+                                <div class="recent-chats-heading">
+                                    <span class="preview-label">Recent chats</span>
+                                    <button class="btn btn-link btn-sm p-0" id="refreshChatsButton" type="button">Refresh</button>
+                                </div>
+                                <p class="recent-chats-empty" id="recentChatsEmpty">No chats yet. Ask a question to start one.</p>
+                                <ul class="recent-chat-list" id="recentChatList"></ul>
+                            </div>
+                        </div>
+                    </div>
+
                     <form class="chat-card" id="askForm" data-generation-enabled="<?= $paidGenerationEnabled ? 'true' : 'false' ?>">
                         <label class="form-label" for="questionInput">Question</label>
                         <textarea
@@ -291,6 +331,17 @@ require __DIR__ . '/includes/header.php';
                     </div>
 
                     <div class="answer-preview" id="answerPanel" aria-live="polite">
+                        <div class="conversation-thread" id="conversationThread" hidden>
+                            <div class="conversation-thread-header">
+                                <span class="preview-label" id="conversationStatus">Conversation in progress</span>
+                                <button class="btn btn-sm btn-outline-secondary" id="newConversationButton" type="button">
+                                    New conversation
+                                </button>
+                            </div>
+                            <p class="conversation-thread-help">Follow-up questions can refer to earlier answers, for example “What GPA do they need?”.</p>
+                            <ol class="conversation-turns" id="conversationTurns"></ol>
+                        </div>
+
                         <div id="answerEmptyState">
                             <span class="preview-label">Grounded answer</span>
                             <p><?= $paidGenerationEnabled

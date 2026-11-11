@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-require_once dirname(__DIR__) . '/config/env.php';
-
-loadEnv();
+require_once dirname(__DIR__) . '/includes/auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 const MAX_QUESTION_BYTES = 2000;
 const ANSWER_TIMEOUT_SECONDS = 60;
+// Must match UNKNOWN_CONVERSATION_EXIT_CODE in rag/conversation.py.
+const UNKNOWN_CONVERSATION_EXIT_CODE = 3;
 
 function jsonResponse(int $status, array $payload): never
 {
@@ -55,6 +55,20 @@ function requestQuestion(array $payload): string
     }
 
     return $question;
+}
+
+function requestConversationId(array $payload): ?int
+{
+    $value = $payload['conversation_id'] ?? null;
+    if ($value === null || $value === '') {
+        return null;
+    }
+    $conversationId = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+    if ($conversationId === false) {
+        jsonResponse(422, ['ok' => false, 'error' => 'Conversation id must be a positive integer.']);
+    }
+
+    return (int) $conversationId;
 }
 
 function requestConfiguration(array $payload): array
@@ -104,7 +118,13 @@ function requestConfiguration(array $payload): array
     ];
 }
 
-function runAnswerCommand(string $question, array $configuration, bool $previewOnly): array
+function runAnswerCommand(
+    string $question,
+    array $configuration,
+    bool $previewOnly,
+    ?int $conversationId,
+    ?int $userId
+): array
 {
     $root = projectRoot();
     $python = envValue('PYTHON_BIN', $root . '/.venv/Scripts/python.exe');
@@ -131,6 +151,18 @@ function runAnswerCommand(string $question, array $configuration, bool $previewO
         (string) $configuration['top_p'],
         '--json',
     ];
+    if ($userId !== null) {
+        // rag/answer.py rejects any conversation this user does not own.
+        $command[] = '--user-id';
+        $command[] = (string) $userId;
+    }
+    if ($conversationId !== null) {
+        $command[] = '--conversation-id';
+        $command[] = (string) $conversationId;
+    } elseif (!$previewOnly) {
+        // Every answered Chat question starts or continues a conversation.
+        $command[] = '--new-conversation';
+    }
     if ($previewOnly) {
         $command[] = '--dry-run';
     } else {
@@ -198,7 +230,8 @@ function runAnswerCommand(string $question, array $configuration, bool $previewO
     if ($exitCode !== 0) {
         $message = trim($stderr);
         throw new RuntimeException(
-            $message !== '' ? $message : 'The RAG answer process failed.'
+            $message !== '' ? $message : 'The RAG answer process failed.',
+            $exitCode
         );
     }
 
@@ -231,6 +264,26 @@ if (!is_string($action) || !in_array($action, ['answer', 'preview'], true)) {
     jsonResponse(422, ['ok' => false, 'error' => 'Unsupported chat action.']);
 }
 $previewOnly = $action === 'preview';
+$conversationId = requestConversationId($payload);
+
+// Answers are saved to the signed-in user's conversation history, so answering
+// (and previewing inside a saved conversation) needs an account. A plain source
+// preview saves nothing and stays available without signing in.
+$user = currentUser();
+if (!$previewOnly || $conversationId !== null) {
+    if ($user === null) {
+        jsonResponse(401, [
+            'ok' => false,
+            'sign_in_required' => true,
+            'error' => 'Sign in to ask questions and keep your chat history.',
+        ]);
+    }
+    if (!csrfTokenIsValid()) {
+        jsonResponse(403, ['ok' => false, 'error' => 'Your session expired. Reload the page and try again.']);
+    }
+}
+// The session lock is not needed while the answer is generated (up to 60 seconds).
+session_write_close();
 
 if (!$previewOnly && !filter_var(envValue('ALLOW_PAID_GENERATION', '0'), FILTER_VALIDATE_BOOLEAN)) {
     jsonResponse(503, [
@@ -240,8 +293,27 @@ if (!$previewOnly && !filter_var(envValue('ALLOW_PAID_GENERATION', '0'), FILTER_
 }
 
 try {
-    $result = runAnswerCommand($question, $configuration, $previewOnly);
+    $result = runAnswerCommand(
+        $question,
+        $configuration,
+        $previewOnly,
+        $conversationId,
+        $user === null ? null : $user['user_id']
+    );
     jsonResponse(200, ['ok' => true, 'data' => $result]);
+} catch (RuntimeException $error) {
+    if ($error->getCode() === UNKNOWN_CONVERSATION_EXIT_CODE) {
+        jsonResponse(404, [
+            'ok' => false,
+            'conversation_reset' => true,
+            'error' => 'That conversation is no longer available. A new conversation will start with your next question.',
+        ]);
+    }
+    error_log('Ask endpoint failure: ' . $error->getMessage());
+    jsonResponse(500, [
+        'ok' => false,
+        'error' => 'The answer could not be generated. Try again or contact the application administrator.',
+    ]);
 } catch (Throwable $error) {
     error_log('Ask endpoint failure: ' . $error->getMessage());
     jsonResponse(500, [

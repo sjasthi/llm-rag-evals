@@ -48,7 +48,7 @@ def extract_answer_statements(
     if not answer.strip():
         return []
 
-    segments = re.split(r"(?<=[.!?])\s+", answer.strip())
+    segments = re.split(r"(?<=[.!?])\s+(?!\[\d+\])|(?<=\])\s+(?=[A-Z])", answer.strip())
     statements = []
 
     for segment in segments:

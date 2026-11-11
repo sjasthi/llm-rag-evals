@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "rag"))
 
-from citation_support import extract_cited_statements
+from citation_support import extract_answer_statements, extract_cited_statements
 
 
 class CitationSupportMappingTests(unittest.TestCase):
@@ -27,6 +27,35 @@ class CitationSupportMappingTests(unittest.TestCase):
             statements[0].evidence,
             {2: "Registration processing takes two days."},
         )
+
+    def test_citation_after_sentence_punctuation(self):
+        statements = extract_answer_statements(
+            "Registration begins March 23, 2026. [1]",
+            {1: "Registration begins March 23, 2026."},
+        )
+
+        self.assertEqual(len(statements), 1)
+        self.assertEqual(statements[0].citation_ids, [1])
+        self.assertTrue(statements[0].has_valid_citation)
+
+    def test_multiple_citations_after_punctuation(self):
+        statements = extract_answer_statements(
+            "Registration is available online. [1][2]",
+            {1: "Online registration.", 2: "Use eServices."},
+        )
+
+        self.assertEqual(len(statements), 1)
+        self.assertEqual(statements[0].citation_ids, [1, 2])
+
+    def test_citations_stay_with_correct_sentences(self):
+        statements = extract_answer_statements(
+            "Registration begins March 23. [1] Advising begins April 1. [2]",
+            {1: "Registration date.", 2: "Advising date."},
+        )
+
+        self.assertEqual(len(statements), 2)
+        self.assertEqual(statements[0].citation_ids, [1])
+        self.assertEqual(statements[1].citation_ids, [2])
 
     def test_multiple_citations(self):
         statements = extract_cited_statements(

@@ -157,6 +157,9 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                         "VARCHAR(80) NULL AFTER content_type_snapshot",
                     ),
                 ),
+                "conversations": (
+                    ("user_id", "BIGINT UNSIGNED NULL AFTER conversation_id"),
+                ),
                 "model_settings": (
                     (
                         "chunking_strategy",
@@ -192,6 +195,27 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                     "ALTER TABLE retrieved_contexts ADD CONSTRAINT fk_retrieved_contexts_element "
                     "FOREIGN KEY (element_id) REFERENCES document_elements (element_id) "
                     "ON DELETE SET NULL",
+                ),
+            )
+            # Multi-user accounts: each conversation belongs to one user.
+            cursor.execute(
+                """SELECT COUNT(*) FROM information_schema.statistics
+                   WHERE table_schema=%s AND table_name='conversations'
+                     AND index_name='idx_conversations_user_status_updated'""",
+                (settings.db_name,),
+            )
+            row = cursor.fetchone()
+            if not row or int(row[0]) == 0:
+                cursor.execute(
+                    "ALTER TABLE conversations ADD KEY idx_conversations_user_status_updated "
+                    "(user_id, status, updated_at)"
+                )
+            v2_constraints = v2_constraints + (
+                (
+                    "conversations",
+                    "fk_conversations_user",
+                    "ALTER TABLE conversations ADD CONSTRAINT fk_conversations_user "
+                    "FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE",
                 ),
             )
             for table_name, constraint_name, statement in v2_constraints:

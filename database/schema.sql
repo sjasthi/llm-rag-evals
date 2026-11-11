@@ -220,13 +220,28 @@ CREATE TABLE IF NOT EXISTS retrieved_contexts (
         ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+    user_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL,
+    display_name VARCHAR(100) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP NULL,
+    UNIQUE KEY uq_users_username (username)
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
     conversation_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT UNSIGNED NULL,
     title VARCHAR(255) NULL,
     status ENUM('active', 'archived') NOT NULL DEFAULT 'active',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    KEY idx_conversations_status_updated (status, updated_at)
+    KEY idx_conversations_status_updated (status, updated_at),
+    KEY idx_conversations_user_status_updated (user_id, status, updated_at),
+    CONSTRAINT fk_conversations_user
+        FOREIGN KEY (user_id) REFERENCES users (user_id)
+        ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS conversation_messages (

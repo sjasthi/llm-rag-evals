@@ -584,117 +584,30 @@ require __DIR__ . '/includes/header.php';
                         </div>
                     </div>
 
-                    <form class="new-test-run" id="newTestRunForm" hidden>
-                        <div class="new-test-run-heading">
-                            <div>
-                                <span>Generate new answers</span>
-                                <strong>Create a bounded test from the reviewed Gold Standard</strong>
-                            </div>
-                            <button class="btn btn-sm btn-outline-secondary" id="closeNewTestRun" type="button">Close</button>
-                        </div>
-                        <p>This calls the selected model once per question, saves each answer and its evidence, and applies the local eight scoring methods. Choose a quick test or let the guided comparison setup keep the baseline questions and unchanged settings fixed.</p>
-                        <input id="newTestDatasetId" type="hidden">
-                        <div class="new-test-research-setup">
-                            <div class="new-test-run-grid">
-                                <label>
-                                    <span>What are you doing?</span>
-                                    <select class="form-select form-select-sm" id="newTestExperimentMode">
-                                        <option value="standalone">Quick standalone test</option>
-                                        <option value="baseline">Start a controlled experiment</option>
-                                        <option value="comparison">Compare with a saved baseline</option>
-                                    </select>
-                                </label>
-                                <label id="newTestBaselineField" hidden>
-                                    <span>Saved baseline</span>
-                                    <select class="form-select form-select-sm" id="newTestBaselineRun">
-                                        <option value="">Choose a completed test</option>
-                                    </select>
-                                </label>
-                                <label class="new-test-wide-field" id="newTestExperimentField" hidden>
-                                    <span>Experiment label</span>
-                                    <input class="form-control form-control-sm" id="newTestExperimentKey" maxlength="120" placeholder="Example: Vector versus keyword search">
-                                </label>
-                                <label id="newTestChangeField" hidden>
-                                    <span>Change exactly one setting</span>
-                                    <select class="form-select form-select-sm" id="newTestControlledVariable">
-                                        <option value="">Choose the setting</option>
-                                        <option value="retrieval_method">Retrieval method</option>
-                                        <option value="top_k">Number of retrieved sources</option>
-                                        <option value="model">Answer model</option>
-                                        <option value="temperature">Temperature</option>
-                                        <option value="top_p">Top-p</option>
-                                        <option value="corpus">Source category composition</option>
-                                    </select>
-                                </label>
-                            </div>
-                            <p id="newTestComparisonGuide">A standalone test is useful for a quick check. For report-ready evidence, first save a baseline and then create a comparison that changes one setting.</p>
-                            <div class="new-test-baseline-summary" id="newTestBaselineSummary" hidden></div>
-                        </div>
-                        <div class="new-test-run-grid">
-                            <label class="new-test-name-field">
-                                <span>Test name</span>
-                                <input class="form-control form-control-sm" id="newTestName" maxlength="120" placeholder="Example: Vector search · top-k 3" required>
-                            </label>
-                            <input id="newTestLimit" type="hidden" value="<?= h((string) $maxTestRunResponses) ?>" data-max="<?= h((string) $maxTestRunResponses) ?>">
-                            <label class="new-test-wide-field">
-                                <span>Exact reviewed questions</span>
-                                <select class="form-select form-select-sm" id="newTestQuestionIds" multiple size="7" aria-describedby="newTestQuestionHelp"></select>
-                                <small id="newTestQuestionHelp">The recommended final-study sample is selected automatically. Use Ctrl or Command to change the selection. A comparison reuses and locks the baseline's exact questions.</small>
-                            </label>
-                            <label>
-                                <span>Model</span>
-                                <select class="form-select form-select-sm" id="newTestModel">
-                                    <?php foreach ($chatModelOptions as $modelOption): ?>
-                                        <option value="<?= h($modelOption) ?>" <?= $modelOption === $chatModel ? 'selected' : '' ?>><?= h(modelDisplayName($modelOption)) ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </label>
-                            <label>
-                                <span>Retrieval</span>
-                                <select class="form-select form-select-sm" id="newTestRetrieval">
-                                    <option value="chroma_vector">Vector search</option>
-                                    <option value="mysql_keyword">Keyword search</option>
-                                    <option value="hybrid_rrf">Hybrid search (Vector + Keyword)</option>
-                                </select>
-                            </label>
-                            <label>
-                                <span>Number of retrieved sources</span>
-                                <input class="form-control form-control-sm" id="newTestTopK" type="number" min="1" max="10" step="1" value="<?= h((string) $defaultTopK) ?>">
-                            </label>
-                            <label>
-                                <span>Temperature</span>
-                                <input class="form-control form-control-sm" id="newTestTemperature" type="number" min="0" max="1" step="0.1" value="<?= h($formattedDefaultTemperature) ?>">
-                            </label>
-                            <label>
-                                <span>Top-p</span>
-                                <input class="form-control form-control-sm" id="newTestTopP" type="number" min="0" max="1" step="0.1" value="<?= h($formattedDefaultTopP) ?>">
-                            </label>
-                            <label>
-                                <span>Source collection</span>
-                                <select class="form-select form-select-sm" id="newTestCorpusScope">
-                                    <option value="full_current">All active documents</option>
-                                    <option value="category_subset">Selected source categories</option>
-                                </select>
-                            </label>
-                            <fieldset class="new-test-category-field" id="newTestCategoryField" hidden>
-                                <legend>Source categories in this test</legend>
-                                <div class="new-test-category-choices" id="newTestCategoryChoices">
-                                    <span>Loading active source categories…</span>
-                                </div>
-                                <small>Only documents in the checked categories will be available to retrieval. The exact document manifest is saved with the test.</small>
-                            </fieldset>
-                        </div>
-                        <small>
-                            Current index: <?= h((string) $chunkSize) ?>-character chunks with <?= h((string) $chunkOverlap) ?>-character overlap.
-                            Retrieval, model, source count, temperature, top-p, and source categories can vary here. Testing another chunk size requires rebuilding a separate index with consistent settings so every answer uses one consistent corpus.
-                        </small>
-                        <div class="new-test-run-actions">
-                            <button class="btn btn-sm btn-outline-primary" id="previewNewTestRun" type="button">Preview test</button>
-                            <button class="btn btn-sm btn-primary" id="createNewTestRun" type="button" hidden>Generate test</button>
-                            <span id="newTestRunStatus" role="status" aria-live="polite">Nothing has been generated.</span>
-                        </div>
-                    </form>
 
+                    <nav class="evaluation-tabs" role="tablist"
+                         aria-label="Evaluation sections">
+                        <button type="button" class="evaluation-tab is-active"
+                                id="evaluationTabOverview" role="tab"
+                                aria-selected="true"
+                                aria-controls="evaluationPanelOverview">
+                            Overview &amp; Guide
+                        </button>
+                        <button type="button" class="evaluation-tab"
+                                id="evaluationTabChat" role="tab"
+                                aria-selected="false"
+                                aria-controls="evaluationPanelChat">
+                            Chat Responses
+                        </button>
+                        <button type="button" class="evaluation-tab"
+                                id="evaluationTabRuns" role="tab"
+                                aria-selected="false"
+                                aria-controls="evaluationPanelRuns">
+                            Gold Standard Runs
+                        </button>
+                    </nav>
+
+                    <div id="evaluationPanelOverview" class="evaluation-tab-panel" role="tabpanel" aria-labelledby="evaluationTabOverview">
                     <div class="experiment-summary-grid" id="evaluationResultsSummary">
                         <article>
                             <span>Reviewed test set</span>
@@ -819,6 +732,9 @@ require __DIR__ . '/includes/header.php';
                             </article>
                         </div>
                     </details>
+                    </div>
+
+                    <div id="evaluationPanelChat" class="evaluation-tab-panel" role="tabpanel" aria-labelledby="evaluationTabChat" hidden>
                     <!-- Section 1: Chat response evaluations -->
                 <section class="evaluation-workflow-section"
                          aria-labelledby="chatEvaluationTitle">
@@ -865,6 +781,120 @@ require __DIR__ . '/includes/header.php';
 
                 </section>
 
+                    </div>
+
+                    <div id="evaluationPanelRuns" class="evaluation-tab-panel" role="tabpanel" aria-labelledby="evaluationTabRuns" hidden>
+                    <form class="new-test-run" id="newTestRunForm" hidden>
+                        <div class="new-test-run-heading">
+                            <div>
+                                <span>Generate new answers</span>
+                                <strong>Create a bounded test from the reviewed Gold Standard</strong>
+                            </div>
+                            <button class="btn btn-sm btn-outline-secondary" id="closeNewTestRun" type="button">Close</button>
+                        </div>
+                        <p>This calls the selected model once per question, saves each answer and its evidence, and applies the local eight scoring methods. Choose a quick test or let the guided comparison setup keep the baseline questions and unchanged settings fixed.</p>
+                        <input id="newTestDatasetId" type="hidden">
+                        <div class="new-test-research-setup">
+                            <div class="new-test-run-grid">
+                                <label>
+                                    <span>What are you doing?</span>
+                                    <select class="form-select form-select-sm" id="newTestExperimentMode">
+                                        <option value="standalone">Quick standalone test</option>
+                                        <option value="baseline">Start a controlled experiment</option>
+                                        <option value="comparison">Compare with a saved baseline</option>
+                                    </select>
+                                </label>
+                                <label id="newTestBaselineField" hidden>
+                                    <span>Saved baseline</span>
+                                    <select class="form-select form-select-sm" id="newTestBaselineRun">
+                                        <option value="">Choose a completed test</option>
+                                    </select>
+                                </label>
+                                <label class="new-test-wide-field" id="newTestExperimentField" hidden>
+                                    <span>Experiment label</span>
+                                    <input class="form-control form-control-sm" id="newTestExperimentKey" maxlength="120" placeholder="Example: Vector versus keyword search">
+                                </label>
+                                <label id="newTestChangeField" hidden>
+                                    <span>Change exactly one setting</span>
+                                    <select class="form-select form-select-sm" id="newTestControlledVariable">
+                                        <option value="">Choose the setting</option>
+                                        <option value="retrieval_method">Retrieval method</option>
+                                        <option value="top_k">Number of retrieved sources</option>
+                                        <option value="model">Answer model</option>
+                                        <option value="temperature">Temperature</option>
+                                        <option value="top_p">Top-p</option>
+                                        <option value="corpus">Source category composition</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <p id="newTestComparisonGuide">A standalone test is useful for a quick check. For report-ready evidence, first save a baseline and then create a comparison that changes one setting.</p>
+                            <div class="new-test-baseline-summary" id="newTestBaselineSummary" hidden></div>
+                        </div>
+                        <div class="new-test-run-grid">
+                            <label class="new-test-name-field">
+                                <span>Test name</span>
+                                <input class="form-control form-control-sm" id="newTestName" maxlength="120" placeholder="Example: Vector search · top-k 3" required>
+                            </label>
+                            <input id="newTestLimit" type="hidden" value="<?= h((string) $maxTestRunResponses) ?>" data-max="<?= h((string) $maxTestRunResponses) ?>">
+                            <label class="new-test-wide-field">
+                                <span>Exact reviewed questions</span>
+                                <select class="form-select form-select-sm" id="newTestQuestionIds" multiple size="7" aria-describedby="newTestQuestionHelp"></select>
+                                <small id="newTestQuestionHelp">The recommended final-study sample is selected automatically. Use Ctrl or Command to change the selection. A comparison reuses and locks the baseline's exact questions.</small>
+                            </label>
+                            <label>
+                                <span>Model</span>
+                                <select class="form-select form-select-sm" id="newTestModel">
+                                    <?php foreach ($chatModelOptions as $modelOption): ?>
+                                        <option value="<?= h($modelOption) ?>" <?= $modelOption === $chatModel ? 'selected' : '' ?>><?= h(modelDisplayName($modelOption)) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </label>
+                            <label>
+                                <span>Retrieval</span>
+                                <select class="form-select form-select-sm" id="newTestRetrieval">
+                                    <option value="chroma_vector">Vector search</option>
+                                    <option value="mysql_keyword">Keyword search</option>
+                                    <option value="hybrid_rrf">Hybrid search (Vector + Keyword)</option>
+                                </select>
+                            </label>
+                            <label>
+                                <span>Number of retrieved sources</span>
+                                <input class="form-control form-control-sm" id="newTestTopK" type="number" min="1" max="10" step="1" value="<?= h((string) $defaultTopK) ?>">
+                            </label>
+                            <label>
+                                <span>Temperature</span>
+                                <input class="form-control form-control-sm" id="newTestTemperature" type="number" min="0" max="1" step="0.1" value="<?= h($formattedDefaultTemperature) ?>">
+                            </label>
+                            <label>
+                                <span>Top-p</span>
+                                <input class="form-control form-control-sm" id="newTestTopP" type="number" min="0" max="1" step="0.1" value="<?= h($formattedDefaultTopP) ?>">
+                            </label>
+                            <label>
+                                <span>Source collection</span>
+                                <select class="form-select form-select-sm" id="newTestCorpusScope">
+                                    <option value="full_current">All active documents</option>
+                                    <option value="category_subset">Selected source categories</option>
+                                </select>
+                            </label>
+                            <fieldset class="new-test-category-field" id="newTestCategoryField" hidden>
+                                <legend>Source categories in this test</legend>
+                                <div class="new-test-category-choices" id="newTestCategoryChoices">
+                                    <span>Loading active source categories…</span>
+                                </div>
+                                <small>Only documents in the checked categories will be available to retrieval. The exact document manifest is saved with the test.</small>
+                            </fieldset>
+                        </div>
+                        <small>
+                            Current index: <?= h((string) $chunkSize) ?>-character chunks with <?= h((string) $chunkOverlap) ?>-character overlap.
+                            Retrieval, model, source count, temperature, top-p, and source categories can vary here. Testing another chunk size requires rebuilding a separate index with consistent settings so every answer uses one consistent corpus.
+                        </small>
+                        <div class="new-test-run-actions">
+                            <button class="btn btn-sm btn-outline-primary" id="previewNewTestRun" type="button">Preview test</button>
+                            <button class="btn btn-sm btn-primary" id="createNewTestRun" type="button" hidden>Generate test</button>
+                            <span id="newTestRunStatus" role="status" aria-live="polite">Nothing has been generated.</span>
+                        </div>
+                    </form>
+
                 <!-- Section 2: Gold Standard evaluation runs -->
                 <section class="evaluation-workflow-section evaluation-runs-section"
                          aria-labelledby="goldEvaluationTitle">
@@ -878,10 +908,39 @@ require __DIR__ . '/includes/header.php';
                         </p>
                     </div>
 
-                    <div id="evaluationRunList"
-                         class="evaluation-run-list"></div>
+                    <div class="evaluation-runs-workspace">
+                        <aside class="evaluation-run-history-panel"
+                               aria-label="Saved evaluation runs">
+                            <div class="evaluation-run-history-heading">
+                                <h4>Saved Runs</h4>
+                                <p>Select a run to inspect its results.</p>
+                            </div>
+                            <div id="evaluationRunHistory"
+                                 class="evaluation-run-history"
+                                 aria-label="Saved run history"></div>
+                        </aside>
+
+                        <div class="evaluation-run-detail-column">
+                            <div id="evaluationRunList"
+                                 class="evaluation-run-list"
+                                 aria-label="Selected run details"></div>
+
+                            <section class="evaluation-run-inspector"
+                                     aria-label="Gold Standard response inspector">
+                                <h4>Response Inspector</h4>
+                                <div id="evaluationRunResultDetail"
+                                     class="evaluation-result-detail">
+                                    <div class="detail-placeholder">
+                                        Select a saved question to inspect
+                                        its evaluation results and evidence.
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
 
                 </section>
+                    </div>
                 </section>
 
                 <section class="panel panel-large workspace-view" id="report" data-view-panel="report" hidden>

@@ -114,7 +114,13 @@ $(function () {
     const $evaluatorGoalReference = $("#evaluatorGoalReference");
     const $standaloneResponseList = $("#standaloneResponseList");
     const $evaluationRunList = $("#evaluationRunList");
-    const $evaluationResultDetail = $("#evaluationResultDetail");
+    const $evaluationRunHistory = $("#evaluationRunHistory");
+    let selectedEvaluationRunId = null;
+    const $chatEvaluationResultDetail = $("#evaluationResultDetail");
+    const $evaluationRunResultDetail = $("#evaluationRunResultDetail");
+    const $evaluationResultDetails =
+        $chatEvaluationResultDetail.add($evaluationRunResultDetail);
+    let $evaluationResultDetail = $chatEvaluationResultDetail;
     const $evaluationLists = $standaloneResponseList.add($evaluationRunList);
     const $newTestRunToggle = $("#newTestRunToggle");
     const $newTestRunForm = $("#newTestRunForm");
@@ -206,6 +212,73 @@ $(function () {
     let ingestionTimer = null;
 
     const $workspaceViews = $("[data-view-panel]");
+
+    // Evaluation page tabs: keep existing inspectors and data loaded.
+    const evaluationTabs = {
+        overview: ["evaluationTabOverview", "evaluationPanelOverview"],
+        chat: ["evaluationTabChat", "evaluationPanelChat"],
+        runs: ["evaluationTabRuns", "evaluationPanelRuns"],
+    };
+
+    function activateEvaluationTab(tabName) {
+        const selected = Object.prototype.hasOwnProperty.call(
+            evaluationTabs, tabName
+        ) ? tabName : "overview";
+
+        Object.entries(evaluationTabs).forEach(function ([name, ids]) {
+            const isActive = name === selected;
+            const $button = $("#" + ids[0]);
+            const $panel = $("#" + ids[1]);
+
+            $button
+                .toggleClass("is-active", isActive)
+                .attr("aria-selected", String(isActive))
+                .attr("tabindex", isActive ? "0" : "-1");
+
+            $panel.prop("hidden", !isActive);
+        });
+    }
+
+    $(".evaluation-tab").on("click", function () {
+        const tabName = Object.keys(evaluationTabs).find(function (name) {
+            return evaluationTabs[name][0] === this.id;
+        }, this);
+
+        if (tabName) {
+            activateEvaluationTab(tabName);
+        }
+    });
+
+    $(".evaluation-tab").on("keydown", function (event) {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+            return;
+        }
+
+        event.preventDefault();
+
+        const names = Object.keys(evaluationTabs);
+        const current = names.findIndex(
+            name => evaluationTabs[name][0] === this.id
+        );
+
+        let next = current;
+
+        if (event.key === "ArrowRight") {
+            next = (current + 1) % names.length;
+        } else if (event.key === "ArrowLeft") {
+            next = (current - 1 + names.length) % names.length;
+        } else if (event.key === "Home") {
+            next = 0;
+        } else if (event.key === "End") {
+            next = names.length - 1;
+        }
+
+        activateEvaluationTab(names[next]);
+        $("#" + evaluationTabs[names[next]][0]).trigger("focus");
+    });
+
+    activateEvaluationTab("overview");
+
 
     function loadApplicationHealth() {
         function showUnavailable(message) {
@@ -2501,54 +2574,232 @@ function applicableEvaluators(methodKey, response, results) {
         updateList();
     }
 
-   function renderEvaluationRuns(runs, responses, findings, standaloneResponses = []) {
+    function selectEvaluationRun(runId) {
+        const id = Number(runId);
+        const $selected = $evaluationRunList
+            .find(".evaluation-run")
+            .filter(function () {
+                return Number($(this).attr("data-run-id")) === id;
+            });
+
+        if (!$selected.length) return false;
+
+        selectedEvaluationRunId = id;
+
+        $evaluationRunList.find(".evaluation-run").each(function () {
+            const active =
+                Number($(this).attr("data-run-id")) === id;
+            $(this).prop("hidden", !active);
+        });
+
+        $evaluationRunHistory
+            .find(".evaluation-run-history-button")
+            .each(function () {
+                const active =
+                    Number($(this).data("runId")) === id;
+
+                $(this)
+                    .toggleClass("is-active", active)
+                    .attr("aria-pressed", String(active));
+            });
+
+        return true;
+    }
+
+    $evaluationRunHistory.on(
+        "click",
+        ".evaluation-run-history-button",
+        function () {
+            const runId = Number($(this).data("runId"));
+
+            if (!selectEvaluationRun(runId)) {
+                return;
+            }
+
+            const $selectedRun = $evaluationRunList
+                .find(".evaluation-run")
+                .filter(function () {
+                    return Number($(this).attr("data-run-id")) === runId;
+                });
+
+            const $firstResponse = $selectedRun
+                .find(".evaluation-response-button")
+                .first();
+
+            if ($firstResponse.length) {
+                $selectedRun
+                    .find(".run-evaluation-target-select")
+                    .val($firstResponse.data("responseId"));
+
+                loadEvaluationResponse($firstResponse, false);
+            } else {
+                $evaluationRunList
+                    .find(".evaluation-response-button")
+                    .removeClass("active")
+                    .attr("aria-pressed", "false");
+
+                $evaluationRunResultDetail.data(
+                    "evaluationRequestToken",
+                    (Number($evaluationRunResultDetail.data(
+                        "evaluationRequestToken"
+                    )) || 0) + 1
+                );
+
+                $evaluationRunResultDetail
+                    .empty()
+                    .append(
+                        $("<div>")
+                            .addClass("detail-placeholder")
+                            .text(
+                                "This run has no saved answers to inspect."
+                            )
+                    );
+            }
+        }
+    );
+
+    function renderEvaluationRuns(runs, responses, findings, standaloneResponses = []) {
         $standaloneResponseList.empty();
         $evaluationRunList.empty();
+        $evaluationRunHistory.empty();
 
         evaluationResponseContexts = new Map();
         renderStandaloneResponses(standaloneResponses);
 
         if (!runs.length) {
-            $evaluationRunList.append($("<p>").addClass("text-muted").text("No saved tests are available yet."));
+            selectedEvaluationRunId = null;
+
+            $evaluationRunHistory.append(
+                $("<p>").addClass("text-muted")
+                    .text("No saved tests are available yet.")
+            );
+
+            $evaluationRunList.append(
+                $("<p>").addClass("text-muted")
+                    .text("Select or create a test run to view its details.")
+            );
+
             return;
         }
-        const readyRuns = runs.filter(function (run) { return run.status === "completed"; });
-        const attentionRuns = runs.filter(function (run) { return run.status !== "completed"; });
-        readyRuns.forEach(function (run) {
-            $evaluationRunList.append(renderRunCard(run, responses, findings));
+
+        const readyRuns = runs.filter(function (run) {
+            return run.status === "completed";
         });
-        if (attentionRuns.length) {
-            const $history = $("<details>").addClass("run-attention-history");
-            $history.append($("<summary>").text(
-                "Archived interrupted attempts (" + attentionRuns.length + ")"
-            ));
-            $history.append($("<p>").text(
-                "These records are preserved for an honest audit trail and do not indicate that the current application is incomplete. Saved answers can still be inspected or scored."
-            ));
-            const $historyRuns = $("<div>").addClass("run-attention-list");
-            attentionRuns.forEach(function (run) {
-                $historyRuns.append(renderRunCard(run, responses, findings));
+
+        const attentionRuns = runs.filter(function (run) {
+            return run.status !== "completed";
+        });
+
+        const orderedRuns = readyRuns.concat(attentionRuns);
+
+        orderedRuns.forEach(function (run) {
+            if (attentionRuns.length &&
+                run === attentionRuns[0]) {
+                $evaluationRunHistory.append(
+                    $("<p>")
+                        .addClass("evaluation-run-history-group-label")
+                        .text(
+                            "Archived interrupted attempts (" +
+                            attentionRuns.length + ")"
+                        )
+                );
+            }
+            const runResponses = responses.filter(function (response) {
+                return Number(response.run_id) === Number(run.run_id);
             });
-            $history.append($historyRuns);
-            $evaluationRunList.append($history);
-        }
+
+            const state = runScoringState(run, runResponses);
+
+            const $historyButton = $("<button>")
+                .attr({
+                    type: "button",
+                    "aria-pressed": "false",
+                    title: "View saved run " + run.run_id
+                })
+                .addClass("evaluation-run-history-button")
+                .data("runId", run.run_id)
+                .append(
+                    $("<strong>").text(
+                        run.run_name || ("Run #" + run.run_id)
+                    ),
+                    $("<small>").text(
+                        savedTestDate(run.completed_at || run.started_at) +
+                        " ? " + runResponses.length + " saved answers"
+                    ),
+                    $("<span>")
+                        .addClass("run-status " + state.className)
+                        .text(state.label)
+                );
+
+            if (run.status !== "completed") {
+                $historyButton.append(
+                    $("<small>").text("Archived interrupted attempt")
+                );
+            }
+
+            $evaluationRunHistory.append($historyButton);
+            $evaluationRunList.append(
+                renderRunCard(run, responses, findings)
+            );
+        });
+
         const preferredRun = readyRuns.slice().sort(function (left, right) {
-            return (Number(right.human_review_count) || 0) - (Number(left.human_review_count) || 0) ||
-                (Number(right.completed_result_count) || 0) - (Number(left.completed_result_count) || 0) ||
+            return (Number(right.human_review_count) || 0) -
+                (Number(left.human_review_count) || 0) ||
+                (Number(right.completed_result_count) || 0) -
+                (Number(left.completed_result_count) || 0) ||
                 Number(right.run_id) - Number(left.run_id);
         })[0];
-        let $responseToOpen = preferredRun
-            ? $evaluationRunList.find('.evaluation-run[data-run-id="' + preferredRun.run_id + '"] .evaluation-response-button').first()
-            : $evaluationLists.find(".evaluation-response-button").first();
+
+        const selectedRunStillExists = orderedRuns.some(function (run) {
+            return Number(run.run_id) === selectedEvaluationRunId;
+        });
+
+        if (!selectedRunStillExists) {
+            selectedEvaluationRunId = Number(
+                (preferredRun || orderedRuns[0]).run_id
+            );
+        }
+
+        selectEvaluationRun(selectedEvaluationRunId);
+
+        const $selectedRun = $evaluationRunList
+            .find(".evaluation-run")
+            .filter(function () {
+                return Number($(this).attr("data-run-id")) ===
+                    selectedEvaluationRunId;
+            });
+
+        let $responseToOpen = $selectedRun
+            .find(".evaluation-response-button")
+            .first();
+
+        if (!$responseToOpen.length) {
+            $responseToOpen = $standaloneResponseList
+                .find(".evaluation-response-button")
+                .first();
+        }
+
         if (currentEvaluationResponseId) {
-            const $current = $evaluationLists.find(".evaluation-response-button").filter(function () {
-                return Number($(this).data("responseId")) === currentEvaluationResponseId;
-            }).first();
+            const $current = $evaluationLists
+                .find(".evaluation-response-button")
+                .filter(function () {
+                    return Number($(this).data("responseId")) ===
+                        currentEvaluationResponseId;
+                })
+                .first();
+
             if ($current.length) {
-                $responseToOpen = $current;
-                $current.closest(".run-attention-history").prop("open", true);
+                const $parentRun = $current.closest(".evaluation-run");
+
+                if (!$parentRun.length ||
+                    Number($parentRun.attr("data-run-id")) ===
+                        selectedEvaluationRunId) {
+                    $responseToOpen = $current;
+                }
             }
         }
+
         if ($responseToOpen.length) {
             loadEvaluationResponse($responseToOpen, false);
         }
@@ -2861,6 +3112,7 @@ function applicableEvaluators(methodKey, response, results) {
     }
 
     $newTestRunToggle.on("click", function () {
+        activateEvaluationTab("runs");
         const willOpen = $newTestRunForm.prop("hidden");
         $newTestRunForm.prop("hidden", !willOpen);
         if (willOpen) {
@@ -3509,26 +3761,73 @@ function applicableEvaluators(methodKey, response, results) {
     }
 
     function loadEvaluationResponse($button, shouldScroll) {
-        $evaluationLists.find(".evaluation-response-button").removeClass("active").attr("aria-pressed", "false");
-        $button.addClass("active").attr("aria-pressed", "true").prop("disabled", true);
+        // Capture the destination before the asynchronous request starts.
+        const $targetDetail = $button.closest("#evaluationRunList").length
+            ? $evaluationRunResultDetail
+            : $chatEvaluationResultDetail;
 
-        // Remember the selected response even when search filters
-        // temporarily remove its button from the list.
-        currentEvaluationResponseId = Number($button.data("responseId"));
+        const requestToken =
+            (Number($targetDetail.data("evaluationRequestToken")) || 0) + 1;
 
-        $.getJSON("api/evaluations.php", { response_id: $button.data("responseId") })
+        $targetDetail.data("evaluationRequestToken", requestToken);
+
+        $evaluationResultDetail = $targetDetail;
+
+        $evaluationLists
+            .find(".evaluation-response-button")
+            .removeClass("active")
+            .attr("aria-pressed", "false");
+
+        $button
+            .addClass("active")
+            .attr("aria-pressed", "true")
+            .prop("disabled", true);
+
+        currentEvaluationResponseId =
+            Number($button.data("responseId"));
+
+        $.getJSON(
+            "api/evaluations.php",
+            { response_id: $button.data("responseId") }
+        )
             .done(function (response) {
+                if (
+                    Number($targetDetail.data("evaluationRequestToken")) !==
+                    requestToken
+                ) {
+                    return;
+                }
+
+                // renderEvaluationDetail uses this inspector reference.
+                // Set it immediately before synchronous rendering.
+                $evaluationResultDetail = $targetDetail;
+
                 renderEvaluationDetail(response.data);
-                if (shouldScroll) {
-                    $evaluationResultDetail[0].scrollIntoView({ behavior: preferredScrollBehavior(), block: "start" });
+
+                if (shouldScroll && $targetDetail.length) {
+                    $targetDetail[0].scrollIntoView({
+                        behavior: preferredScrollBehavior(),
+                        block: "start"
+                    });
                 }
             })
             .fail(function () {
-                $evaluationResultDetail.empty().append(
-                    $("<div>").addClass("alert alert-danger mb-0").text("The saved response could not be loaded.")
+                if (
+                    Number($targetDetail.data("evaluationRequestToken")) !==
+                    requestToken
+                ) {
+                    return;
+                }
+
+                $targetDetail.empty().append(
+                    $("<div>")
+                        .addClass("alert alert-danger mb-0")
+                        .text("The saved response could not be loaded.")
                 );
             })
-            .always(function () { $button.prop("disabled", false); });
+            .always(function () {
+                $button.prop("disabled", false);
+            });
     }
 
     $evaluationCategoryFilter.add($evaluationStatusFilter).on("change", renderEvaluationQuestions);
@@ -3845,7 +4144,7 @@ $evaluationLists.on("click", ".execute-standalone-scoring", function () {
     });
 });
 
-    $evaluationResultDetail.on("submit", "#humanReviewForm", function (event) {
+    $evaluationResultDetails.on("submit", "#humanReviewForm", function (event) {
         event.preventDefault();
         const $form = $(this);
         const $button = $form.find('button[type="submit"]');

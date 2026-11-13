@@ -137,10 +137,21 @@ class UserAccountHttpTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.temp_dir = Path(tempfile.mkdtemp(prefix="rag-accounts-"))
-        wrapper = cls.temp_dir / "python"
         runner = PROJECT_ROOT / "tests" / "fixtures" / "fake_answer_runner.py"
-        wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{runner}" "$@"\n', encoding="utf-8")
-        wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
+
+        if os.name == "nt":
+            wrapper = cls.temp_dir / "python.cmd"
+            wrapper.write_text(
+                f'@echo off\r\n"{sys.executable}" "{runner}" %*\r\n',
+                encoding="utf-8",
+            )
+        else:
+            wrapper = cls.temp_dir / "python"
+            wrapper.write_text(
+                f'#!/bin/sh\nexec "{sys.executable}" "{runner}" "$@"\n',
+                encoding="utf-8",
+            )
+            wrapper.chmod(wrapper.stat().st_mode | stat.S_IEXEC)
 
         settings = load_settings()
         env = os.environ.copy()

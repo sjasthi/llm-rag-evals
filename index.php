@@ -93,7 +93,41 @@ $sampleQuestions = [
 
 require __DIR__ . '/includes/header.php';
 ?>
-<div class="app-shell">
+<section class="auth-screen" id="authScreen" aria-labelledby="authScreenTitle">
+    <div class="auth-screen-card">
+        <div class="auth-screen-heading">
+            <span class="auth-screen-mark" aria-hidden="true">R</span>
+            <p class="eyebrow">Metro State &#183; ICS 499</p>
+            <h1 id="authScreenTitle">Welcome to RAG Observatory</h1>
+            <p>Sign in or create an account to access your RAG evaluation workspace.</p>
+        </div>
+                        <div id="accountSignedOut">
+                            <div class="chat-account-heading">
+                                <strong>Your chats</strong>
+                                <div class="account-mode" role="group" aria-label="Account form">
+                                    <button class="account-mode-button active" id="signInModeButton" type="button" aria-pressed="true">Sign in</button>
+                                    <button class="account-mode-button" id="registerModeButton" type="button" aria-pressed="false">Create account</button>
+                                </div>
+                            </div>
+                            <p class="chat-account-help">Sign in to ask questions. Your chats are saved to your account so you can continue them later.</p>
+                            <form class="account-form" id="accountForm" novalidate>
+                                <label for="accountUsername">Username</label>
+                                <input class="form-control form-control-sm" id="accountUsername" name="username" autocomplete="username" maxlength="50" required>
+                                <div id="accountDisplayNameField" hidden>
+                                    <label for="accountDisplayName">Display name <small>(optional)</small></label>
+                                    <input class="form-control form-control-sm" id="accountDisplayName" name="display_name" autocomplete="name" maxlength="100">
+                                </div>
+                                <label for="accountPassword">Password</label>
+                                <input class="form-control form-control-sm" id="accountPassword" name="password" type="password" autocomplete="current-password" maxlength="72" required>
+                                <p class="account-hint" id="accountPasswordHint" hidden>At least 8 characters.</p>
+                                <div class="alert alert-danger account-error" id="accountError" role="alert" hidden></div>
+                                <button class="btn btn-primary btn-sm" id="accountSubmitButton" type="submit">Sign in</button>
+                            </form>
+                        </div>
+    </div>
+</section>
+
+<div class="app-shell" id="authenticatedWorkspace" hidden>
     <?php require __DIR__ . '/includes/nav.php'; ?>
 
     <div class="app-main">
@@ -185,34 +219,8 @@ require __DIR__ . '/includes/header.php';
                     </div>
 
                     <div class="chat-account" id="chatAccount" aria-live="polite">
-                        <div id="accountSignedOut">
-                            <div class="chat-account-heading">
-                                <strong>Your chats</strong>
-                                <div class="account-mode" role="group" aria-label="Account form">
-                                    <button class="account-mode-button active" id="signInModeButton" type="button" aria-pressed="true">Sign in</button>
-                                    <button class="account-mode-button" id="registerModeButton" type="button" aria-pressed="false">Create account</button>
-                                </div>
-                            </div>
-                            <p class="chat-account-help">Sign in to ask questions. Your chats are saved to your account so you can continue them later.</p>
-                            <form class="account-form" id="accountForm" novalidate>
-                                <label for="accountUsername">Username</label>
-                                <input class="form-control form-control-sm" id="accountUsername" name="username" autocomplete="username" maxlength="50" required>
-                                <div id="accountDisplayNameField" hidden>
-                                    <label for="accountDisplayName">Display name <small>(optional)</small></label>
-                                    <input class="form-control form-control-sm" id="accountDisplayName" name="display_name" autocomplete="name" maxlength="100">
-                                </div>
-                                <label for="accountPassword">Password</label>
-                                <input class="form-control form-control-sm" id="accountPassword" name="password" type="password" autocomplete="current-password" maxlength="72" required>
-                                <p class="account-hint" id="accountPasswordHint" hidden>At least 8 characters.</p>
-                                <div class="alert alert-danger account-error" id="accountError" role="alert" hidden></div>
-                                <button class="btn btn-primary btn-sm" id="accountSubmitButton" type="submit">Sign in</button>
-                            </form>
-                        </div>
                         <div id="accountSignedIn" hidden>
-                            <div class="chat-account-heading">
-                                <span>Signed in as <strong id="accountDisplayNameLabel"></strong></span>
-                                <button class="btn btn-sm btn-outline-secondary" id="signOutButton" type="button">Sign out</button>
-                            </div>
+
                             <div class="recent-chats">
                                 <div class="recent-chats-heading">
                                     <span class="preview-label">Recent chats</span>

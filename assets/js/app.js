@@ -39,6 +39,8 @@ $(function () {
 
     // Accounts: the signed-in user owns their conversations. Every request to the
     // server carries the session's CSRF token.
+    const $authScreen = $("#authScreen");
+    const $authenticatedWorkspace = $("#authenticatedWorkspace");
     const $accountSignedOut = $("#accountSignedOut");
     const $accountSignedIn = $("#accountSignedIn");
     const $accountForm = $("#accountForm");
@@ -502,9 +504,23 @@ $(function () {
         if (typeof session.registration_allowed === "boolean") {
             registrationAllowed = session.registration_allowed;
         }
-        $accountSignedOut.prop("hidden", currentUser !== null);
-        $accountSignedIn.prop("hidden", currentUser === null);
-        $accountDisplayNameLabel.text(currentUser ? currentUser.display_name : "");
+        const isAuthenticated = currentUser !== null;
+
+        // The application is available only after a valid session
+        // has been established or restored.
+        $authScreen.prop("hidden", isAuthenticated);
+        $authenticatedWorkspace.prop("hidden", !isAuthenticated);
+
+        $accountSignedOut.prop("hidden", isAuthenticated);
+        $accountSignedIn.prop("hidden", !isAuthenticated);
+        $accountDisplayNameLabel.text(
+            isAuthenticated ? currentUser.display_name : ""
+        );
+
+        if (!isAuthenticated) {
+            // Clear credentials from the form when returning to login.
+            $accountPassword.val("");
+        }
         if ((currentUser ? currentUser.username : null) !== previousUser) {
             // Never carry one person's chat into another person's session.
             startNewConversation();
@@ -513,6 +529,14 @@ $(function () {
         setAccountMode(accountMode);
         setBusy(false);
         loadRecentChats();
+
+        // Protected application data must load only after session
+        // restoration or a successful sign-in.
+        if (currentUser !== null &&
+            currentUser.username !== previousUser) {
+            loadDocuments();
+            loadEvaluationDataset();
+        }
     }
 
     function loadSession() {
@@ -4174,7 +4198,8 @@ $evaluationLists.on("click", ".execute-standalone-scoring", function () {
         loadEvaluationDataset();
     });
     loadApplicationHealth();
-    loadDocuments();
-    loadEvaluationDataset();
+
+    // Documents and evaluation datasets are loaded by applySession()
+    // after the authentication request has completed.
     activateWorkspaceView(window.location.hash.slice(1) || "overview", false);
 });

@@ -9,6 +9,38 @@ loadEnv();
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
+require_once dirname(__DIR__) . '/includes/auth.php';
+
+// Phase 4: Require an authenticated user.
+if (currentUser() === null) {
+    http_response_code(401);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode([
+        'ok' => false,
+        'error' => 'Sign in to access this feature.',
+    ]);
+    exit;
+}
+
+// Phase 4: Validate evaluation request CSRF token.
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'
+    && !csrfTokenIsValid()) {
+    http_response_code(403);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode([
+        'ok' => false,
+        'error' => 'Your session expired. Reload the page and try again.',
+    ]);
+    exit;
+}
+
+// Release the session lock before potentially long-running evaluation work.
+// Authentication and CSRF checks have already completed.
+session_write_close();
+
+
 
 const RUN_EVALUATION_TIMEOUT_SECONDS = 300;
 

@@ -3,9 +3,36 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/config/database.php';
+require_once dirname(__DIR__) . '/includes/auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
+
+// Require an authenticated session before accessing application data.
+if (currentUser() === null) {
+    http_response_code(401);
+    echo json_encode([
+        'ok' => false,
+        'error' => 'Sign in to access this feature.',
+    ]);
+    exit;
+}
+
+// Phase 4: Validate CSRF for state-changing requests.
+if (in_array(
+    $_SERVER['REQUEST_METHOD'] ?? 'GET',
+    ['POST', 'PATCH', 'DELETE'],
+    true
+) && !csrfTokenIsValid()) {
+    http_response_code(403);
+    echo json_encode([
+        'ok' => false,
+        'error' => 'Your session expired. Reload the page and try again.',
+    ]);
+    exit;
+}
+
+
 
 const MAX_UPLOAD_BYTES = 10485760;
 const DOCUMENT_TIMEOUT_SECONDS = 120;

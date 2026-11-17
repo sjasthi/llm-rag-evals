@@ -3,6 +3,20 @@
 declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/config/database.php';
+require_once dirname(__DIR__) . '/includes/auth.php';
+
+// Phase 4: Require an authenticated user.
+if (currentUser() === null) {
+    http_response_code(401);
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo json_encode([
+        'ok' => false,
+        'error' => 'Sign in to access this feature.',
+    ]);
+    exit;
+}
+
 
 const EXPORT_SCHEMA_VERSION = '1.0';
 

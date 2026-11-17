@@ -15,8 +15,12 @@
         <a href="#results" data-view="results">Evaluation</a>
     </nav>
 
-    <div class="sidebar-note">
-        <span class="status-dot" aria-hidden="true"></span>
-        <span>Local research workspace</span>
+    <div class="header-account" aria-label="Current account">
+        <span class="header-account-name">
+            <span class="header-account-icon" aria-hidden="true">&#9679;</span>
+            <strong id="accountDisplayNameLabel"></strong>
+        </span>
+        <button class="btn btn-sm header-signout"
+                id="signOutButton" type="button">Sign out</button>
     </div>
 </header>

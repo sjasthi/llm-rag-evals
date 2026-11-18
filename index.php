@@ -387,7 +387,22 @@ require __DIR__ . '/includes/header.php';
                         <span class="status status-ready">Indexed library</span>
                     </div>
 
-                    <form class="upload-dropzone" id="documentUploadForm" enctype="multipart/form-data">
+                    <div class="document-upload-toolbar">
+                        <button
+                            type="button"
+                            class="btn btn-primary"
+                            id="toggleDocumentUploadButton"
+                            aria-controls="documentUploadForm"
+                            aria-expanded="false">
+                            Upload document
+                        </button>
+                        <span>TXT, MD, PDF, DOCX, PPTX, PNG, JPEG - max 10 MB</span>
+                    </div>
+
+                    <form class="upload-dropzone"
+                          id="documentUploadForm"
+                          enctype="multipart/form-data"
+                          hidden>
                         <strong>Add source material</strong>
                         <span>TXT, MD, PDF, DOCX, PPTX, PNG, and JPEG files (maximum 10 MB)</span>
                         <p class="document-ingestion-scope">
@@ -442,10 +457,139 @@ require __DIR__ . '/includes/header.php';
                                 <button class="btn btn-sm btn-outline-secondary" id="cancelDuplicateUpload" type="button">Cancel upload</button>
                             </div>
                         </div>
+                        <div class="document-ingestion-status"
+                             id="documentIngestionStatus"
+                             role="status"
+                             aria-live="polite"
+                             hidden>
+                            <div class="document-ingestion-status-heading">
+                                <strong id="documentIngestionStatusTitle">Preparing upload</strong>
+                                <span id="documentIngestionElapsed" aria-hidden="true"></span>
+                            </div>
+                            <p id="documentIngestionStatusDescription"></p>
+                            <progress id="documentIngestionProgress"
+                                      max="100"
+                                      aria-label="Document upload progress"></progress>
+                        </div>
                         <div class="alert mt-3 mb-0" id="documentMessage" role="status" hidden></div>
                     </form>
 
+                    <dialog id="deleteAllDocumentsDialog"
+                            class="delete-all-dialog"
+                            aria-labelledby="deleteAllDialogHeading"
+                            aria-describedby="deleteAllDialogDescription">
+                        <div class="delete-all-dialog-header">
+                            <h3 id="deleteAllDialogHeading">
+                                Delete all indexed documents?
+                            </h3>
+                            <p id="deleteAllDialogDescription">
+                                This action removes all documents, searchable
+                                chunks, and embeddings from the active index.
+                            </p>
+                        </div>
+
+                        <div class="delete-all-impact">
+                            <div>
+                                <span>Indexed documents</span>
+                                <strong id="deleteAllDocumentCount">0</strong>
+                            </div>
+                            <div>
+                                <span>Indexed chunks</span>
+                                <strong id="deleteAllChunkCount">0</strong>
+                            </div>
+                        </div>
+
+                        <p class="delete-all-warning">
+                            Uploaded source files will also be removed.
+                            Bundled source files remain available for
+                            restoration. This action cannot be undone
+                            automatically.
+                        </p>
+
+                        <div class="delete-all-confirmation">
+                            <label for="deleteAllConfirmationInput">
+                                Type <strong>DELETE ALL</strong> to confirm
+                            </label>
+                            <input id="deleteAllConfirmationInput"
+                                   class="form-control"
+                                   type="text"
+                                   autocomplete="off"
+                                   spellcheck="false"
+                                   aria-describedby="deleteAllConfirmationHelp">
+                            <small id="deleteAllConfirmationHelp">
+                                The confirmation must match exactly.
+                            </small>
+                        </div>
+
+                        <div class="delete-all-dialog-actions">
+                            <button type="button"
+                                    class="btn btn-outline-secondary"
+                                    id="cancelDeleteAllButton">
+                                Cancel
+                            </button>
+                            <button type="button"
+                                    class="btn btn-danger"
+                                    id="confirmDeleteAllButton"
+                                    disabled>
+                                Delete all documents
+                            </button>
+                        </div>
+                    </dialog>
+
+                    <dialog id="documentDetailsDialog"
+                            class="document-inspector-dialog"
+                            aria-labelledby="documentInspectorHeading">
+                        <div class="document-inspector-header">
+                            <div>
+                                <span>DOCUMENT INSPECTOR</span>
+                                <h3 id="documentInspectorHeading">Document details</h3>
+                            </div>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    id="closeDocumentInspectorButton"
+                                    aria-label="Close document details">
+                                Close
+                            </button>
+                        </div>
+                        <div class="document-inspector-body">
+                            <div class="document-inspector-title">
+                                <small>Document title</small>
+                                <strong id="inspectorDocumentTitle"></strong>
+                            </div>
+                            <dl class="document-inspector-grid">
+                                <div><dt>Document ID</dt><dd id="inspectorDocumentId"></dd></div>
+                                <div><dt>Category</dt><dd id="inspectorDocumentCategory"></dd></div>
+                                <div><dt>File type</dt><dd id="inspectorDocumentType"></dd></div>
+                                <div><dt>Status</dt><dd id="inspectorDocumentStatus"></dd></div>
+                                <div><dt>Original filename</dt><dd id="inspectorDocumentFilename"></dd></div>
+                                <div><dt>Indexed chunks</dt><dd id="inspectorDocumentChunks"></dd></div>
+                                <div><dt>Source</dt><dd id="inspectorDocumentSource"></dd></div>
+                                <div><dt>Created</dt><dd id="inspectorDocumentCreated"></dd></div>
+                                <div><dt>Imported</dt><dd id="inspectorDocumentImported"></dd></div>
+                            </dl>
+                            <div id="inspectorDocumentErrorBlock" hidden>
+                                <strong>Ingestion error</strong>
+                                <p id="inspectorDocumentError"></p>
+                            </div>
+                        </div>
+                    </dialog>
+
                     <div class="document-list mt-3">
+                        <div class="document-summary-grid"
+                             aria-label="Document library statistics">
+                            <div class="document-summary-card">
+                                <span>Indexed documents</span>
+                                <strong id="libraryDocumentCount">--</strong>
+                            </div>
+                            <div class="document-summary-card">
+                                <span>Categories</span>
+                                <strong id="libraryCategoryCount">--</strong>
+                            </div>
+                            <div class="document-summary-card">
+                                <span>Indexed chunks</span>
+                                <strong id="libraryChunkCount">--</strong>
+                            </div>
+                        </div>
                         <div class="document-library-heading">
                             <div>
                                 <h3 class="h6 mb-0">Indexed documents</h3>
@@ -491,6 +635,32 @@ require __DIR__ . '/includes/header.php';
                                     <option value="chunks">Most chunks</option>
                                 </select>
                             </label>
+                        </div>
+                        <div class="document-filter-actions">
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-secondary"
+                                id="clearDocumentFiltersButton"
+                                disabled>
+                                Clear filters
+                            </button>
+                        </div>
+                        <div class="document-category-controls"
+                             role="group"
+                             aria-label="Document category controls">
+                            <span>Document categories</span>
+                            <div class="document-category-buttons">
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary"
+                                        id="expandAllDocumentCategories">
+                                    Expand all
+                                </button>
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-secondary"
+                                        id="collapseAllDocumentCategories">
+                                    Collapse all
+                                </button>
+                            </div>
                         </div>
                         <div id="documentList" aria-live="polite">
                             <p class="text-muted">Loading indexed documents...</p>

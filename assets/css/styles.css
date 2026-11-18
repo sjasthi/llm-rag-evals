@@ -1745,3 +1745,528 @@ details > summary {
         font-size: 0.7rem;
     }
 }
+
+
+/* Phase 5: Collapsible document categories */
+
+.document-accordion {
+    border: 1px solid var(--line);
+    border-radius: 0.7rem;
+    background: #fff;
+    overflow: hidden;
+}
+
+.document-accordion > .document-group-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    background: var(--paper-muted);
+}
+
+.document-accordion > .document-group-heading::-webkit-details-marker {
+    display: none;
+}
+
+.document-accordion > .document-group-heading::after {
+    content: "+";
+    color: var(--forest-800);
+    font-size: 1.2rem;
+    font-weight: 700;
+}
+
+.document-accordion[open] > .document-group-heading::after {
+    content: "-";
+}
+
+.document-accordion > .document-group-heading:hover {
+    background: #eaf1e5;
+}
+
+.document-accordion > .document-group-heading:focus-visible {
+    outline: 3px solid var(--lime);
+    outline-offset: -3px;
+}
+
+.document-accordion > .list-stack {
+    padding: 0.65rem;
+}
+
+
+/* Phase 5: Document expand/collapse controls */
+
+.document-category-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0.5rem 0 0.75rem;
+}
+
+.document-category-controls > span {
+    color: var(--forest-800);
+    font-size: 0.75rem;
+    font-weight: 800;
+}
+
+.document-category-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.document-category-buttons .btn {
+    font-size: 0.72rem;
+}
+
+@media (max-width: 480px) {
+    .document-category-controls {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+}
+
+
+/* Phase 5: Document library summary cards */
+
+.document-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin-bottom: 1rem;
+}
+
+.document-summary-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.45rem;
+    min-width: 0;
+    padding: 1rem;
+    background: var(--paper-muted);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+}
+
+.document-summary-card > span {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.document-summary-card > strong {
+    color: var(--forest-900);
+    font-size: clamp(1.3rem, 2vw, 1.85rem);
+    line-height: 1.1;
+    font-weight: 850;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 480px) {
+    .document-summary-grid {
+        gap: 0.35rem;
+    }
+
+    .document-summary-card {
+        padding: 0.65rem;
+    }
+
+    .document-summary-card > span {
+        font-size: 0.61rem;
+    }
+
+    .document-summary-card > strong {
+        font-size: 1.25rem;
+    }
+}
+
+
+/* Phase 5: Improved document search toolbar */
+
+.document-library-toolbar {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 1rem;
+}
+
+.document-library-toolbar > label:first-child {
+    grid-column: 1 / -1;
+}
+
+.document-library-toolbar > label:first-child input {
+    width: 100%;
+    min-height: 2.8rem;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.9rem;
+}
+
+.document-library-toolbar label > span {
+    font-size: 0.72rem;
+    margin-bottom: 0.4rem;
+}
+
+.document-filter-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin: -0.25rem 0 0.75rem;
+}
+
+.document-filter-actions .btn {
+    font-size: 0.75rem;
+}
+
+.document-filter-actions .btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+@media (max-width: 680px) {
+    .document-library-toolbar {
+        grid-template-columns: 1fr;
+        padding: 0.75rem;
+    }
+
+    .document-library-toolbar > label:first-child {
+        grid-column: 1;
+    }
+}
+
+
+/* Phase 5: Collapsible document upload panel */
+
+#documents > .document-upload-toolbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+}
+
+.document-upload-toolbar > span {
+    color: var(--muted);
+    font-size: 0.72rem;
+}
+
+#documents > .upload-dropzone {
+    grid-column: 1 / -1;
+    margin-bottom: 1rem;
+}
+
+#documents > .upload-dropzone[hidden] {
+    display: none !important;
+}
+
+#documents > .document-list {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+}
+
+#toggleDocumentUploadButton[disabled] {
+    cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+    #documents > .document-upload-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    #documents > .document-upload-toolbar > button {
+        width: 100%;
+    }
+}
+
+
+/* Phase 5: Document ingestion status feedback */
+
+.document-ingestion-status {
+    margin-top: 1rem;
+    padding: 0.9rem 1rem;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--forest-800);
+    border-radius: 0.7rem;
+}
+
+.document-ingestion-status[hidden] {
+    display: none !important;
+}
+
+.document-ingestion-status-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.document-ingestion-status-heading strong {
+    color: var(--forest-900);
+    font-size: 0.82rem;
+}
+
+.document-ingestion-status-heading span {
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.document-ingestion-status p {
+    margin: 0.4rem 0 0.65rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+}
+
+.document-ingestion-status progress {
+    display: block;
+    width: 100%;
+    height: 0.65rem;
+    accent-color: var(--forest-800);
+}
+
+.document-ingestion-status progress[hidden] {
+    display: none !important;
+}
+
+.document-ingestion-status.is-success {
+    border-left-color: #23845c;
+    background: #eff9f2;
+}
+
+.document-ingestion-status.is-error {
+    border-left-color: #b42318;
+    background: #fff3f1;
+}
+
+.document-ingestion-status.is-error strong {
+    color: #8f2018;
+}
+
+
+/* Phase 5: Read-only document inspector */
+
+.document-inspector-dialog {
+    width: min(92vw, 680px);
+    max-height: 85vh;
+    padding: 0;
+    overflow: auto;
+    color: var(--forest-900);
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 0.9rem;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.2);
+}
+
+.document-inspector-dialog::backdrop {
+    background: rgba(11, 28, 22, 0.56);
+}
+
+.document-inspector-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.2rem;
+    border-bottom: 1px solid var(--line);
+    background: var(--paper-muted);
+}
+
+.document-inspector-header span {
+    color: var(--muted);
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.document-inspector-header h3 {
+    margin: 0.3rem 0 0;
+    font-size: 1.25rem;
+}
+
+.document-inspector-body {
+    padding: 1.2rem;
+}
+
+.document-inspector-title {
+    display: grid;
+    gap: 0.35rem;
+    margin-bottom: 1.3rem;
+}
+
+.document-inspector-title small,
+.document-inspector-grid dt {
+    color: var(--muted);
+    font-size: 0.7rem;
+}
+
+.document-inspector-title strong {
+    overflow-wrap: anywhere;
+    font-size: 1.1rem;
+}
+
+.document-inspector-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin: 0;
+}
+
+.document-inspector-grid > div {
+    min-width: 0;
+}
+
+.document-inspector-grid dt {
+    margin-bottom: 0.3rem;
+}
+
+.document-inspector-grid dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: 0.84rem;
+    font-weight: 650;
+}
+
+#inspectorDocumentErrorBlock {
+    margin-top: 1.2rem;
+    padding: 0.8rem;
+    color: #8f2018;
+    background: #fff3f1;
+    border-radius: 0.5rem;
+}
+
+#inspectorDocumentErrorBlock[hidden] {
+    display: none !important;
+}
+
+#inspectorDocumentErrorBlock p {
+    margin: 0.35rem 0 0;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 540px) {
+    .document-inspector-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .document-inspector-header,
+    .document-inspector-body {
+        padding: 0.9rem;
+    }
+}
+
+
+/* Phase 5: Delete All confirmation dialog */
+
+.delete-all-dialog {
+    width: min(92vw, 560px);
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 1.4rem;
+    color: var(--forest-900);
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 0.9rem;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+}
+
+.delete-all-dialog::backdrop {
+    background: rgba(11, 28, 22, 0.65);
+}
+
+.delete-all-dialog-header h3 {
+    margin: 0 0 0.65rem;
+    color: #972c22;
+    font-size: 1.2rem;
+}
+
+.delete-all-dialog-header p {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.55;
+}
+
+.delete-all-impact {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+    margin: 1.2rem 0;
+}
+
+.delete-all-impact > div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.85rem;
+    background: var(--paper-muted);
+    border: 1px solid var(--line);
+    border-radius: 0.6rem;
+}
+
+.delete-all-impact span {
+    color: var(--muted);
+    font-size: 0.73rem;
+}
+
+.delete-all-impact strong {
+    font-size: 1.45rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.delete-all-warning {
+    padding: 0.8rem;
+    color: #8f2018;
+    background: #fff3f1;
+    border-left: 4px solid #b42318;
+    border-radius: 0.5rem;
+    font-size: 0.78rem;
+    line-height: 1.55;
+}
+
+.delete-all-confirmation {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 1.2rem;
+}
+
+.delete-all-confirmation label {
+    font-size: 0.8rem;
+}
+
+.delete-all-confirmation small {
+    color: var(--muted);
+    font-size: 0.7rem;
+}
+
+.delete-all-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 1.4rem;
+}
+
+.delete-all-dialog-actions .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+    .delete-all-dialog {
+        padding: 1rem;
+    }
+
+    .delete-all-dialog-actions {
+        flex-direction: column;
+    }
+
+    .delete-all-dialog-actions .btn {
+        width: 100%;
+    }
+}

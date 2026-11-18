@@ -211,6 +211,7 @@ $(function () {
     let pendingDuplicateDocument = null;
     let documentListRequest = null;
     let ingestionStartedAt = null;
+    let documentUploadPanelBusy = false;
     let ingestionTimer = null;
 
     const $workspaceViews = $("[data-view-panel]");
@@ -929,6 +930,31 @@ $(function () {
             .prop("hidden", false);
     }
 
+    // Phase 5: Control the document upload panel without resetting the form.
+    const $toggleDocumentUploadButton = $("#toggleDocumentUploadButton");
+
+    function setDocumentUploadPanelOpen(open) {
+        const shouldOpen = Boolean(open);
+
+        // Never hide an active ingestion request.
+        if (!shouldOpen && documentUploadPanelBusy) {
+            return;
+        }
+
+        $documentForm.prop("hidden", !shouldOpen);
+        $toggleDocumentUploadButton
+            .attr("aria-expanded", String(shouldOpen))
+            .text(shouldOpen ? "Hide upload form" : "Upload document");
+    }
+
+    $toggleDocumentUploadButton.on("click", function () {
+        if (documentUploadPanelBusy) {
+            return;
+        }
+
+        setDocumentUploadPanelOpen($documentForm.prop("hidden"));
+    });
+
     function resetReplacement() {
         $replaceDocumentId.val("");
         pendingDuplicateDocument = null;
@@ -941,6 +967,7 @@ $(function () {
     }
 
     function selectReplacement(item) {
+        setDocumentUploadPanelOpen(true);
         $replaceDocumentId.val(item.document_id);
         pendingDuplicateDocument = null;
         $duplicateDocumentPrompt.prop("hidden", true);
@@ -1062,6 +1089,12 @@ $(function () {
             (isUploaded ? "uploaded" : "bundled source")
         ).appendTo($actions);
         $("<button>")
+            .addClass("btn btn-sm btn-outline-primary view-document-details-button")
+            .attr("type", "button")
+            .data("document", item)
+            .text("View details")
+            .appendTo($actions);
+        $("<button>")
             .addClass("btn btn-sm btn-outline-secondary replace-document-button")
             .attr("type", "button")
             .data("document", item)
@@ -1077,6 +1110,9 @@ $(function () {
         return $row;
     }
 
+    // Keep category expansion state during navigation and rerendering.
+    const expandedDocumentCategories = new Set();
+
     function renderDocumentList() {
         $documentList.empty();
         const documentItems = indexedDocuments;
@@ -1085,9 +1121,16 @@ $(function () {
         }));
         $documentCount.text(String(documentItems.length));
         $categoryCount.text(String(categories.size));
-        $overviewChunkCount.text(String(documentItems.reduce(function (total, item) {
+        const totalChunks = documentItems.reduce(function (total, item) {
             return total + (Number(item.chunk_count) || 0);
-        }, 0)));
+        }, 0);
+
+        $overviewChunkCount.text(String(totalChunks));
+
+        // Phase 5: Refresh the Documents page summary cards.
+        $("#libraryDocumentCount").text(String(documentItems.length));
+        $("#libraryCategoryCount").text(String(categories.size));
+        $("#libraryChunkCount").text(String(totalChunks));
         if (documentItems.length === 0) {
             $documentVisibleCount.text("0 indexed documents");
             $("<p>").addClass("text-muted").text("No indexed documents were found.").appendTo($documentList);
@@ -1098,6 +1141,12 @@ $(function () {
         const category = String($documentCategoryFilter.val() || "");
         const type = String($documentTypeFilter.val() || "");
         const sort = String($documentSort.val() || "category");
+
+        // Enable Clear Filters only when the user changes the defaults.
+        $("#clearDocumentFiltersButton").prop(
+            "disabled",
+            !query && !category && !type && sort === "category"
+        );
         const visible = documentItems.filter(function (item) {
             const haystack = (item.title + " " + item.original_filename).toLowerCase();
             return (!query || haystack.includes(query)) &&
@@ -1132,14 +1181,44 @@ $(function () {
                 grouped.get(item.category).push(item);
             });
             grouped.forEach(function (items, groupName) {
-                const $group = $("<section>").addClass("document-group");
-                $group.append($("<div>").addClass("document-group-heading").append(
-                    $("<strong>").text(titleCaseLabel(groupName)),
-                    $("<span>").text(items.length + " document" + (items.length === 1 ? "" : "s"))
-                ));
+                const $group = $("<details>")
+                    .addClass("document-group document-accordion")
+                    .data("categoryKey", groupName);
+
+                // Categories start collapsed. Search results open automatically.
+                if (query || expandedDocumentCategories.has(groupName)) {
+                    $group.prop("open", true);
+                }
+
+                const $heading = $("<summary>")
+                    .addClass("document-group-heading")
+                    .append(
+                        $("<strong>").text(titleCaseLabel(groupName)),
+                        $("<span>").text(
+                            items.length + " document" +
+                            (items.length === 1 ? "" : "s")
+                        )
+                    );
+
                 const $stack = $("<div>").addClass("list-stack");
-                items.forEach(function (item) { $stack.append(documentRow(item)); });
-                $group.append($stack);
+                items.forEach(function (item) {
+                    $stack.append(documentRow(item));
+                });
+
+                $group.append($heading, $stack);
+
+                // Remember manual expansion choices when filters rerender.
+                $group.on("toggle", function () {
+                    if (query) {
+                        return;
+                    }
+                    if (this.open) {
+                        expandedDocumentCategories.add(groupName);
+                    } else {
+                        expandedDocumentCategories.delete(groupName);
+                    }
+                });
+
                 $documentList.append($group);
             });
             return;
@@ -1200,20 +1279,94 @@ $(function () {
         return documentListRequest;
     }
 
+    // Phase 5: Report actual transfer progress and processing state.
+    const $documentIngestionStatus = $("#documentIngestionStatus");
+    const $documentIngestionStatusTitle = $("#documentIngestionStatusTitle");
+    const $documentIngestionStatusDescription = $("#documentIngestionStatusDescription");
+    const $documentIngestionElapsed = $("#documentIngestionElapsed");
+    const $documentIngestionProgress = $("#documentIngestionProgress");
+
+    function setDocumentIngestionStatus(state, description) {
+        $documentIngestionStatus
+            .removeClass("is-uploading is-processing is-success is-error")
+            .addClass("is-" + state)
+            .prop("hidden", false);
+
+        const titles = {
+            uploading: "Uploading file",
+            processing: "Processing document",
+            success: "Document indexed successfully",
+            error: "Document ingestion failed"
+        };
+
+        $documentIngestionStatusTitle.text(titles[state] || "Document status");
+        $documentIngestionStatusDescription.text(description || "");
+
+        if (state !== "uploading") {
+            $documentIngestionProgress.removeAttr("value");
+        }
+
+        if (state === "success" || state === "error") {
+            $documentIngestionProgress.prop("hidden", true);
+        } else {
+            $documentIngestionProgress.prop("hidden", false);
+        }
+    }
+
+    function updateDocumentUploadProgress(event) {
+        if (!documentUploadPanelBusy || !event.lengthComputable ||
+                event.total <= 0) {
+            return;
+        }
+
+        const percent = Math.min(
+            100,
+            Math.max(0, Math.round(event.loaded / event.total * 100))
+        );
+
+        if (percent < 100) {
+            $documentIngestionProgress.val(percent);
+            setDocumentIngestionStatus(
+                "uploading",
+                percent + "% of the file transferred to the server."
+            );
+        } else {
+            setDocumentIngestionStatus(
+                "processing",
+                "File transfer complete. Waiting for server-side ingestion."
+            );
+        }
+    }
+
     function startIngestionProgress() {
+        setDocumentUploadPanelOpen(true);
+        documentUploadPanelBusy = true;
+        $toggleDocumentUploadButton.prop("disabled", true);
         ingestionStartedAt = Date.now();
         $refreshDocumentsButton.prop("disabled", true);
+
+        $documentIngestionElapsed.text("Elapsed: 0s");
+        $documentIngestionProgress.val(0);
+        setDocumentIngestionStatus(
+            "uploading",
+            "Sending the selected document to the server."
+        );
+
+        window.clearInterval(ingestionTimer);
         ingestionTimer = window.setInterval(function () {
-            const elapsedSeconds = Math.max(1, Math.floor((Date.now() - ingestionStartedAt) / 1000));
-            showDocumentMessage(
-                "Parsing, chunking, and embedding the document (" + elapsedSeconds + " seconds). " +
-                "The first upload after startup can take longer.",
-                "info"
+            const elapsedSeconds = Math.max(
+                1,
+                Math.floor((Date.now() - ingestionStartedAt) / 1000)
+            );
+            $documentIngestionElapsed.text(
+                "Elapsed: " + elapsedSeconds + "s"
             );
         }, 1000);
     }
 
     function stopIngestionProgress() {
+        documentUploadPanelBusy = false;
+        $toggleDocumentUploadButton.prop("disabled", false);
         window.clearInterval(ingestionTimer);
         ingestionTimer = null;
         ingestionStartedAt = null;
@@ -1266,6 +1419,76 @@ $(function () {
         $documentForm[0].reset();
         showDocumentMessage("Duplicate upload cancelled. The existing indexed document was not changed.", "info");
         $documentFile.trigger("focus");
+    });
+
+    // Phase 5: Read-only document metadata inspector.
+    const documentDetailsDialog =
+        document.getElementById("documentDetailsDialog");
+    let documentInspectorTrigger = null;
+
+    function inspectorValue(value) {
+        return value === null || value === undefined ||
+            String(value).trim() === ""
+            ? "Not available"
+            : String(value);
+    }
+
+    function openDocumentInspector(item, trigger) {
+        if (!documentDetailsDialog || !item) {
+            return;
+        }
+
+        documentInspectorTrigger = trigger || null;
+
+        const values = {
+            inspectorDocumentTitle: item.title,
+            inspectorDocumentId: item.document_id,
+            inspectorDocumentCategory: titleCaseLabel(item.category),
+            inspectorDocumentType: String(item.source_type || "").toUpperCase(),
+            inspectorDocumentStatus: item.status,
+            inspectorDocumentFilename: item.original_filename,
+            inspectorDocumentChunks: item.chunk_count,
+            inspectorDocumentSource:
+                String(item.source_path || "").startsWith("storage/uploads/")
+                    ? "Uploaded document"
+                    : "Bundled source",
+            inspectorDocumentCreated: item.created_at,
+            inspectorDocumentImported: item.imported_at
+        };
+
+        Object.entries(values).forEach(function ([id, value]) {
+            $("#" + id).text(inspectorValue(value));
+        });
+
+        const error = String(item.ingestion_error || "").trim();
+        $("#inspectorDocumentErrorBlock").prop("hidden", !error);
+        $("#inspectorDocumentError").text(error);
+
+        if (!documentDetailsDialog.open) {
+            documentDetailsDialog.showModal();
+        }
+
+        $("#closeDocumentInspectorButton").trigger("focus");
+    }
+
+    $documentList.on(
+        "click",
+        ".view-document-details-button",
+        function () {
+            openDocumentInspector($(this).data("document"), this);
+        }
+    );
+
+    $("#closeDocumentInspectorButton").on("click", function () {
+        documentDetailsDialog.close();
+    });
+
+    $(documentDetailsDialog).on("close", function () {
+        if (documentInspectorTrigger &&
+                documentInspectorTrigger.isConnected) {
+            documentInspectorTrigger.focus();
+        }
+        documentInspectorTrigger = null;
     });
 
     $documentList.on("click", ".replace-document-button", function () {
@@ -1354,40 +1577,189 @@ $(function () {
             });
     });
 
+    // Expand/collapse the currently displayed document categories.
+    // Preserve the chosen state when search is cleared.
+    $("#expandAllDocumentCategories").on("click", function () {
+        const searching = Boolean(
+            String($documentSearch.val() || "").trim()
+        );
+
+        $documentList.find("details.document-accordion").each(function () {
+            const name = $(this)
+                .find("summary strong")
+                .first()
+                .text();
+
+            if (!searching) {
+                // Store the original category key from the DOM.
+                const key = $(this).data("categoryKey");
+                if (key !== undefined) {
+                    expandedDocumentCategories.add(key);
+                }
+            }
+
+            $(this).prop("open", true);
+        });
+    });
+
+    $("#collapseAllDocumentCategories").on("click", function () {
+        const searching = Boolean(
+            String($documentSearch.val() || "").trim()
+        );
+
+        $documentList.find("details.document-accordion").each(function () {
+            if (!searching) {
+                const key = $(this).data("categoryKey");
+                if (key !== undefined) {
+                    expandedDocumentCategories.delete(key);
+                }
+            }
+
+            $(this).prop("open", false);
+        });
+    });
+
+    // Phase 5: Reset the document search and filtering controls.
+    $("#clearDocumentFiltersButton").on("click", function () {
+        $documentSearch.val("");
+        $documentCategoryFilter.val("");
+        $documentTypeFilter.val("");
+        $documentSort.val("category");
+        renderDocumentList();
+    });
+
     $documentSearch.on("input", renderDocumentList);
     $documentCategoryFilter.add($documentTypeFilter).add($documentSort).on("change", renderDocumentList);
 
+    // Phase 5: Confirm destructive deletion using a native modal dialog.
+    const deleteAllDialog =
+        document.getElementById("deleteAllDocumentsDialog");
+    const $deleteAllConfirmationInput =
+        $("#deleteAllConfirmationInput");
+    const $confirmDeleteAllButton =
+        $("#confirmDeleteAllButton");
+
+    let deleteAllRequestActive = false;
+
+    function resetDeleteAllConfirmation() {
+        $deleteAllConfirmationInput.val("");
+        $confirmDeleteAllButton.prop("disabled", true);
+    }
+
+    function closeDeleteAllDialog() {
+        if (deleteAllDialog && deleteAllDialog.open) {
+            deleteAllDialog.close();
+        }
+    }
+
     $deleteAllDocumentsButton.on("click", function () {
+        if (deleteAllRequestActive || documentUploadPanelBusy) {
+            return;
+        }
+
         if (!indexedDocuments.length) {
-            showDocumentMessage("The active document index is already empty.", "info");
+            setDocumentUploadPanelOpen(true);
+            showDocumentMessage(
+                "The active document index is already empty.",
+                "info"
+            );
             return;
         }
-        const confirmation = window.prompt(
-            "This removes every document, live chunk, and embedding from the active index. " +
-            "Bundled source files remain available for restoration. Type DELETE ALL to continue."
+
+        const totalChunks = indexedDocuments.reduce(
+            function (total, item) {
+                return total + (Number(item.chunk_count) || 0);
+            },
+            0
         );
-        if (confirmation !== "DELETE ALL") {
+
+        $("#deleteAllDocumentCount").text(
+            String(indexedDocuments.length)
+        );
+        $("#deleteAllChunkCount").text(String(totalChunks));
+
+        resetDeleteAllConfirmation();
+        deleteAllDialog.showModal();
+        $deleteAllConfirmationInput.trigger("focus");
+    });
+
+    $deleteAllConfirmationInput.on("input", function () {
+        $confirmDeleteAllButton.prop(
+            "disabled",
+            this.value !== "DELETE ALL"
+        );
+    });
+
+    $("#cancelDeleteAllButton").on("click", function () {
+        closeDeleteAllDialog();
+    });
+
+    $(deleteAllDialog).on("close", function () {
+        resetDeleteAllConfirmation();
+
+        if (!deleteAllRequestActive) {
+            $deleteAllDocumentsButton.trigger("focus");
+        }
+    });
+
+    $confirmDeleteAllButton.on("click", function () {
+        // Check again immediately before initiating the API request.
+        if (deleteAllRequestActive ||
+            documentUploadPanelBusy ||
+            $deleteAllConfirmationInput.val() !== "DELETE ALL") {
             return;
         }
-        $deleteAllDocumentsButton.prop("disabled", true).text("Deleting all…");
-        showDocumentMessage("Clearing all documents, chunks, and embeddings from the active index…", "info");
+
+        // Capture the verified value before the dialog is reset.
+        const confirmation = "DELETE ALL";
+
+        deleteAllRequestActive = true;
+        closeDeleteAllDialog();
+
+        $deleteAllDocumentsButton
+            .prop("disabled", true)
+            .text("Deleting all...");
+
+        // The existing message element is inside the upload panel.
+        // Open that panel so completion feedback is visible.
+        setDocumentUploadPanelOpen(true);
+
+        showDocumentMessage(
+            "Clearing documents, chunks, and embeddings...",
+            "info"
+        );
+
         $.ajax({
             url: "api/documents.php",
             method: "DELETE",
             contentType: "application/json; charset=utf-8",
             dataType: "json",
-            data: JSON.stringify({ action: "delete_all", confirmation: confirmation }),
+            data: JSON.stringify({
+                action: "delete_all",
+                confirmation: confirmation
+            })
         })
             .done(function (response) {
-                showDocumentMessage((response.data?.deleted_count || 0) + " documents removed from the active index.", "success");
+                showDocumentMessage(
+                    (response.data?.deleted_count || 0) +
+                    " documents removed from the active index.",
+                    "success"
+                );
                 resetAnswer();
                 loadDocuments();
             })
             .fail(function (xhr) {
-                showDocumentMessage(xhr.responseJSON?.error || "The active index could not be cleared.", "danger");
+                showDocumentMessage(
+                    xhr.responseJSON?.error ||
+                    "The active index could not be cleared.",
+                    "danger"
+                );
             })
             .always(function () {
-                $deleteAllDocumentsButton.prop("disabled", false).text("Delete all");
+                deleteAllRequestActive = false;
+                $deleteAllDocumentsButton
+                    .prop("disabled", false)
+                    .text("Delete all");
             });
     });
 
@@ -1415,6 +1787,16 @@ $(function () {
         startIngestionProgress();
 
         $.ajax({
+            xhr: function () {
+                const xhr = $.ajaxSettings.xhr();
+                if (xhr.upload) {
+                    xhr.upload.addEventListener(
+                        "progress",
+                        updateDocumentUploadProgress
+                    );
+                }
+                return xhr;
+            },
             url: "api/documents.php",
             method: "POST",
             data: formData,
@@ -1426,17 +1808,30 @@ $(function () {
                 const replacementText = Number(response.data.replaced_document_count)
                     ? " Previous same-name index record replaced."
                     : "";
-                showDocumentMessage(
-                    "Document ingested with " + response.data.chunk_count + " chunks." + replacementText,
-                    "success"
+                const successMessage =
+                    "Document ingested with " +
+                    response.data.chunk_count +
+                    " chunks." + replacementText;
+
+                setDocumentIngestionStatus(
+                    "success",
+                    successMessage
                 );
+                showDocumentMessage(successMessage, "success");
                 resetAnswer();
                 $documentForm[0].reset();
                 resetReplacement();
                 loadDocuments();
             })
             .fail(function (xhr) {
-                showDocumentMessage(xhr.responseJSON?.error || "Document ingestion failed.", "danger");
+                const errorMessage =
+                    xhr.responseJSON?.error || "Document ingestion failed.";
+
+                setDocumentIngestionStatus(
+                    "error",
+                    errorMessage
+                );
+                showDocumentMessage(errorMessage, "danger");
             })
             .always(function () {
                 stopIngestionProgress();

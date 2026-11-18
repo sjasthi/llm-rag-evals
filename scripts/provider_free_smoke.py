@@ -13,7 +13,14 @@ from pathlib import Path
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from http.cookiejar import CookieJar
+from urllib.request import (
+    HTTPCookieProcessor,
+    Request,
+    build_opener,
+    urlopen,
+)
+from uuid import uuid4
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -26,12 +33,18 @@ def request_json(
     method: str = "GET",
     payload: dict[str, Any] | None = None,
     timeout: float = 30.0,
+    opener: Any = None,
+    csrf_token: str | None = None,
 ) -> dict[str, Any]:
     body = None
     headers = {"Accept": "application/json"}
+
     if payload is not None:
         body = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
+
+    if csrf_token:
+        headers["X-CSRF-Token"] = csrf_token
 
     request = Request(
         f"{base_url.rstrip('/')}/{path.lstrip('/')}",
@@ -39,10 +52,18 @@ def request_json(
         headers=headers,
         method=method,
     )
-    with urlopen(request, timeout=timeout) as response:
+
+    if opener is None:
+        response = urlopen(request, timeout=timeout)
+    else:
+        response = opener.open(request, timeout=timeout)
+
+    with response:
         result = json.load(response)
+
     if not isinstance(result, dict):
         raise AssertionError(f"{path} did not return a JSON object")
+
     return result
 
 
@@ -63,7 +84,68 @@ def wait_until_ready(base_url: str, timeout: float) -> dict[str, Any]:
 def verify_stack(base_url: str) -> dict[str, Any]:
     wait_until_ready(base_url, 30.0)
 
-    documents_payload = request_json(base_url, "api/documents.php")
+    # Authentication is required for protected application APIs.
+    # First verify that anonymous document access is rejected.
+    try:
+        request_json(base_url, "api/documents.php")
+    except HTTPError as error:
+        if error.code != 401:
+            raise AssertionError(
+                f"Anonymous documents request returned {error.code}, expected 401"
+            ) from error
+        error.close()
+    else:
+        raise AssertionError(
+            "Anonymous documents request succeeded unexpectedly"
+        )
+
+    # Use a cookie-preserving browser session for the remaining checks.
+    browser = build_opener(HTTPCookieProcessor(CookieJar()))
+
+    session = request_json(
+        base_url,
+        "api/auth.php",
+        opener=browser,
+    )
+    csrf_token = session.get("csrf_token")
+    if not session.get("ok") or not isinstance(csrf_token, str) or not csrf_token:
+        raise AssertionError("Authentication session did not return a CSRF token")
+
+    # Unique CI-only account; the GitHub Actions fixture is disposable.
+    username = "ci_smoke_" + uuid4().hex[:16]
+    password = "Smoke-Test-" + uuid4().hex + "9a!"
+
+    registration = request_json(
+        base_url,
+        "api/auth.php",
+        method="POST",
+        payload={
+            "action": "register",
+            "username": username,
+            "password": password,
+            "display_name": "CI Smoke Test",
+        },
+        opener=browser,
+        csrf_token=csrf_token,
+    )
+
+    if not registration.get("ok"):
+        raise AssertionError("Smoke-test account registration failed")
+
+    user = registration.get("user")
+    if not isinstance(user, dict) or user.get("username") != username:
+        raise AssertionError("Smoke-test account was not authenticated")
+
+    # Session regeneration during registration may rotate the CSRF token.
+    csrf_token = registration.get("csrf_token")
+    if not isinstance(csrf_token, str) or not csrf_token:
+        raise AssertionError("Authenticated session did not return a CSRF token")
+
+    documents_payload = request_json(
+        base_url,
+        "api/documents.php",
+        opener=browser,
+    )
     documents = documents_payload.get("data")
     if not documents_payload.get("ok") or not isinstance(documents, list):
         raise AssertionError("Documents endpoint did not return the indexed library")
@@ -74,7 +156,11 @@ def verify_stack(base_url: str) -> dict[str, Any]:
             f"{len(documents)} documents/{chunk_count} chunks"
         )
 
-    evaluation_payload = request_json(base_url, "api/evaluations.php")
+    evaluation_payload = request_json(
+        base_url,
+        "api/evaluations.php",
+        opener=browser,
+    )
     evaluation_data = evaluation_payload.get("data")
     if not evaluation_payload.get("ok") or not isinstance(evaluation_data, dict):
         raise AssertionError("Evaluation endpoint did not return seeded data")
@@ -102,6 +188,8 @@ def verify_stack(base_url: str) -> dict[str, Any]:
         base_url,
         "api/ask.php",
         method="POST",
+        opener=browser,
+        csrf_token=csrf_token,
         payload={
             "action": "preview",
             "question": "When does Fall 2026 registration begin?",

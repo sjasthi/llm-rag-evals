@@ -689,6 +689,72 @@ require __DIR__ . '/includes/header.php';
                         </select>
                     </div>
                     <p id="evaluationDatasetSummary">Loading the reviewed test questions...</p>
+
+                    <section class="gold-standard-dashboard"
+                             id="goldStandardDashboard"
+                             aria-label="Gold Standard dataset overview">
+
+                        <div class="gold-standard-metrics">
+                            <div class="gold-standard-metric">
+                                <span>Total questions</span>
+                                <strong id="goldTotalQuestions">0</strong>
+                            </div>
+                            <div class="gold-standard-metric">
+                                <span>Reviewed</span>
+                                <strong id="goldReviewedQuestions">0</strong>
+                            </div>
+                            <div class="gold-standard-metric">
+                                <span>Needs revision</span>
+                                <strong id="goldRevisionQuestions">0</strong>
+                            </div>
+                            <div class="gold-standard-metric">
+                                <span>Draft</span>
+                                <strong id="goldDraftQuestions">0</strong>
+                            </div>
+                            <div class="gold-standard-metric">
+                                <span>Unanswerable</span>
+                                <strong id="goldUnanswerableQuestions">0</strong>
+                            </div>
+                            <div class="gold-standard-metric">
+                                <span>Categories</span>
+                                <strong id="goldCategoryCount">0</strong>
+                            </div>
+                        </div>
+
+                        <div class="gold-standard-progress">
+                            <div class="gold-standard-progress-heading">
+                                <strong>Review progress</strong>
+                                <span id="goldReviewProgressText">
+                                    0 of 0 reviewed
+                                </span>
+                            </div>
+                            <div id="goldReviewProgress"
+                                 class="gold-standard-progress-track"
+                                 role="progressbar"
+                                 aria-label="Gold Standard review progress"
+                                 aria-valuemin="0"
+                                 aria-valuemax="100"
+                                 aria-valuenow="0">
+                                <div id="goldReviewProgressFill"
+                                     class="gold-standard-progress-fill"></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Phase 6.2: Collapsible review guidance -->
+                    <details class="gold-standard-guidance">
+                        <summary class="gold-standard-guidance-summary">
+                            <span class="gold-standard-guidance-title">
+                                <strong>How Gold Standard works</strong>
+                                <small>
+                                    Review statuses, evaluation pipeline,
+                                    and reference-based scoring explained
+                                </small>
+                            </span>
+                            <span class="gold-standard-guidance-chevron"
+                                  aria-hidden="true"></span>
+                        </summary>
+                        <div class="gold-standard-guidance-content">
                     <div class="evaluation-guide" aria-labelledby="datasetReviewGuideTitle">
                             <strong id="datasetReviewGuideTitle">This is the gold standard—not chat history</strong>
                         <p>
@@ -732,20 +798,166 @@ require __DIR__ . '/includes/header.php';
                             </article>
                         </div>
                     </section>
-                    <div class="evaluation-toolbar">
-                        <label for="evaluationCategoryFilter">Category</label>
-                        <select class="form-select form-select-sm" id="evaluationCategoryFilter">
-                            <option value="">All categories</option>
-                        </select>
-                        <label for="evaluationStatusFilter">Review status</label>
-                        <select class="form-select form-select-sm" id="evaluationStatusFilter">
-                            <option value="">All statuses</option>
-                            <option value="draft">Draft</option>
-                            <option value="reviewed">Reviewed</option>
-                            <option value="needs_revision">Needs revision</option>
-                        </select>
+                        </div>
+                    </details>
+                    <div class="gold-question-toolbar"
+                         aria-label="Find Gold Standard questions">
+
+                        <div class="gold-question-search">
+                            <label for="goldQuestionSearch">
+                                Search questions
+                            </label>
+                            <input class="form-control form-control-sm"
+                                   id="goldQuestionSearch"
+                                   type="search"
+                                   placeholder="Question, answer, source, or evidence...">
+                        </div>
+
+                        <div class="gold-question-filters">
+                            <div>
+                                <label for="evaluationCategoryFilter">
+                                    Category
+                                </label>
+                                <select class="form-select form-select-sm"
+                                        id="evaluationCategoryFilter">
+                                    <option value="">All categories</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="evaluationStatusFilter">
+                                    Review status
+                                </label>
+                                <select class="form-select form-select-sm"
+                                        id="evaluationStatusFilter">
+                                    <option value="">All statuses</option>
+                                    <option value="draft">Draft</option>
+                                    <option value="reviewed">Reviewed</option>
+                                    <option value="needs_revision">
+                                        Needs revision
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="goldDifficultyFilter">
+                                    Difficulty
+                                </label>
+                                <select class="form-select form-select-sm"
+                                        id="goldDifficultyFilter">
+                                    <option value="">All difficulties</option>
+                                    <option value="easy">Easy</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="hard">Hard</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="goldAnswerabilityFilter">
+                                    Answerability
+                                </label>
+                                <select class="form-select form-select-sm"
+                                        id="goldAnswerabilityFilter">
+                                    <option value="">All questions</option>
+                                    <option value="answerable">Answerable</option>
+                                    <option value="unanswerable">
+                                        Unanswerable
+                                    </option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="goldQuestionSort">
+                                    Sort by
+                                </label>
+                                <select class="form-select form-select-sm"
+                                        id="goldQuestionSort">
+                                    <option value="order">Question number</option>
+                                    <option value="category">Category</option>
+                                    <option value="difficulty">Difficulty</option>
+                                    <option value="status">Review status</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="gold-question-toolbar-footer">
+                            <small id="goldQuestionVisibleCount"
+                                   role="status"
+                                   aria-live="polite">
+                                Loading questions...
+                            </small>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    id="clearGoldQuestionFilters">
+                                Clear filters
+                            </button>
+                        </div>
                     </div>
+                    <!-- Phase 6.4: Question expansion controls -->
+                    <div class="gold-question-expansion-toolbar"
+                         aria-label="Question expansion controls">
+                        <span>Question details</span>
+                        <div class="gold-question-expansion-actions">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    id="expandAllGoldQuestions">
+                                Expand all
+                            </button>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    id="collapseAllGoldQuestions">
+                                Collapse all
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Phase 6.6: Review save feedback -->
+                    <p id="goldReviewSaveNotice"
+                       class="gold-review-save-notice"
+                       role="status"
+                       aria-live="polite"
+                       aria-atomic="true"
+                       hidden></p>
                     <div id="evaluationQuestionList" class="evaluation-question-list" aria-live="polite"></div>
+
+                    <!-- Phase 6.5: Read-only cited evidence inspector -->
+                    <dialog id="goldEvidenceDialog"
+                            class="document-inspector-dialog gold-evidence-dialog"
+                            aria-labelledby="goldEvidenceHeading">
+                        <div class="document-inspector-header">
+                            <div>
+                                <span>GOLD STANDARD</span>
+                                <h3 id="goldEvidenceHeading">Cited evidence</h3>
+                            </div>
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    id="closeGoldEvidenceButton">
+                                Close
+                            </button>
+                        </div>
+                        <div class="document-inspector-body">
+                            <div class="gold-evidence-field">
+                                <strong>Question</strong>
+                                <p id="goldEvidenceQuestion"></p>
+                            </div>
+                            <div class="gold-evidence-field">
+                                <strong>Expected answer</strong>
+                                <p id="goldEvidenceAnswer"></p>
+                            </div>
+                            <div class="gold-evidence-field">
+                                <strong>Expected source</strong>
+                                <p id="goldEvidenceSource"></p>
+                            </div>
+                            <div class="gold-evidence-field">
+                                <strong>Expected evidence</strong>
+                                <blockquote id="goldEvidenceText"></blockquote>
+                            </div>
+                            <p class="gold-evidence-readonly-note">
+                                Read-only reference information from the
+                                selected Gold Standard dataset.
+                            </p>
+                        </div>
+                    </dialog>
+
                 </section>
 
                 <section class="panel results-panel workspace-view" id="results" data-view-panel="results" hidden>

@@ -101,6 +101,14 @@ $(function () {
     const $evaluationQuestionList = $("#evaluationQuestionList");
     const $evaluationCategoryFilter = $("#evaluationCategoryFilter");
     const $evaluationStatusFilter = $("#evaluationStatusFilter");
+    // Phase 6.3: Gold Standard filtering and sorting controls.
+    const $goldQuestionSearch = $("#goldQuestionSearch");
+    const $goldDifficultyFilter = $("#goldDifficultyFilter");
+    const $goldAnswerabilityFilter = $("#goldAnswerabilityFilter");
+    const $goldQuestionSort = $("#goldQuestionSort");
+    const $goldQuestionVisibleCount = $("#goldQuestionVisibleCount");
+    const $clearGoldQuestionFilters = $("#clearGoldQuestionFilters");
+
     const $experimentDatasetCount = $("#experimentDatasetCount");
     const $experimentRunCount = $("#experimentRunCount");
     const $experimentRunCountNote = $("#experimentRunCountNote");
@@ -1842,59 +1850,320 @@ $(function () {
             });
     });
 
+    // Phase 6.1: Dataset-specific review summary.
+    function renderGoldStandardDashboard(dataset) {
+        const questions = dataset ? evaluationQuestions : [];
+
+        const total = dataset
+            ? (Number(dataset.question_count) || questions.length)
+            : 0;
+
+        const countStatus = function (status) {
+            return questions.filter(function (question) {
+                return question.review_status === status;
+            }).length;
+        };
+
+        const reviewed = countStatus("reviewed");
+        const revision = countStatus("needs_revision");
+        const draft = countStatus("draft");
+
+        const unanswerable = questions.filter(function (question) {
+            return !Number(question.is_answerable);
+        }).length;
+
+        const categoryCount = new Set(
+            questions.map(function (question) {
+                return question.category;
+            }).filter(Boolean)
+        ).size;
+
+        const percentage = total > 0
+            ? Math.min(100, Math.round((reviewed / total) * 100))
+            : 0;
+
+        $("#goldTotalQuestions").text(total);
+        $("#goldReviewedQuestions").text(reviewed);
+        $("#goldRevisionQuestions").text(revision);
+        $("#goldDraftQuestions").text(draft);
+        $("#goldUnanswerableQuestions").text(unanswerable);
+        $("#goldCategoryCount").text(categoryCount);
+
+        $("#goldReviewProgressText").text(
+            reviewed + " of " + total + " reviewed (" + percentage + "%)"
+        );
+
+        $("#goldReviewProgress")
+            .attr("aria-valuenow", percentage);
+
+        $("#goldReviewProgressFill")
+            .css("width", percentage + "%");
+    }
+
+    // Phase 6.4: Remember expanded questions across list redraws.
+    const expandedGoldQuestionIds = new Set();
+    let goldExpansionDatasetKey = null;
+
+    function goldQuestionKey(questionId) {
+        return String(questionId);
+    }
+
+    function resetGoldExpansionForDataset() {
+        const datasetKey = String(
+            $evaluationDatasetSelect.val() || ""
+        );
+
+        if (datasetKey !== goldExpansionDatasetKey) {
+            expandedGoldQuestionIds.clear();
+            goldExpansionDatasetKey = datasetKey;
+        }
+    }
+
     function renderEvaluationQuestions() {
-        const category = $evaluationCategoryFilter.val();
-        const status = $evaluationStatusFilter.val();
+        resetGoldExpansionForDataset();
+        const category = $evaluationCategoryFilter.val() || "";
+        const status = $evaluationStatusFilter.val() || "";
+        const difficulty = $goldDifficultyFilter.val() || "";
+        const answerability = $goldAnswerabilityFilter.val() || "";
+        const sort = $goldQuestionSort.val() || "order";
+
+        const search = String($goldQuestionSearch.val() || "")
+            .trim()
+            .toLocaleLowerCase();
+
         const filtered = evaluationQuestions.filter(function (question) {
-            return (!category || question.category === category) && (!status || question.review_status === status);
+            if (category && question.category !== category) {
+                return false;
+            }
+            if (status && question.review_status !== status) {
+                return false;
+            }
+            if (difficulty && question.difficulty !== difficulty) {
+                return false;
+            }
+
+            const isAnswerable = Number(question.is_answerable) === 1;
+            if (answerability === "answerable" && !isAnswerable) {
+                return false;
+            }
+            if (answerability === "unanswerable" && isAnswerable) {
+                return false;
+            }
+
+            if (search) {
+                const searchable = [
+                    question.question_text,
+                    question.expected_answer,
+                    question.expected_source,
+                    question.expected_evidence,
+                    question.category,
+                    question.difficulty,
+                    question.review_status,
+                    question.required_facts
+                        ? JSON.stringify(question.required_facts)
+                        : "",
+                ].map(function (value) {
+                    return String(value || "");
+                }).join(" ").toLocaleLowerCase();
+
+                if (!searchable.includes(search)) {
+                    return false;
+                }
+            }
+
+            return true;
         });
+
+        const orderNumber = function (question) {
+            const value = Number(question.display_order);
+            return Number.isFinite(value) ? value : 0;
+        };
+
+        const difficultyRank = {
+            easy: 0,
+            medium: 1,
+            hard: 2,
+        };
+
+        filtered.sort(function (a, b) {
+            let comparison = 0;
+
+            if (sort === "category") {
+                comparison = String(a.category || "")
+                    .localeCompare(String(b.category || ""));
+            } else if (sort === "difficulty") {
+                comparison =
+                    (difficultyRank[a.difficulty] ?? 99) -
+                    (difficultyRank[b.difficulty] ?? 99);
+            } else if (sort === "status") {
+                comparison = String(a.review_status || "")
+                    .localeCompare(String(b.review_status || ""));
+            }
+
+            return comparison || orderNumber(a) - orderNumber(b);
+        });
+
+        $goldQuestionVisibleCount.text(
+            "Showing " + filtered.length +
+            " of " + evaluationQuestions.length + " questions"
+        );
+
         $evaluationQuestionList.empty();
         if (!filtered.length) {
             $evaluationQuestionList.append($("<p>").addClass("text-muted").text("No questions match these filters."));
             return;
         }
         filtered.forEach(function (question) {
-            const $item = $("<article>").addClass("evaluation-question");
-            const $heading = $("<div>").addClass("evaluation-question-heading");
-            $heading.append($("<strong>").text(question.display_order + ". " + question.question_text));
-            $heading.append($("<span>").addClass("status status-" + (question.review_status === "reviewed" ? "ready" : "planned")).text(titleCaseLabel(question.review_status)));
-            $item.append($heading);
-            $item.append($("<p>").text(question.expected_answer));
-            $item.append($("<small>").text(
-                titleCaseLabel(question.category) + " · " + titleCaseLabel(question.difficulty) + " · " +
-                (Number(question.is_answerable) ? "Answerable" : "Unanswerable")
-            ));
-            if (question.expected_source || question.expected_evidence) {
-                const $evidence = $("<details>").addClass("evaluation-reference");
-                $evidence.append($("<summary>").text("Review cited source evidence"));
-                if (question.expected_source) {
-                    $evidence.append($("<strong>").text("Expected source: " + question.expected_source));
-                }
-                if (question.expected_evidence) {
-                    $evidence.append($("<blockquote>").text(question.expected_evidence));
-                }
-                $item.append($evidence);
-            }
-            const $actions = $("<div>").addClass("evaluation-review-actions").attr("aria-label", "Test-case review status");
-            ["reviewed", "needs_revision", "draft"].forEach(function (nextStatus) {
-                const labels = {
-                    reviewed: "Mark reviewed",
-                    needs_revision: "Mark needs revision",
-                    draft: "Mark draft",
-                };
-                $actions.append(
+            const questionKey = goldQuestionKey(question.question_id);
+
+            const $item = $("<article>")
+                .addClass("evaluation-question gold-question-card");
+
+            const $details = $("<details>")
+                .addClass("gold-question-details")
+                .attr("data-question-id", questionKey);
+
+            // Search results reveal their matching content, including
+            // matches found only in an expected answer or source evidence.
+            const shouldExpand =
+                Boolean(search) ||
+                expandedGoldQuestionIds.has(questionKey);
+
+            $details.prop("open", shouldExpand);
+
+            const $summary = $("<summary>")
+                .addClass("gold-question-summary");
+
+            const $heading = $("<div>")
+                .addClass("evaluation-question-heading");
+
+            const $headingText = $("<div>")
+                .addClass("gold-question-heading-text");
+
+            $headingText.append(
+                $("<strong>").text(
+                    question.display_order + ". " +
+                    question.question_text
+                )
+            );
+
+            $headingText.append(
+                $("<small>")
+                    .addClass("gold-question-summary-meta")
+                    .text(
+                        titleCaseLabel(question.category) +
+                        " / " +
+                        titleCaseLabel(question.difficulty) +
+                        " / " +
+                        (Number(question.is_answerable)
+                            ? "Answerable"
+                            : "Unanswerable")
+                    )
+            );
+
+            $heading.append($headingText);
+
+            $heading.append(
+                $("<span>")
+                    .addClass(
+                        "status status-" +
+                        (question.review_status === "reviewed"
+                            ? "ready"
+                            : "planned")
+                    )
+                    .text(titleCaseLabel(question.review_status))
+            );
+
+            $summary.append($heading);
+
+            $summary.append(
+                $("<span>")
+                    .addClass("gold-question-chevron")
+                    .attr("aria-hidden", "true")
+            );
+
+            $details.append($summary);
+
+            const $body = $("<div>")
+                .addClass("gold-question-body");
+
+            $body.append(
+                $("<div>")
+                    .addClass("gold-question-answer-label")
+                    .text("Expected answer")
+            );
+
+            $body.append(
+                $("<p>").text(question.expected_answer)
+            );
+
+            if (
+                question.expected_source ||
+                question.expected_evidence
+            ) {
+                $body.append(
                     $("<button>")
                         .attr("type", "button")
-                        .addClass("btn btn-sm btn-outline-secondary evaluation-review-button")
-                        .prop("disabled", question.review_status === nextStatus)
-                        .data({ questionId: question.question_id, reviewStatus: nextStatus })
-                        .text(question.review_status === nextStatus ? labels[nextStatus].replace("Mark ", "Currently ") : labels[nextStatus])
+                        .addClass(
+                            "btn btn-sm btn-outline-secondary " +
+                            "gold-view-evidence-button"
+                        )
+                        .attr(
+                            "aria-label",
+                            "View cited evidence for question " +
+                            question.display_order
+                        )
+                        .data("questionId", question.question_id)
+                        .text("View cited evidence")
                 );
-            });
-            $item.append($actions);
+            }
+
+            const $actions = $("<div>")
+                .addClass("evaluation-review-actions")
+                .attr("aria-label", "Test-case review status");
+
+            ["reviewed", "needs_revision", "draft"].forEach(
+                function (nextStatus) {
+                    const labels = {
+                        reviewed: "Mark reviewed",
+                        needs_revision: "Mark needs revision",
+                        draft: "Mark draft",
+                    };
+
+                    $actions.append(
+                        $("<button>")
+                            .attr("type", "button")
+                            .addClass(
+                                "btn btn-sm btn-outline-secondary " +
+                                "evaluation-review-button"
+                            )
+                            .prop(
+                                "disabled",
+                                question.review_status === nextStatus
+                            )
+                            .data({
+                                questionId: question.question_id,
+                                reviewStatus: nextStatus,
+                            })
+                            .text(
+                                question.review_status === nextStatus
+                                    ? labels[nextStatus].replace(
+                                        "Mark ",
+                                        "Currently "
+                                    )
+                                    : labels[nextStatus]
+                            )
+                    );
+                }
+            );
+
+            $body.append($actions);
+            $details.append($body);
+            $item.append($details);
             $evaluationQuestionList.append($item);
         });
     }
+
 
     function readable(value, fallback) {
         if (value === null || value === undefined || value === "") {
@@ -2327,7 +2596,7 @@ function applicableEvaluators(methodKey, response, results) {
               encodeURIComponent(selectedDatasetId)
             : "api/evaluations.php";
 
-        $.getJSON(requestUrl)
+        return $.getJSON(requestUrl)
             .done(function (response) {
                 if (requestId !== evaluationDatasetRequestId) {
                     return;
@@ -2362,7 +2631,9 @@ function applicableEvaluators(methodKey, response, results) {
                     evaluationRuns = [];
                     populateNewTestBaselines();
                     $evaluationDatasetSummary.text("No evaluation dataset has been seeded.");
+                    renderGoldStandardDashboard(null);
                     renderResearchReadiness(null, [], {});
+                    renderEvaluationQuestions();
                     return;
                 }
                 evaluationDatasetQuestionCount = Number(dataset.question_count) || 0;
@@ -2386,6 +2657,7 @@ function applicableEvaluators(methodKey, response, results) {
                     dataset.dataset_name + " " + dataset.version + ": " + dataset.reviewed_count + " of " + dataset.question_count +
                     " reviewed; " + dataset.unanswerable_count + " unanswerable cases across " + dataset.category_count + " categories."
                 );
+                renderGoldStandardDashboard(dataset);
                 $evaluatorCount.text(dashboardEvaluatorCatalog.length);
                 $overviewEvaluatorCount.text(dashboardEvaluatorCatalog.length);
                 $experimentHumanReviewCount.text(data.findings?.human_review_count || 0);
@@ -2431,6 +2703,9 @@ function applicableEvaluators(methodKey, response, results) {
                         .insertBefore(completionTarget());
                 }
                 $evaluationDatasetSummary.text("Evaluation data is temporarily unavailable. Try again or contact the application administrator.");
+                renderGoldStandardDashboard(null);
+                evaluationQuestions = [];
+                renderEvaluationQuestions();
                 $researchReadinessList.empty().append(
                     $("<li>").addClass("readiness-next").text("Study status is unavailable until the application data can be loaded.")
                 );
@@ -4249,20 +4524,362 @@ function applicableEvaluators(methodKey, response, results) {
             });
     }
 
-    $evaluationCategoryFilter.add($evaluationStatusFilter).on("change", renderEvaluationQuestions);
-    $evaluationQuestionList.on("click", ".evaluation-review-button", function () {
-        const $button = $(this);
-        $button.prop("disabled", true);
-        $.ajax({
-            url: "api/evaluations.php",
-            method: "PATCH",
-            contentType: "application/json; charset=utf-8",
-            dataType: "json",
-            data: JSON.stringify({ question_id: $button.data("questionId"), review_status: $button.data("reviewStatus") }),
-        }).done(loadEvaluationDataset).fail(function () {
-            $button.prop("disabled", false);
-        });
+    // Phase 6.3: Filters affect the view, never the dataset.
+    $goldQuestionSearch.on("input", renderEvaluationQuestions);
+
+    $evaluationCategoryFilter
+        .add($evaluationStatusFilter)
+        .add($goldDifficultyFilter)
+        .add($goldAnswerabilityFilter)
+        .add($goldQuestionSort)
+        .on("change", renderEvaluationQuestions);
+
+    $clearGoldQuestionFilters.on("click", function () {
+        $goldQuestionSearch.val("");
+        $evaluationCategoryFilter.val("");
+        $evaluationStatusFilter.val("");
+        $goldDifficultyFilter.val("");
+        $goldAnswerabilityFilter.val("");
+        $goldQuestionSort.val("order");
+        renderEvaluationQuestions();
+        $goldQuestionSearch.trigger("focus");
     });
+    // Phase 6.4: Expand/collapse only the currently displayed cards.
+    $("#expandAllGoldQuestions").on("click", function () {
+        $evaluationQuestionList
+            .find("details.gold-question-details")
+            .each(function () {
+                expandedGoldQuestionIds.add(
+                    goldQuestionKey(
+                        $(this).attr("data-question-id")
+                    )
+                );
+                this.open = true;
+            });
+    });
+
+    $("#collapseAllGoldQuestions").on("click", function () {
+        $evaluationQuestionList
+            .find("details.gold-question-details")
+            .each(function () {
+                expandedGoldQuestionIds.delete(
+                    goldQuestionKey(
+                        $(this).attr("data-question-id")
+                    )
+                );
+                this.open = false;
+            });
+    });
+
+    $evaluationQuestionList.on(
+        "toggle",
+        "details.gold-question-details",
+        function () {
+            const key = goldQuestionKey(
+                $(this).attr("data-question-id")
+            );
+
+            if (this.open) {
+                expandedGoldQuestionIds.add(key);
+            } else {
+                expandedGoldQuestionIds.delete(key);
+            }
+        }
+    );
+
+    // Phase 6.5: Read-only Gold Standard evidence inspector.
+    const goldEvidenceDialog =
+        document.getElementById("goldEvidenceDialog");
+    let goldEvidenceTrigger = null;
+
+    $evaluationQuestionList.on(
+        "click",
+        ".gold-view-evidence-button",
+        function () {
+            if (!goldEvidenceDialog) {
+                return;
+            }
+
+            const questionId = String(
+                $(this).data("questionId")
+            );
+
+            const question = evaluationQuestions.find(
+                function (item) {
+                    return String(item.question_id) === questionId;
+                }
+            );
+
+            if (!question) {
+                return;
+            }
+
+            goldEvidenceTrigger = this;
+
+            const displayValue = function (value) {
+                return value === null ||
+                    value === undefined ||
+                    String(value).trim() === ""
+                    ? "Not provided"
+                    : String(value);
+            };
+
+            // Use text(), never html(), for stored reference content.
+            $("#goldEvidenceQuestion").text(
+                displayValue(question.question_text)
+            );
+            $("#goldEvidenceAnswer").text(
+                displayValue(question.expected_answer)
+            );
+            $("#goldEvidenceSource").text(
+                displayValue(question.expected_source)
+            );
+            $("#goldEvidenceText").text(
+                displayValue(question.expected_evidence)
+            );
+
+            if (!goldEvidenceDialog.open) {
+                goldEvidenceDialog.showModal();
+            }
+
+            $("#closeGoldEvidenceButton").trigger("focus");
+        }
+    );
+
+    $("#closeGoldEvidenceButton").on("click", function () {
+        if (goldEvidenceDialog && goldEvidenceDialog.open) {
+            goldEvidenceDialog.close();
+        }
+    });
+
+    if (goldEvidenceDialog) {
+        $(goldEvidenceDialog).on("close", function () {
+            if (
+                goldEvidenceTrigger &&
+                goldEvidenceTrigger.isConnected
+            ) {
+                goldEvidenceTrigger.focus();
+            }
+            goldEvidenceTrigger = null;
+        });
+    }
+
+    // Phase 6.6: Review changes are confirmed by the API, then
+    // verified against a refreshed dataset.
+    let goldReviewSavePending = false;
+
+    const $goldReviewSaveNotice = $("#goldReviewSaveNotice");
+
+    function showGoldReviewSaveNotice(message, isError) {
+        $goldReviewSaveNotice
+            .prop("hidden", false)
+            .toggleClass("is-error", Boolean(isError))
+            .attr("role", isError ? "alert" : "status")
+            .text(message);
+    }
+
+    function focusGoldReviewedQuestion(questionId) {
+        const key = goldQuestionKey(questionId);
+
+        const $card = $evaluationQuestionList
+            .find("details.gold-question-details")
+            .filter(function () {
+                return $(this).attr("data-question-id") === key;
+            })
+            .first();
+
+        if ($card.length) {
+            $card.prop("open", true);
+            $card.children("summary").trigger("focus");
+        }
+    }
+
+    $evaluationQuestionList.on(
+        "click",
+        ".evaluation-review-button",
+        function () {
+            if (goldReviewSavePending) {
+                return;
+            }
+
+            const $button = $(this);
+            const questionId = Number($button.data("questionId"));
+            const nextStatus = String(
+                $button.data("reviewStatus") || ""
+            );
+
+            const allowed = [
+                "reviewed",
+                "needs_revision",
+                "draft",
+            ];
+
+            const currentQuestion = evaluationQuestions.find(
+                function (question) {
+                    return Number(question.question_id) === questionId;
+                }
+            );
+
+            if (
+                !Number.isInteger(questionId) ||
+                questionId <= 0 ||
+                !allowed.includes(nextStatus) ||
+                !currentQuestion ||
+                currentQuestion.review_status === nextStatus
+            ) {
+                return;
+            }
+
+            const originalStatus = currentQuestion.review_status;
+
+            goldReviewSavePending = true;
+            expandedGoldQuestionIds.add(
+                goldQuestionKey(questionId)
+            );
+
+            // Lock status actions and the dataset selector while
+            // the save and subsequent refresh are in progress.
+            $evaluationQuestionList
+                .find(".evaluation-review-button")
+                .prop("disabled", true);
+
+            $evaluationDatasetSelect.prop("disabled", true);
+
+            showGoldReviewSaveNotice(
+                "Saving question " +
+                currentQuestion.display_order +
+                " as " + titleCaseLabel(nextStatus) + "..."
+            );
+
+            function finishSave() {
+                goldReviewSavePending = false;
+                $evaluationDatasetSelect.prop("disabled", false);
+            }
+
+            function restoreAfterFailure(message) {
+                finishSave();
+                renderEvaluationQuestions();
+                focusGoldReviewedQuestion(questionId);
+                showGoldReviewSaveNotice(message, true);
+            }
+
+            $.ajax({
+                url: "api/evaluations.php",
+                method: "PATCH",
+                contentType: "application/json; charset=utf-8",
+                dataType: "json",
+                data: JSON.stringify({
+                    question_id: questionId,
+                    review_status: nextStatus,
+                }),
+            })
+            .done(function (result) {
+                const saved = Boolean(
+                    result &&
+                    result.ok === true &&
+                    result.data &&
+                    Number(result.data.question_id) === questionId &&
+                    result.data.review_status === nextStatus
+                );
+
+                if (!saved) {
+                    restoreAfterFailure(
+                        "The review update was not confirmed. " +
+                        "Reload the dataset before trying again."
+                    );
+                    return;
+                }
+
+                showGoldReviewSaveNotice(
+                    "Review status saved. Refreshing the dataset..."
+                );
+
+                const refreshRequest = loadEvaluationDataset();
+
+                refreshRequest.done(function (response) {
+                    finishSave();
+
+                    const refreshedQuestions =
+                        response &&
+                        response.data &&
+                        Array.isArray(response.data.questions)
+                            ? response.data.questions
+                            : [];
+
+                    const refreshedQuestion = refreshedQuestions.find(
+                        function (question) {
+                            return Number(question.question_id) ===
+                                questionId;
+                        }
+                    );
+
+                    // Re-render after clearing the pending state
+                    // so the review buttons are usable again.
+                    renderEvaluationQuestions();
+
+                    if (
+                        refreshedQuestion &&
+                        refreshedQuestion.review_status === nextStatus
+                    ) {
+                        focusGoldReviewedQuestion(questionId);
+
+                        const visible = $evaluationQuestionList
+                            .find("details.gold-question-details")
+                            .filter(function () {
+                                return $(this).attr(
+                                    "data-question-id"
+                                ) === goldQuestionKey(questionId);
+                            }).length > 0;
+
+                        showGoldReviewSaveNotice(
+                            "Question " +
+                            currentQuestion.display_order +
+                            " saved: " +
+                            titleCaseLabel(originalStatus) +
+                            " to " +
+                            titleCaseLabel(nextStatus) +
+                            "." +
+                            (visible
+                                ? ""
+                                : " The current filters hide " +
+                                  "the updated question.")
+                        );
+                    } else {
+                        showGoldReviewSaveNotice(
+                            "The server confirmed the save, but " +
+                            "the refreshed dataset did not verify " +
+                            "the new status. Reload the page " +
+                            "before making another change.",
+                            true
+                        );
+                    }
+                });
+
+                refreshRequest.fail(function () {
+                    finishSave();
+
+                    showGoldReviewSaveNotice(
+                        "The review status was saved, but the " +
+                        "dataset could not be refreshed. " +
+                        "Reload the page to verify the new status.",
+                        true
+                    );
+                });
+            })
+            .fail(function (xhr) {
+                const serverMessage =
+                    xhr &&
+                    xhr.responseJSON &&
+                    typeof xhr.responseJSON.error === "string"
+                        ? xhr.responseJSON.error
+                        : "The review status could not be saved.";
+
+                restoreAfterFailure(
+                    "Save failed: " + serverMessage
+                );
+            });
+        }
+    );
 
     $evaluationLists.on("click", ".evaluation-response-button", function () {
         const $button = $(this);

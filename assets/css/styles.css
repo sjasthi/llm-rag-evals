@@ -2270,3 +2270,511 @@ details > summary {
         width: 100%;
     }
 }
+
+
+/* Phase 6.1: Gold Standard dashboard */
+
+.gold-standard-dashboard {
+    margin: 1rem 0 1.25rem;
+}
+
+.gold-standard-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.gold-standard-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 0;
+    padding: 1rem;
+    background: var(--paper-muted);
+    border: 1px solid var(--line);
+    border-radius: 0.7rem;
+}
+
+.gold-standard-metric span {
+    color: var(--muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.gold-standard-metric strong {
+    color: var(--forest-900);
+    font-size: clamp(1.4rem, 2.5vw, 1.8rem);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+}
+
+.gold-standard-progress {
+    margin-top: 0.9rem;
+    padding: 1rem;
+    background: var(--paper-muted);
+    border: 1px solid var(--line);
+    border-radius: 0.7rem;
+}
+
+.gold-standard-progress-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.7rem;
+    font-size: 0.8rem;
+}
+
+.gold-standard-progress-heading span {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.gold-standard-progress-track {
+    width: 100%;
+    height: 0.65rem;
+    overflow: hidden;
+    background: #dce4d7;
+    border-radius: 999px;
+}
+
+.gold-standard-progress-fill {
+    width: 0;
+    height: 100%;
+    background: var(--forest-700);
+    border-radius: inherit;
+    transition: width 200ms ease;
+}
+
+@media (max-width: 650px) {
+    .gold-standard-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 380px) {
+    .gold-standard-metrics {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gold-standard-progress-fill {
+        transition: none;
+    }
+}
+
+
+/* Phase 6.2: Collapsible Gold Standard guidance */
+
+.gold-standard-guidance {
+    margin: 1rem 0 1.25rem;
+    background: var(--paper-muted);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    overflow: hidden;
+}
+
+.gold-standard-guidance-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.15rem;
+    cursor: pointer;
+    list-style: none;
+}
+
+.gold-standard-guidance-summary::-webkit-details-marker {
+    display: none;
+}
+
+.gold-standard-guidance-summary::marker {
+    content: "";
+}
+
+.gold-standard-guidance-summary:hover {
+    background: rgba(35, 94, 64, 0.04);
+}
+
+.gold-standard-guidance-summary:focus-visible {
+    outline: 3px solid #487bb7;
+    outline-offset: -3px;
+}
+
+.gold-standard-guidance-title {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.gold-standard-guidance-title strong {
+    color: var(--forest-900);
+    font-size: 0.9rem;
+}
+
+.gold-standard-guidance-title small {
+    color: var(--muted);
+    font-size: 0.73rem;
+    line-height: 1.5;
+}
+
+.gold-standard-guidance-chevron {
+    flex: 0 0 auto;
+    width: 0.6rem;
+    height: 0.6rem;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg);
+    transition: transform 180ms ease;
+}
+
+.gold-standard-guidance[open] .gold-standard-guidance-chevron {
+    transform: rotate(225deg);
+}
+
+.gold-standard-guidance-content {
+    display: grid;
+    gap: 0.8rem;
+    padding: 0 1rem 1rem;
+}
+
+.gold-standard-guidance-content > .evaluation-guide,
+.gold-standard-guidance-content > .gold-standard-purpose {
+    margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gold-standard-guidance-chevron {
+        transition: none;
+    }
+}
+
+
+/* Phase 6.3: Gold Standard question search and filters */
+
+.gold-question-toolbar {
+    display: grid;
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: var(--paper-muted);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+}
+
+.gold-question-toolbar label {
+    display: block;
+    margin-bottom: 0.35rem;
+    color: var(--forest-700);
+    font-size: 0.72rem;
+    font-weight: 750;
+}
+
+.gold-question-search .form-control {
+    width: 100%;
+    min-height: 2.35rem;
+}
+
+.gold-question-filters {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.gold-question-filters > div {
+    min-width: 0;
+}
+
+.gold-question-filters .form-select {
+    width: 100%;
+    min-width: 0;
+    min-height: 2.3rem;
+    font-size: 0.76rem;
+}
+
+.gold-question-toolbar-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+}
+
+.gold-question-toolbar-footer small {
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 850px) {
+    .gold-question-filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 480px) {
+    .gold-question-filters {
+        grid-template-columns: 1fr;
+    }
+
+    .gold-question-toolbar {
+        padding: 0.8rem;
+    }
+
+    .gold-question-toolbar-footer .btn {
+        width: 100%;
+    }
+}
+
+
+/* Phase 6.4: Collapsible Gold Standard question cards */
+
+.gold-question-expansion-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0.65rem 0 0.85rem;
+}
+
+.gold-question-expansion-toolbar > span {
+    color: var(--forest-700);
+    font-size: 0.78rem;
+    font-weight: 750;
+}
+
+.gold-question-expansion-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.evaluation-question-list {
+    align-items: start;
+}
+
+.gold-question-card {
+    padding: 0;
+    overflow: hidden;
+}
+
+.gold-question-details {
+    min-width: 0;
+}
+
+.gold-question-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.65rem;
+    padding: 0.95rem;
+    cursor: pointer;
+    list-style: none;
+}
+
+.gold-question-summary::-webkit-details-marker {
+    display: none;
+}
+
+.gold-question-summary::marker {
+    content: "";
+}
+
+.gold-question-summary:focus-visible {
+    outline: 3px solid #487bb7;
+    outline-offset: -3px;
+}
+
+.gold-question-heading-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.gold-question-heading-text strong {
+    overflow-wrap: anywhere;
+}
+
+.gold-question-summary-meta {
+    color: var(--quiet);
+    font-size: 0.65rem;
+    line-height: 1.5;
+}
+
+.gold-question-summary .evaluation-question-heading {
+    flex: 1;
+    min-width: 0;
+    align-items: flex-start;
+}
+
+.gold-question-summary .status {
+    flex: 0 0 auto;
+}
+
+.gold-question-chevron {
+    flex: 0 0 auto;
+    width: 0.55rem;
+    height: 0.55rem;
+    margin: 0.35rem 0.15rem;
+    border-right: 2px solid var(--forest-700);
+    border-bottom: 2px solid var(--forest-700);
+    transform: rotate(45deg);
+    transition: transform 160ms ease;
+}
+
+.gold-question-details[open] .gold-question-chevron {
+    transform: rotate(225deg);
+}
+
+.gold-question-details[open] .gold-question-summary {
+    border-bottom: 1px solid var(--line);
+}
+
+.gold-question-body {
+    padding: 0.9rem;
+}
+
+.gold-question-answer-label {
+    margin-bottom: 0.4rem;
+    color: var(--forest-700);
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+
+.gold-question-body > p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.75rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.gold-question-body .evaluation-reference {
+    margin-top: 0.85rem;
+}
+
+.gold-question-body .evaluation-review-actions {
+    margin-top: 0.85rem;
+}
+
+@media (max-width: 480px) {
+    .gold-question-expansion-actions {
+        width: 100%;
+    }
+
+    .gold-question-expansion-actions .btn {
+        flex: 1;
+    }
+
+    .gold-question-summary {
+        padding: 0.8rem;
+    }
+
+    .gold-question-summary .evaluation-question-heading {
+        flex-wrap: wrap;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .gold-question-chevron {
+        transition: none;
+    }
+}
+
+
+/* Phase 6.5: Gold Standard evidence inspector */
+
+.gold-view-evidence-button {
+    margin-top: 0.85rem;
+    font-size: 0.72rem;
+}
+
+.gold-evidence-dialog {
+    width: min(92vw, 720px);
+}
+
+.gold-evidence-field {
+    min-width: 0;
+    margin-bottom: 1.15rem;
+}
+
+.gold-evidence-field > strong {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: var(--forest-700);
+    font-size: 0.73rem;
+}
+
+.gold-evidence-field > p,
+.gold-evidence-field > blockquote {
+    margin: 0;
+    padding: 0.85rem;
+    background: var(--paper-muted);
+    border-radius: 0.55rem;
+    font-size: 0.81rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.gold-evidence-field > blockquote {
+    border-left: 3px solid var(--lime-strong);
+}
+
+.gold-evidence-readonly-note {
+    margin: 0.25rem 0 0;
+    color: var(--muted);
+    font-size: 0.72rem;
+    line-height: 1.5;
+}
+
+@media (max-width: 540px) {
+    .gold-evidence-dialog {
+        width: 96vw;
+    }
+
+    .gold-evidence-field > p,
+    .gold-evidence-field > blockquote {
+        padding: 0.7rem;
+    }
+}
+
+
+/* Phase 6.6: Gold Standard review-save feedback */
+
+.gold-review-save-notice {
+    margin: 0.75rem 0;
+    padding: 0.85rem 1rem;
+    color: var(--forest-900);
+    background: #edf5eb;
+    border: 1px solid #b8d5b6;
+    border-radius: 0.65rem;
+    font-size: 0.78rem;
+    line-height: 1.55;
+}
+
+.gold-review-save-notice[hidden] {
+    display: none !important;
+}
+
+.gold-review-save-notice.is-error {
+    color: #862a20;
+    background: #fff2ee;
+    border-color: #e2b5aa;
+}
+
+.evaluation-review-button:disabled {
+    cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+    .gold-review-save-notice {
+        padding: 0.75rem;
+    }
+}

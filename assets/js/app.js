@@ -58,6 +58,22 @@ $(function () {
     const $refreshChatsButton = $("#refreshChatsButton");
     const $recentChatList = $("#recentChatList");
     const $recentChatsEmpty = $("#recentChatsEmpty");
+    const $recentChatSearch = $("#recentChatSearch");
+    const $recentChatCount = $("#recentChatCount");
+    const $sidebarNewChatButton = $("#sidebarNewChatButton");
+    let cachedRecentChats = [];
+
+    // Phase 7.1.3: Conversation archive confirmation state.
+    const chatArchiveDialog = document.getElementById("chatArchiveDialog");
+    const $chatArchiveTitle = $("#chatArchiveTitle");
+    const $chatArchiveError = $("#chatArchiveError");
+    const $chatArchiveNotice = $("#chatArchiveNotice");
+    const $cancelChatArchiveButton = $("#cancelChatArchiveButton");
+    const $confirmChatArchiveButton = $("#confirmChatArchiveButton");
+
+    let pendingChatArchiveId = null;
+    let chatArchiveRequestActive = false;
+    let chatArchiveTrigger = null;
     let currentUser = null;
     let csrfToken = "";
     let accountMode = "login";
@@ -375,28 +391,510 @@ $(function () {
         $chatSettingsControls.prop("disabled", isBusy);
         $suggestionButtons.prop("disabled", isBusy);
         $newConversationButton.prop("disabled", isBusy);
+        $sidebarNewChatButton.prop("disabled", isBusy);
+    }
+
+    // Phase 7.4.4.5.2: Render saved citations safely as
+    // text and buttons, never as untrusted HTML.
+    function renderSavedAnswerCitations($target, answer, responseId) {
+        const text = String(answer || "");
+        const id = Number(responseId);
+        const canInspect = (
+            responseId !== null &&
+            responseId !== undefined &&
+            Number.isSafeInteger(id) &&
+            id > 0
+        );
+
+        $target.empty();
+
+        if (!canInspect) {
+            $target.text(text);
+            return;
+        }
+
+        const pattern = /\[(\d+)\]/g;
+        let cursor = 0;
+        let match;
+
+        while ((match = pattern.exec(text)) !== null) {
+            $target.append(
+                document.createTextNode(
+                    text.slice(cursor, match.index)
+                )
+            );
+
+            const rank = Number(match[1]);
+            const previous = text[match.index - 1] || "";
+
+            if (
+                !/[A-Za-z0-9_]/.test(previous) &&
+                Number.isSafeInteger(rank) &&
+                rank > 0
+            ) {
+                $("<button>")
+                    .addClass(
+                        "chat-citation-button " +
+                        "chat-saved-citation-button"
+                    )
+                    .attr({
+                        type: "button",
+                        "data-citation-rank": rank,
+                        "aria-label": "Inspect saved source " + rank,
+                        title: "Inspect saved source " + rank
+                    })
+                    .text(match[0])
+                    .appendTo($target);
+            } else {
+                $target.append(
+                    document.createTextNode(match[0])
+                );
+            }
+
+            cursor = pattern.lastIndex;
+        }
+
+        $target.append(
+            document.createTextNode(text.slice(cursor))
+        );
     }
 
     function renderConversation() {
-        // After an answer the newest turn is shown in the answer panel, so only
-        // earlier turns are listed here. A reopened chat lists every turn.
-        const earlierTurns = latestTurnInAnswerPanel ? conversationTurns.slice(0, -1) : conversationTurns;
+        // Phase 7.2.2: One chronological visual message stream.
+        // The latest assistant answer stays in #answerResult while
+        // its metadata and source cards are being displayed there.
         $conversationTurns.empty();
-        earlierTurns.forEach(function (turn) {
-            const $item = $("<li>").addClass("conversation-turn");
-            $("<p>").addClass("conversation-question").text(turn.question).appendTo($item);
-            $("<p>").addClass("conversation-answer").text(turn.answer).appendTo($item);
+
+        conversationTurns.forEach(function (turn, index) {
+            const $item = $("<li>")
+                .addClass("conversation-turn");
+
+            const $userMessage = $("<div>")
+                .addClass("chat-message chat-message-user")
+                .attr("aria-label", "Your question");
+
+            $userMessage.append(
+                $("<span>")
+                    .addClass("chat-message-speaker")
+                    .text("You"),
+                $("<p>")
+                    .addClass("conversation-question")
+                    .text(turn.question || "")
+            );
+
+            $item.append($userMessage);
+
+            const isLatestLiveTurn =
+                latestTurnInAnswerPanel &&
+                index === conversationTurns.length - 1;
+
+            // Do not duplicate the newest assistant answer.
+            // showAnswer() already presents it with its sources.
+            if (!isLatestLiveTurn && turn.answer) {
+                const $assistantMessage = $("<div>")
+                    .addClass("chat-message chat-message-assistant")
+                    .attr("aria-label", "Assistant answer");
+
+                $assistantMessage.append(
+                    $("<span>")
+                        .addClass("chat-message-speaker")
+                        .text("RAG Observatory"),
+                    $("<p>")
+                        .addClass("conversation-answer")
+                        .each(function () {
+                            renderSavedAnswerCitations(
+                                $(this),
+                                turn.answer,
+                                turn.responseId
+                            );
+                        })
+                );
+
+                // Historical evidence is loaded only when requested.
+                const savedResponseId = Number(turn.responseId);
+
+                if (
+                    turn.responseId !== null &&
+                    turn.responseId !== undefined &&
+                    Number.isSafeInteger(savedResponseId) &&
+                    savedResponseId > 0
+                ) {
+                    const panelId = "chat-evidence-" + savedResponseId;
+
+                    const $evidenceButton = $("<button>")
+                        .addClass(
+                            "btn btn-sm btn-outline-secondary " +
+                            "chat-saved-evidence-button"
+                        )
+                        .attr({
+                            type: "button",
+                            "data-response-id": savedResponseId,
+                            "aria-expanded": "false",
+                            "aria-controls": panelId
+                        })
+                        .text("View sources");
+
+                    const $evidencePanel = $("<div>")
+                        .addClass("chat-saved-evidence")
+                        .attr("id", panelId)
+                        .prop("hidden", true);
+
+                    $assistantMessage.append(
+                        $evidenceButton,
+                        $evidencePanel
+                    );
+                }
+
+                $item.append($assistantMessage);
+            }
+
             $item.appendTo($conversationTurns);
         });
+
         const count = conversationTurns.length;
+
         $conversationStatus.text(
-            "Conversation in progress · " + count + " question" + (count === 1 ? "" : "s")
+            "Conversation in progress - " + count +
+            " question" + (count === 1 ? "" : "s")
         );
-        $conversationThread.prop("hidden", conversationId === null);
+
+        $conversationThread.prop(
+            "hidden",
+            conversationId === null
+        );
+
         $recentChatList.find(".recent-chat").each(function () {
-            $(this).toggleClass("active", Number($(this).data("conversationId")) === conversationId);
+            $(this).toggleClass(
+                "active",
+                Number($(this).data("conversationId")) === conversationId
+            );
         });
+
+        // Scroll within the chat panel, not the whole page.
+        // This also works when a saved conversation is reopened.
+        const panel = document.getElementById("answerPanel");
+
+        if (panel && conversationId !== null) {
+            panel.scrollTop = panel.scrollHeight;
+        }
     }
+
+    // Phase 7.4.4.5: Load saved evidence only for the
+    // currently selected conversation and assistant message.
+    $conversationTurns.on(
+        "click",
+        ".chat-saved-evidence-button",
+        function () {
+            const $button = $(this);
+            const responseId = Number(
+                $button.attr("data-response-id")
+            );
+            const requestedConversationId = conversationId;
+            const $panel = $button.siblings(
+                ".chat-saved-evidence"
+            );
+
+            if (
+                !currentUser ||
+                !Number.isSafeInteger(requestedConversationId) ||
+                requestedConversationId < 1 ||
+                !Number.isSafeInteger(responseId) ||
+                responseId < 1 ||
+                !$panel.length
+            ) {
+                return;
+            }
+
+            if ($panel.data("loaded") === true) {
+                const willOpen = $panel.prop("hidden");
+
+                $panel.prop("hidden", !willOpen);
+                $button
+                    .attr("aria-expanded", String(willOpen))
+                    .text(willOpen ? "Hide sources" : "View sources");
+                return;
+            }
+
+            const buttonElement = $button.get(0);
+
+            $button.prop("disabled", true).text("Loading sources...");
+            $panel
+                .empty()
+                .prop("hidden", false)
+                .append(
+                    $("<p>")
+                        .addClass("text-muted")
+                        .text("Loading original retrieved evidence...")
+                );
+
+            $.ajax({
+                url: "api/conversation_evidence.php",
+                method: "GET",
+                dataType: "json",
+                cache: false,
+                data: {
+                    conversation_id: requestedConversationId,
+                    response_id: responseId
+                }
+            })
+                .done(function (response) {
+                    // Ignore requests that finished after navigation.
+                    if (
+                        conversationId !== requestedConversationId ||
+                        !document.contains(buttonElement)
+                    ) {
+                        return;
+                    }
+
+                    const data = response?.data;
+                    const sources = data?.sources;
+
+                    if (
+                        response?.ok !== true ||
+                        Number(data.conversation_id) !==
+                            requestedConversationId ||
+                        Number(data.response_id) !== responseId ||
+                        !Array.isArray(sources)
+                    ) {
+                        $panel
+                            .empty()
+                            .text(
+                                "Saved source data was incomplete. " +
+                                "Try loading it again."
+                            );
+                        $panel.removeData("pendingCitationRank");
+                        $button.text("Retry sources");
+                        return;
+                    }
+
+                    $panel.empty();
+
+                    $("<p>")
+                        .addClass("chat-saved-evidence-heading")
+                        .text("Original retrieved sources")
+                        .appendTo($panel);
+
+                    if (!sources.length) {
+                        $("<p>")
+                            .addClass("text-muted")
+                            .text(
+                                "No saved source passages are " +
+                                "available for this answer."
+                            )
+                            .appendTo($panel);
+                    }
+
+                    sources.forEach(function (source) {
+                        const rank = Number(source.rank);
+
+                        if (
+                            !Number.isSafeInteger(rank) ||
+                            rank < 1
+                        ) {
+                            return;
+                        }
+
+                        const filename = String(
+                            source.original_filename ||
+                            source.source_path ||
+                            "Unknown document"
+                        );
+
+                        const $card = $("<article>")
+                            .addClass("source-card")
+                            .attr("data-source-rank", rank);
+
+                        $("<strong>")
+                            .text("[" + rank + "] " + filename)
+                            .appendTo($card);
+
+                        const details = [];
+
+                        if (source.page_number != null) {
+                            details.push(
+                                "Page " + source.page_number
+                            );
+                        }
+
+                        if (source.chunk_index != null) {
+                            details.push(
+                                "Chunk " + source.chunk_index
+                            );
+                        }
+
+                        if (source.content_type) {
+                            details.push(
+                                "Type: " +
+                                String(source.content_type)
+                                    .replace(/_/g, " ")
+                            );
+                        }
+
+                        if (details.length) {
+                            $("<small>")
+                                .addClass("chat-saved-source-meta")
+                                .text(details.join(" | "))
+                                .appendTo($card);
+                        }
+
+                        $("<p>")
+                            .text(
+                                source.text ||
+                                "No extracted text available."
+                            )
+                            .appendTo($card);
+
+                        $card.appendTo($panel);
+                    });
+
+                    $panel.data("loaded", true);
+                    $button
+                        .attr("aria-expanded", "true")
+                        .text("Hide sources");
+
+                    const pendingRank = Number(
+                        $panel.data("pendingCitationRank")
+                    );
+
+                    if (
+                        Number.isSafeInteger(pendingRank) &&
+                        pendingRank > 0
+                    ) {
+                        selectSavedEvidenceRank($panel, pendingRank);
+                    }
+
+                    $panel.removeData("pendingCitationRank");
+                })
+                .fail(function (xhr) {
+                    if (
+                        conversationId !== requestedConversationId ||
+                        !document.contains(buttonElement)
+                    ) {
+                        return;
+                    }
+
+                    $panel
+                        .empty()
+                        .text(
+                            xhr.status === 404
+                                ? "Saved evidence is not available."
+                                : xhr.status === 401
+                                    ? "Sign in to view saved evidence."
+                                    : "Unable to load sources. Try again."
+                        );
+
+                    $button.text("Retry sources");
+                })
+                .always(function () {
+                    if (
+                        conversationId === requestedConversationId &&
+                        document.contains(buttonElement)
+                    ) {
+                        $button.prop("disabled", false);
+                    }
+                });
+        }
+    );
+
+    // Select an actual saved source by rank. Missing ranks
+    // never silently select a different passage.
+    function selectSavedEvidenceRank($panel, rank) {
+        const $cards = $panel.find(".source-card");
+
+        const $match = $cards.filter(function () {
+            return Number(
+                $(this).attr("data-source-rank")
+            ) === rank;
+        }).first();
+
+        $cards.removeClass("chat-source-selected");
+        $panel.find(".chat-saved-citation-note").remove();
+
+        if (!$match.length) {
+            $("<p>")
+                .addClass("chat-saved-citation-note")
+                .attr("role", "status")
+                .text(
+                    "Saved source [" + rank +
+                    "] is not available for this answer."
+                )
+                .prependTo($panel);
+            return;
+        }
+
+        $match.addClass("chat-source-selected");
+
+        const element = $match.get(0);
+
+        if (element) {
+            element.scrollIntoView({
+                behavior: window.matchMedia(
+                    "(prefers-reduced-motion: reduce)"
+                ).matches ? "auto" : "smooth",
+                block: "nearest"
+            });
+        }
+    }
+
+    // Clicking a saved citation opens or reuses the
+    // original evidence for that assistant message.
+    $conversationTurns.on(
+        "click",
+        ".chat-saved-citation-button",
+        function () {
+            const $citation = $(this);
+            const rank = Number(
+                $citation.attr("data-citation-rank")
+            );
+
+            if (
+                !Number.isSafeInteger(rank) ||
+                rank < 1 ||
+                !currentUser ||
+                !Number.isSafeInteger(conversationId) ||
+                conversationId < 1
+            ) {
+                return;
+            }
+
+            const $message = $citation.closest(
+                ".chat-message-assistant"
+            );
+
+            const $button = $message.find(
+                ".chat-saved-evidence-button"
+            ).first();
+
+            const $panel = $message.find(
+                ".chat-saved-evidence"
+            ).first();
+
+            if (!$button.length || !$panel.length) {
+                return;
+            }
+
+            // Evidence already loaded: show it without
+            // another network request.
+            if ($panel.data("loaded") === true) {
+                $panel.prop("hidden", false);
+
+                $button
+                    .attr("aria-expanded", "true")
+                    .text("Hide sources");
+
+                selectSavedEvidenceRank($panel, rank);
+                return;
+            }
+
+            // A request may already be running.
+            // Remember the latest requested rank.
+            $panel.data("pendingCitationRank", rank);
+
+            if (!$button.prop("disabled")) {
+                $button.trigger("click");
+            }
+        }
+    );
 
     function startNewConversation() {
         conversationId = null;
@@ -413,9 +911,42 @@ $(function () {
         return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
     }
 
+    function filterRecentChats() {
+        const search = String(
+            $recentChatSearch.val() || ""
+        ).trim().toLocaleLowerCase();
+
+        const filtered = cachedRecentChats.filter(function (chat) {
+            return String(chat.title || "Untitled chat")
+                .toLocaleLowerCase()
+                .includes(search);
+        });
+
+        $recentChatList.find(".recent-chat").each(function () {
+            const id = Number($(this).attr("data-conversation-id"));
+            const visible = filtered.some(function (chat) {
+                return Number(chat.conversation_id) === id;
+            });
+            $(this).prop("hidden", !visible);
+        });
+
+        $recentChatsEmpty
+            .prop("hidden", filtered.length > 0)
+            .text(
+                cachedRecentChats.length === 0
+                    ? "No chats yet. Ask a question to start one."
+                    : "No conversations match your search."
+            );
+
+        $recentChatCount.text(
+            "Showing " + filtered.length +
+            " of " + cachedRecentChats.length + " conversations"
+        );
+    }
+
     function renderRecentChats(conversations) {
+        cachedRecentChats = conversations.slice();
         $recentChatList.empty();
-        $recentChatsEmpty.prop("hidden", conversations.length > 0);
         conversations.forEach(function (chat) {
             const id = Number(chat.conversation_id);
             const count = Number(chat.question_count) || 0;
@@ -437,6 +968,7 @@ $(function () {
             $item.append($open, $remove).appendTo($recentChatList);
         });
         renderConversation();
+        filterRecentChats();
     }
 
     function loadRecentChats() {
@@ -470,9 +1002,22 @@ $(function () {
                 const turns = [];
                 messages.forEach(function (message) {
                     if (message.role === "user") {
-                        turns.push({ question: message.content, answer: "" });
+                        turns.push({
+                            question: message.content,
+                            answer: "",
+                            responseId: null
+                        });
                     } else if (turns.length) {
-                        turns[turns.length - 1].answer = message.content;
+                        const turn = turns[turns.length - 1];
+                        turn.answer = message.content;
+
+                        const responseId = Number(message.response_id);
+                        turn.responseId = (
+                            message.response_id !== null &&
+                            message.response_id !== undefined &&
+                            Number.isSafeInteger(responseId) &&
+                            responseId > 0
+                        ) ? responseId : null;
                     }
                 });
                 conversationId = Number(response.data.conversation.conversation_id);
@@ -610,28 +1155,176 @@ $(function () {
 
     $refreshChatsButton.on("click", loadRecentChats);
 
+    $recentChatSearch.on("input", filterRecentChats);
+
+    $sidebarNewChatButton.on("click", function () {
+        if ($newConversationButton.prop("disabled")) {
+            return;
+        }
+        $newConversationButton.trigger("click");
+    });
+
     $recentChatList.on("click", ".recent-chat-open", function () {
         openConversation(Number($(this).data("conversationId")));
     });
 
+    // Phase 7.1.3: Confirm before archiving a saved conversation.
     $recentChatList.on("click", ".recent-chat-remove", function () {
+        if (
+            !chatArchiveDialog ||
+            chatArchiveDialog.open ||
+            chatArchiveRequestActive
+        ) {
+            return;
+        }
+
         const id = Number($(this).data("conversationId"));
+        const chat = cachedRecentChats.find(function (item) {
+            return Number(item.conversation_id) === id;
+        });
+
+        if (!Number.isInteger(id) || id <= 0 || !chat) {
+            return;
+        }
+
+        pendingChatArchiveId = id;
+        chatArchiveTrigger = this;
+
+        $chatArchiveTitle.text(chat.title || "Untitled chat");
+        $chatArchiveError.prop("hidden", true).text("");
+        $chatArchiveNotice.prop("hidden", true).text("");
+
+        chatArchiveDialog.showModal();
+        $cancelChatArchiveButton.trigger("focus");
+    });
+
+    function closeChatArchiveDialog() {
+        if (
+            chatArchiveDialog &&
+            chatArchiveDialog.open &&
+            !chatArchiveRequestActive
+        ) {
+            chatArchiveDialog.close();
+        }
+    }
+
+    $cancelChatArchiveButton.on("click", closeChatArchiveDialog);
+
+    if (chatArchiveDialog) {
+        $(chatArchiveDialog).on("cancel", function (event) {
+            if (chatArchiveRequestActive) {
+                event.preventDefault();
+            }
+        });
+
+        $(chatArchiveDialog).on("close", function () {
+            if (
+                chatArchiveTrigger &&
+                chatArchiveTrigger.isConnected
+            ) {
+                chatArchiveTrigger.focus();
+            } else {
+                $("#sidebarNewChatButton").trigger("focus");
+            }
+
+            if (!chatArchiveRequestActive) {
+                pendingChatArchiveId = null;
+            }
+
+            chatArchiveTrigger = null;
+        });
+    }
+
+    $confirmChatArchiveButton.on("click", function () {
+        if (
+            chatArchiveRequestActive ||
+            !chatArchiveDialog ||
+            !chatArchiveDialog.open ||
+            !Number.isInteger(pendingChatArchiveId) ||
+            pendingChatArchiveId <= 0
+        ) {
+            return;
+        }
+
+        const id = pendingChatArchiveId;
+        chatArchiveRequestActive = true;
+
+        $confirmChatArchiveButton
+            .prop("disabled", true)
+            .text("Removing...");
+
+        $cancelChatArchiveButton.prop("disabled", true);
+        $chatArchiveError.prop("hidden", true).text("");
+
+        function finishArchiveRequest() {
+            chatArchiveRequestActive = false;
+
+            $confirmChatArchiveButton
+                .prop("disabled", false)
+                .text("Remove conversation");
+
+            $cancelChatArchiveButton.prop("disabled", false);
+        }
+
         $.ajax({
             url: "api/conversations.php",
             method: "POST",
             contentType: "application/json; charset=utf-8",
             dataType: "json",
-            data: JSON.stringify({ action: "archive", conversation_id: id }),
-        }).always(function () {
+            data: JSON.stringify({
+                action: "archive",
+                conversation_id: id,
+            }),
+        })
+        .done(function (response) {
+            if (!response || response.ok !== true) {
+                finishArchiveRequest();
+
+                $chatArchiveError
+                    .text(
+                        "The server did not confirm removal. " +
+                        "Your conversation has not been removed " +
+                        "from this view."
+                    )
+                    .prop("hidden", false);
+
+                return;
+            }
+
+            finishArchiveRequest();
+            closeChatArchiveDialog();
+
             if (id === conversationId) {
                 startNewConversation();
                 resetAnswer();
             }
+
+            $chatArchiveNotice
+                .text("Conversation removed from recent chats.")
+                .prop("hidden", false);
+
+            // Refresh only after a confirmed archive.
             loadRecentChats();
+        })
+        .fail(function (xhr) {
+            finishArchiveRequest();
+
+            const serverMessage =
+                xhr &&
+                xhr.responseJSON &&
+                typeof xhr.responseJSON.error === "string"
+                    ? xhr.responseJSON.error
+                    : "The conversation could not be removed. " +
+                      "Please try again.";
+
+            $chatArchiveError
+                .text(serverMessage)
+                .prop("hidden", false);
         });
     });
 
     function showLoading(previewOnly) {
+        $askForm.attr("aria-busy", "true");
         $emptyState.prop("hidden", true);
         $errorState.prop("hidden", true).text("");
         $answerResult.prop("hidden", true);
@@ -643,6 +1336,7 @@ $(function () {
     }
 
     function showError(message) {
+        $askForm.attr("aria-busy", "false");
         $emptyState.prop("hidden", true);
         $loadingState.prop("hidden", true);
         $answerResult.prop("hidden", true);
@@ -650,6 +1344,7 @@ $(function () {
     }
 
     function resetAnswer() {
+        $askForm.attr("aria-busy", "false");
         $loadingState.prop("hidden", true);
         $errorState.prop("hidden", true).text("");
         $answerResult.prop("hidden", true);
@@ -743,7 +1438,19 @@ $(function () {
             }
 
             // Create the source card.
-            const $card = $("<article>").addClass("source-card");
+            const sourceRank = Number(
+                source.rank ?? index + 1
+            );
+
+            const $card = $("<article>")
+                .addClass("source-card");
+
+            if (
+                Number.isSafeInteger(sourceRank) &&
+                sourceRank > 0
+            ) {
+                $card.attr("data-source-rank", sourceRank);
+            }
             const $heading = $("<div>").addClass("source-heading");
 
             $("<strong>")
@@ -765,11 +1472,129 @@ $(function () {
         });
     }
 
+    // Phase 7.4.3: Link citations only when the current
+    // answer includes the matching ranked source evidence.
+    function renderClickableCitations(answer, sources) {
+        const text = String(answer || "");
+        const availableRanks = new Set();
+
+        if (Array.isArray(sources)) {
+            sources.forEach(function (source, index) {
+                const rank = Number(source.rank ?? index + 1);
+
+                if (
+                    Number.isSafeInteger(rank) &&
+                    rank > 0
+                ) {
+                    availableRanks.add(rank);
+                }
+            });
+        }
+
+        $answerText.empty();
+
+        const pattern = /\[(\d+)\]/g;
+        let cursor = 0;
+        let match;
+
+        while ((match = pattern.exec(text)) !== null) {
+            const before = text.slice(cursor, match.index);
+            const previousCharacter = text[match.index - 1] || "";
+            const rank = Number(match[1]);
+
+            $answerText.append(
+                document.createTextNode(before)
+            );
+
+            // Match the backend's standalone citation rule:
+            // no word character immediately before the marker.
+            const isStandalone =
+                !/[A-Za-z0-9_]/.test(previousCharacter);
+
+            if (
+                isStandalone &&
+                Number.isSafeInteger(rank) &&
+                availableRanks.has(rank)
+            ) {
+                $("<button>")
+                    .attr({
+                        type: "button",
+                        "data-citation-rank": rank,
+                        "aria-label": "Show retrieved source " + rank,
+                        title: "Inspect source " + rank
+                    })
+                    .addClass("chat-citation-button")
+                    .text(match[0])
+                    .appendTo($answerText);
+            } else {
+                $answerText.append(
+                    document.createTextNode(match[0])
+                );
+            }
+
+            cursor = pattern.lastIndex;
+        }
+
+        $answerText.append(
+            document.createTextNode(text.slice(cursor))
+        );
+    }
+
+    $answerText.on(
+        "click",
+        ".chat-citation-button",
+        function () {
+            const rank = Number(
+                $(this).attr("data-citation-rank")
+            );
+
+            if (
+                !Number.isSafeInteger(rank) ||
+                rank < 1
+            ) {
+                return;
+            }
+
+            const $source = $sourceList
+                .find(".source-card")
+                .filter(function () {
+                    return Number(
+                        $(this).attr("data-source-rank")
+                    ) === rank;
+                })
+                .first();
+
+            if (!$source.length) {
+                return;
+            }
+
+            $sourceList
+                .find(".source-card")
+                .removeClass("chat-source-selected");
+
+            $source.addClass("chat-source-selected");
+
+            const element = $source.get(0);
+
+            if (element) {
+                element.scrollIntoView({
+                    behavior: "smooth",
+                    block: "nearest"
+                });
+            }
+        }
+    );
+
     function showAnswer(result, previewOnly) {
+        $askForm.attr("aria-busy", "false");
         $loadingState.prop("hidden", true);
         $emptyState.prop("hidden", true);
         $errorState.prop("hidden", true).text("");
         $answerResult.prop("hidden", false);
+
+        $answerResult
+            .toggleClass("chat-live-answer", !previewOnly)
+            .toggleClass("chat-source-preview", previewOnly);
 
         $answerResultLabel.text(previewOnly ? "Source preview" : "Grounded answer");
         $answerText.text(previewOnly
@@ -795,6 +1620,13 @@ $(function () {
         }
 
         renderSources(result.sources);
+
+        if (!previewOnly) {
+            renderClickableCitations(
+                result.answer || "No answer was returned.",
+                result.sources
+            );
+        }
     }
 
     function chatConfiguration() {
@@ -856,9 +1688,17 @@ $(function () {
                 showAnswer(response.data, previewOnly);
                 if (!previewOnly && response.data.conversation_id) {
                     conversationId = Number(response.data.conversation_id);
+                    const responseId = Number(response.data.response_id);
+
                     conversationTurns.push({
                         question: response.data.question || question,
                         answer: response.data.answer || "",
+                        responseId: (
+                            response.data.response_id !== null &&
+                            response.data.response_id !== undefined &&
+                            Number.isSafeInteger(responseId) &&
+                            responseId > 0
+                        ) ? responseId : null,
                     });
                     latestTurnInAnswerPanel = true;
                     renderConversation();
@@ -878,7 +1718,38 @@ $(function () {
                     applySession({ user: null });
                     $accountUsername.trigger("focus");
                 }
-                const message = xhr.responseJSON?.error || "The answer could not be generated. Try again.";
+                const serverMessage = xhr.responseJSON?.error;
+                let message;
+
+                if (
+                    typeof serverMessage === "string" &&
+                    serverMessage.trim()
+                ) {
+                    message = serverMessage;
+                } else if (xhr.status === 0) {
+                    message =
+                        "Could not reach the server. Check the " +
+                        "connection and try again.";
+                } else if (xhr.status === 401) {
+                    message =
+                        "Your session may have expired. " +
+                        "Sign in and try again.";
+                } else if (xhr.status === 408 ||
+                           xhr.status === 504 ||
+                           status === "timeout") {
+                    message =
+                        "The request timed out. It may still be " +
+                        "processing on the server; check before retrying.";
+                } else if (previewOnly) {
+                    message =
+                        "Sources could not be previewed. " +
+                        "Check your settings and try again.";
+                } else {
+                    message =
+                        "The answer could not be generated. " +
+                        "Try again.";
+                }
+
                 showError(message);
             })
             .always(function () {
@@ -924,10 +1795,33 @@ $(function () {
         $questionInput.val($(this).data("question")).trigger("focus");
     });
 
+    // Phase 7.3: Enter submits, Shift+Enter inserts a newline.
+    // Ctrl+Enter remains supported for existing users.
     $questionInput.on("keydown", function (event) {
-        if (event.ctrlKey && event.key === "Enter") {
-            $askForm.trigger("submit");
+        if (
+            event.key !== "Enter" ||
+            event.shiftKey ||
+            event.isComposing ||
+            event.originalEvent?.isComposing
+        ) {
+            return;
         }
+
+        if (event.altKey || event.metaKey) {
+            return;
+        }
+
+        event.preventDefault();
+
+        // Never bypass the paid-generation safeguard.
+        if (
+            $askButton.prop("disabled") ||
+            $questionInput.prop("disabled")
+        ) {
+            return;
+        }
+
+        $askForm.trigger("submit");
     });
 
     function showDocumentMessage(message, type) {

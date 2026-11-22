@@ -223,11 +223,100 @@ require __DIR__ . '/includes/header.php';
 
                             <div class="recent-chats">
                                 <div class="recent-chats-heading">
-                                    <span class="preview-label">Recent chats</span>
+                                    <span class="preview-label">Conversations</span>
                                     <button class="btn btn-link btn-sm p-0" id="refreshChatsButton" type="button">Refresh</button>
                                 </div>
+                                <button type="button"
+                                        class="btn btn-primary chat-sidebar-new"
+                                        id="sidebarNewChatButton">
+                                    + New chat
+                                </button>
+                                <label class="chat-sidebar-search-label" for="recentChatSearch">
+                                    Search conversations
+                                </label>
+                                <input type="search"
+                                       class="form-control chat-sidebar-search"
+                                       id="recentChatSearch"
+                                       placeholder="Search saved chats..."
+                                       autocomplete="off">
+                                <p class="chat-sidebar-count"
+                                   id="recentChatCount"
+                                   role="status"
+                                   aria-live="polite"></p>
                                 <p class="recent-chats-empty" id="recentChatsEmpty">No chats yet. Ask a question to start one.</p>
                                 <ul class="recent-chat-list" id="recentChatList"></ul>
+                                <p id="chatArchiveNotice"
+                                   class="chat-archive-notice"
+                                   role="status"
+                                   aria-live="polite"
+                                   hidden></p>
+
+                                <!-- Phase 7.1.3: Conversation archive confirmation -->
+                                <dialog id="chatArchiveDialog"
+                                        class="chat-archive-dialog"
+                                        aria-labelledby="chatArchiveHeading"
+                                        aria-describedby="chatArchiveDescription">
+                                    <h3 id="chatArchiveHeading">Remove conversation?</h3>
+                                    <p id="chatArchiveTitle" class="chat-archive-title"></p>
+                                    <p id="chatArchiveDescription">
+                                        This conversation will disappear from your recent chats.
+                                        Its saved messages and answers remain in the database.
+                                    </p>
+                                    <p id="chatArchiveError"
+                                       class="chat-archive-error"
+                                       role="alert"
+                                       hidden></p>
+                                    <div class="chat-archive-actions">
+                                        <button type="button"
+                                                class="btn btn-outline-secondary"
+                                                id="cancelChatArchiveButton">
+                                            Cancel
+                                        </button>
+                                        <button type="button"
+                                                class="btn btn-danger"
+                                                id="confirmChatArchiveButton">
+                                            Remove conversation
+                                        </button>
+                                    </div>
+                                </dialog>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="answer-preview" id="answerPanel" aria-live="polite">
+                        <div class="conversation-thread" id="conversationThread" hidden>
+                            <div class="conversation-thread-header">
+                                <span class="preview-label" id="conversationStatus">Conversation in progress</span>
+                                <button class="btn btn-sm btn-outline-secondary" id="newConversationButton" type="button">
+                                    New conversation
+                                </button>
+                            </div>
+                            <p class="conversation-thread-help">Follow-up questions can refer to earlier answers, for example “What GPA do they need?”.</p>
+                            <ol class="conversation-turns" id="conversationTurns" aria-label="Conversation messages"></ol>
+                        </div>
+
+                        <div id="answerEmptyState">
+                            <span class="preview-label">Grounded answer</span>
+                            <p><?= $paidGenerationEnabled
+                                ? 'Submit a question to see a Gemini answer and the Metro State sources used.'
+                                : 'Paid model generation is paused, but you can still preview which sources the selected retrieval settings would use.' ?></p>
+                        </div>
+
+                        <div class="answer-loading" id="answerLoadingState" role="status" aria-atomic="true" hidden>
+                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                            <span id="answerLoadingText">Retrieving sources and generating an answer...</span>
+                        </div>
+
+                        <div class="alert alert-danger mb-0" id="answerErrorState" role="alert" hidden></div>
+
+                        <div id="answerResult" hidden>
+                            <span class="preview-label" id="answerResultLabel">Grounded answer</span>
+                            <p class="answer-copy" id="answerText"></p>
+                            <div class="answer-meta" id="answerMeta"></div>
+
+                            <div class="source-results">
+                                <h3>Retrieved sources</h3>
+                                <div class="source-list" id="sourceList"></div>
                             </div>
                         </div>
                     </div>
@@ -338,43 +427,6 @@ require __DIR__ . '/includes/header.php';
                         <?php endforeach; ?>
                     </div>
 
-                    <div class="answer-preview" id="answerPanel" aria-live="polite">
-                        <div class="conversation-thread" id="conversationThread" hidden>
-                            <div class="conversation-thread-header">
-                                <span class="preview-label" id="conversationStatus">Conversation in progress</span>
-                                <button class="btn btn-sm btn-outline-secondary" id="newConversationButton" type="button">
-                                    New conversation
-                                </button>
-                            </div>
-                            <p class="conversation-thread-help">Follow-up questions can refer to earlier answers, for example “What GPA do they need?”.</p>
-                            <ol class="conversation-turns" id="conversationTurns"></ol>
-                        </div>
-
-                        <div id="answerEmptyState">
-                            <span class="preview-label">Grounded answer</span>
-                            <p><?= $paidGenerationEnabled
-                                ? 'Submit a question to see a Gemini answer and the Metro State sources used.'
-                                : 'Paid model generation is paused, but you can still preview which sources the selected retrieval settings would use.' ?></p>
-                        </div>
-
-                        <div class="answer-loading" id="answerLoadingState" hidden>
-                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-                            <span id="answerLoadingText">Retrieving sources and generating an answer...</span>
-                        </div>
-
-                        <div class="alert alert-danger mb-0" id="answerErrorState" role="alert" hidden></div>
-
-                        <div id="answerResult" hidden>
-                            <span class="preview-label" id="answerResultLabel">Grounded answer</span>
-                            <p class="answer-copy" id="answerText"></p>
-                            <div class="answer-meta" id="answerMeta"></div>
-
-                            <div class="source-results">
-                                <h3>Retrieved sources</h3>
-                                <div class="source-list" id="sourceList"></div>
-                            </div>
-                        </div>
-                    </div>
                 </section>
 
                 <section class="panel documents-panel workspace-view" id="documents" data-view-panel="documents" hidden>

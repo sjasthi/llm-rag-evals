@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 require_once dirname(__DIR__) . '/config/database.php';
 require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/includes/ownership.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
 // Require an authenticated session before accessing application data.
-if (currentUser() === null) {
+// Every query below is limited to this user's own answers, runs and results.
+$evaluationUser = currentUser();
+if ($evaluationUser === null) {
     http_response_code(401);
     echo json_encode([
         'ok' => false,
@@ -187,6 +190,7 @@ function validatedRating(mixed $value, string $field): ?int
 try {
     $database = databaseConnection();
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    $userId = (int) $evaluationUser['user_id'];
 
     if ($method === 'GET') {
         $responseId = filter_input(INPUT_GET, 'response_id', FILTER_VALIDATE_INT);
@@ -213,10 +217,11 @@ try {
                    ON membership.dataset_id = run.dataset_id
                   AND membership.question_id = r.question_id
                  LEFT JOIN model_settings settings ON settings.setting_id = r.setting_id
-                 WHERE r.response_id = ?"
+                 WHERE r.response_id = ? AND r.user_id = ?"
             );
-            $statement->execute([$responseId]);
+            $statement->execute([$responseId, $userId]);
             $response = $statement->fetch();
+            // Another user's answer is reported exactly like a missing one.
             if (!$response) {
                 evaluationResponse(404, ['ok' => false, 'error' => 'Saved response was not found.']);
             }
@@ -286,6 +291,7 @@ try {
                     JOIN evaluation_runs global_run
                       ON global_run.run_id=global_response.run_id
                     WHERE global_result.status='completed' AND global_run.status='completed'
+                      AND global_run.user_id=? AND global_response.user_id=?
                     GROUP BY global_result.evaluator_id
                  ) global_scores ON global_scores.evaluator_id=er.evaluator_id
                  LEFT JOIN evaluator_result_attempts attempt
@@ -294,7 +300,7 @@ try {
                  GROUP BY er.result_id, e.evaluator_id
                  ORDER BY FIELD(JSON_UNQUOTE(JSON_EXTRACT(e.configuration_json, '$.layer')), 'baseline', 'advanced'), e.evaluator_id"
             );
-            $statement->execute([$responseId]);
+            $statement->execute([$userId, $userId, $responseId]);
             $results = normalizeJsonColumns($statement->fetchAll(), ['configuration_json', 'details_json']);
             foreach ($results as &$result) {
                 $result['layer'] = $result['configuration_json']['layer'] ?? 'baseline';
@@ -412,7 +418,7 @@ try {
         }
         unset($evaluator);
 
-        $runs = normalizeJsonColumns($database->query(
+        $runStatement = $database->prepare(
             "SELECT run.run_id, run.run_name, run.status, run.started_at, run.completed_at,
                     run.dataset_id, run.baseline_run_id, run.experiment_key,
                     run.corpus_variant_key, run.run_configuration_json,
@@ -469,10 +475,13 @@ try {
                  JOIN evaluator_definitions attempt_definition ON attempt_definition.evaluator_id=attempt.evaluator_id
                  GROUP BY response.run_id
              ) attempt_summary ON attempt_summary.run_id=run.run_id
+             WHERE run.user_id=?
              ORDER BY run.run_id DESC LIMIT 25"
-        )->fetchAll(), ['run_configuration_json']);
+        );
+        $runStatement->execute([$userId]);
+        $runs = normalizeJsonColumns($runStatement->fetchAll(), ['run_configuration_json']);
 
-        $responses = $database->query(
+        $responseStatement = $database->prepare(
             "SELECT response.response_id, response.run_id, response.question_id,
                      response.question_text, MAX(membership.display_order) AS dataset_question_number,
                      response.latency_ms, response.created_at,
@@ -500,12 +509,15 @@ try {
               AND membership.question_id=response.question_id
              LEFT JOIN (" . preferredEvaluatorResultsSql() . ") result ON result.response_id=response.response_id
              LEFT JOIN evaluator_definitions definition ON definition.evaluator_id=result.evaluator_id
+             WHERE response.user_id=? AND run.user_id=?
              GROUP BY response.response_id
              ORDER BY response.run_id DESC,
                       COALESCE(dataset_question_number, 2147483647),
                       response.response_id
              LIMIT 250"
-        )->fetchAll();
+        );
+        $responseStatement->execute([$userId, $userId]);
+        $responses = $responseStatement->fetchAll();
         $runQuestionNumbers = [];
         foreach ($responses as &$savedResponse) {
             $savedRunId = (int) $savedResponse['run_id'];
@@ -515,8 +527,8 @@ try {
         unset($savedResponse);
 
         // Standalone Chat and CLI responses are not associated
-        // with a structured evaluation test run.
-        $standaloneResponses = $database->query(
+        // with a structured evaluation test run. Only this user's are listed.
+        $standaloneStatement = $database->prepare(
             "SELECT
                  response.response_id,
                  response.run_id,
@@ -546,13 +558,15 @@ try {
                ON result.response_id=response.response_id
              LEFT JOIN evaluator_definitions definition
                ON definition.evaluator_id=result.evaluator_id
-             WHERE response.run_id IS NULL
+             WHERE response.run_id IS NULL AND response.user_id=?
              GROUP BY response.response_id
              ORDER BY response.response_id DESC
              LIMIT 100"
-        )->fetchAll();
+        );
+        $standaloneStatement->execute([$userId]);
+        $standaloneResponses = $standaloneStatement->fetchAll();
 
-        $metricSummaries = normalizeJsonColumns($database->query(
+        $metricStatement = $database->prepare(
             "SELECT definition.evaluator_key, definition.display_name, definition.family,
                     definition.dimension, definition.configuration_json, definition.is_local,
                     COALESCE(scores.result_count, 0) AS result_count,
@@ -591,6 +605,8 @@ try {
                         SUM(r.status='failed') AS failed_count,
                         AVG(CASE WHEN r.status='completed' THEN r.normalized_score END) AS mean_score
                  FROM (" . preferredEvaluatorResultsSql() . ") r
+                 JOIN rag_responses owned_response
+                   ON owned_response.response_id=r.response_id AND owned_response.user_id=?
                  JOIN evaluator_definitions d ON d.evaluator_id=r.evaluator_id
                  GROUP BY d.evaluator_key
              ) scores ON scores.evaluator_key=definition.evaluator_key
@@ -605,16 +621,20 @@ try {
                             AS unpriced_attempt_count
                  FROM evaluator_definitions d
                  JOIN evaluator_result_attempts a ON a.evaluator_id=d.evaluator_id
+                 JOIN rag_responses owned_response
+                   ON owned_response.response_id=a.response_id AND owned_response.user_id=?
                  GROUP BY d.evaluator_key
              ) attempt_summary ON attempt_summary.evaluator_key=definition.evaluator_key
              ORDER BY definition.evaluator_key"
-        )->fetchAll(), ['configuration_json']);
+        );
+        $metricStatement->execute([$userId, $userId]);
+        $metricSummaries = normalizeJsonColumns($metricStatement->fetchAll(), ['configuration_json']);
         foreach ($metricSummaries as &$summary) {
             $summary['layer'] = $summary['configuration_json']['layer'] ?? 'baseline';
         }
         unset($summary);
 
-        $runMetricSummaries = $database->query(
+        $runMetricStatement = $database->prepare(
             "SELECT run.run_id, run.run_name, definition.evaluator_key,
                     definition.display_name, definition.dimension,
                     COUNT(result.result_id) AS completed_count,
@@ -626,12 +646,14 @@ try {
              JOIN rag_responses response ON response.run_id=run.run_id
              JOIN (" . preferredEvaluatorResultsSql() . ") result ON result.response_id=response.response_id
              JOIN evaluator_definitions definition ON definition.evaluator_id=result.evaluator_id
-             WHERE result.status='completed'
+             WHERE result.status='completed' AND run.user_id=? AND response.user_id=?
              GROUP BY run.run_id, definition.evaluator_key, definition.display_name, definition.dimension
              ORDER BY run.run_id DESC, definition.evaluator_key"
-        )->fetchAll();
+        );
+        $runMetricStatement->execute([$userId, $userId]);
+        $runMetricSummaries = $runMetricStatement->fetchAll();
 
-        $matchedComparisons = $database->query(
+        $comparisonStatement = $database->prepare(
             "SELECT comparison_run.run_id AS comparison_run_id,
                     comparison_run.run_name AS comparison_run_name,
                     baseline_run.run_id AS baseline_run_id,
@@ -662,18 +684,27 @@ try {
              JOIN evaluator_definitions definition
                ON definition.evaluator_id=comparison_result.evaluator_id
              WHERE comparison_run.status='completed' AND baseline_run.status='completed'
+               AND comparison_run.user_id=? AND baseline_run.user_id=?
+               AND comparison_response.user_id=? AND baseline_response.user_id=?
              GROUP BY comparison_run.run_id, baseline_run.run_id, definition.evaluator_id
              ORDER BY comparison_run.run_id DESC, definition.evaluator_id"
-        )->fetchAll();
+        );
+        $comparisonStatement->execute([$userId, $userId, $userId, $userId]);
+        $matchedComparisons = $comparisonStatement->fetchAll();
 
         $layers = ['baseline' => 0, 'advanced' => 0];
         foreach ($evaluators as $evaluator) {
             $layer = (string) $evaluator['layer'];
             $layers[$layer] = ($layers[$layer] ?? 0) + 1;
         }
-        $humanReviewCount = (int) $database->query(
-            "SELECT COUNT(*) FROM human_reviews WHERE is_current=TRUE"
-        )->fetchColumn();
+        $reviewCountStatement = $database->prepare(
+            "SELECT COUNT(*)
+             FROM human_reviews review
+             JOIN rag_responses response ON response.response_id=review.response_id
+             WHERE review.is_current=TRUE AND response.user_id=?"
+        );
+        $reviewCountStatement->execute([$userId]);
+        $humanReviewCount = (int) $reviewCountStatement->fetchColumn();
         $findings = [
             'layers' => $layers,
             'human_review_count' => $humanReviewCount,
@@ -729,10 +760,11 @@ try {
         ];
         $database->beginTransaction();
         try {
+            // Only the answer's owner can review it; others get a 404.
             $statement = $database->prepare(
-                'SELECT 1 FROM rag_responses WHERE response_id=? FOR UPDATE'
+                'SELECT 1 FROM rag_responses WHERE response_id=? AND user_id=? FOR UPDATE'
             );
-            $statement->execute([$responseId]);
+            $statement->execute([$responseId, $userId]);
             if (!$statement->fetchColumn()) {
                 $database->rollBack();
                 evaluationResponse(404, ['ok' => false, 'error' => 'Saved response was not found.']);

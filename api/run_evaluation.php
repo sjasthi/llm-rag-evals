@@ -10,9 +10,11 @@ loadEnv();
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/includes/ownership.php';
 
 // Phase 4: Require an authenticated user.
-if (currentUser() === null) {
+$evaluationUser = currentUser();
+if ($evaluationUser === null) {
     http_response_code(401);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
@@ -70,7 +72,7 @@ function runEvaluationUserError(string $technicalError): string
     return $fallback;
 }
 
-function runEvaluationCommand(array $payload): array
+function runEvaluationCommand(array $payload, int $userId): array
 {
     $runId = filter_var($payload['run_id'] ?? null, FILTER_VALIDATE_INT);
     $responseId = isset($payload['response_id'])
@@ -92,6 +94,16 @@ function runEvaluationCommand(array $payload): array
             'ok' => false,
             'error' => 'Choose a saved run, a response limit from 1 to 100, and a supported action.',
         ]);
+    }
+
+    // Only the run's owner can score it, and a single answer must belong to
+    // that run. Another user's run or answer is reported like a missing one.
+    $database = databaseConnection();
+    $ownsTarget = $responseId === null
+        ? userOwnsRun($database, (int) $runId, $userId)
+        : userOwnsRunResponse($database, (int) $runId, (int) $responseId, $userId);
+    if (!$ownsTarget) {
+        runEvaluationResponse(404, ['ok' => false, 'error' => 'The saved run was not found.']);
     }
 
     $includeAdvanced = filter_var(
@@ -203,7 +215,7 @@ try {
     if (!is_array($payload)) {
         runEvaluationResponse(400, ['ok' => false, 'error' => 'Request body must contain a JSON object.']);
     }
-    runEvaluationResponse(200, ['ok' => true, 'data' => runEvaluationCommand($payload)]);
+    runEvaluationResponse(200, ['ok' => true, 'data' => runEvaluationCommand($payload, (int) $evaluationUser['user_id'])]);
 } catch (Throwable $error) {
     testRunDiagnosticLog('saved_answer_scoring_exception', [
         'exception_type' => get_class($error),

@@ -134,6 +134,8 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     setting_id BIGINT UNSIGNED NOT NULL,
     dataset_id BIGINT UNSIGNED NULL,
     baseline_run_id BIGINT UNSIGNED NULL,
+    -- Owner of the run; NULL for runs created before accounts (see migration 011).
+    user_id BIGINT UNSIGNED NULL,
     run_name VARCHAR(160) NOT NULL,
     experiment_key VARCHAR(120) NULL,
     corpus_variant_key VARCHAR(120) NOT NULL DEFAULT 'full_current',
@@ -143,6 +145,7 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     completed_at TIMESTAMP NULL,
     notes TEXT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_evaluation_runs_user (user_id, run_id),
     CONSTRAINT fk_evaluation_runs_setting
         FOREIGN KEY (setting_id) REFERENCES model_settings (setting_id),
     CONSTRAINT fk_evaluation_runs_dataset
@@ -156,6 +159,8 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
 CREATE TABLE IF NOT EXISTS rag_responses (
     response_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     run_id BIGINT UNSIGNED NULL,
+    -- Owner of the answer; NULL for answers saved before accounts (see migration 011).
+    user_id BIGINT UNSIGNED NULL,
     setting_id BIGINT UNSIGNED NULL,
     question_id BIGINT UNSIGNED NULL,
     question_text TEXT NOT NULL,
@@ -173,6 +178,7 @@ CREATE TABLE IF NOT EXISTS rag_responses (
     generation_metadata_json JSON NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_rag_responses_run_question (run_id, question_id),
+    KEY idx_rag_responses_user (user_id, run_id, response_id),
     CONSTRAINT fk_rag_responses_run
         FOREIGN KEY (run_id) REFERENCES evaluation_runs (run_id)
         ON DELETE SET NULL,

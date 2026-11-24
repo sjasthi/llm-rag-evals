@@ -169,3 +169,40 @@ Tests: `tests/test_conversation_memory.py` (provider-free tests, including
 MySQL round trips and ownership checks) and `tests/test_user_accounts_http.py`
 (end-to-end tests through the real PHP endpoints with two users; retrieval and
 Gemini are replaced by `tests/fixtures/fake_answer_runner.py`).
+
+## Evaluation data ownership
+
+Accounts also separate evaluation data. `rag_responses.user_id` and
+`evaluation_runs.user_id` record the account that saved each answer and test
+run (`rag/answer.py` and `rag/run_evaluation.py` set them from the signed-in
+user that the PHP endpoint passes with `--user-id`).
+
+Every evaluation endpoint filters by the signed-in user in SQL, not only in the
+browser:
+
+| Endpoint | Enforcement |
+| --- | --- |
+| `api/evaluations.php` GET | Runs, saved answers, standalone Chat answers, metric summaries, run summaries, comparisons and review counts include only the user's rows. `?response_id=` returns 404 unless the user owns the answer. |
+| `api/evaluations.php` POST `human_review` | 404 unless the user owns the answer. |
+| `api/evaluate_standalone.php` | Citation scoring returns 404 unless the user owns the answer. |
+| `api/run_evaluation.php` | 404 unless the user owns the run (and the answer belongs to that run). |
+| `api/test_runs.php` | New runs belong to the user; a comparison baseline must be the user's own run. |
+| `api/exports.php` | 404 unless the user owns the run. |
+
+Another user's record is reported exactly like a missing one, so IDs cannot be
+probed. The shared Gold Standard questions and evaluator definitions are not
+user data and stay visible to every account.
+
+Migration `011_evaluation_ownership.sql` assigns owners without deleting
+anything: Chat answers go to their conversation's owner and run answers to the
+run's owner. Answers and runs saved before accounts stay unowned and hidden. To
+give that history to one account:
+
+```bash
+python rag/claim_evaluations.py --username <name> --dry-run   # count
+python rag/claim_evaluations.py --username <name>             # assign
+```
+
+`tests/test_user_accounts_http.py` signs in two accounts and checks that
+neither can list, open, review, score, compare against or export the other's
+records, and that the migration and claim command keep every row.

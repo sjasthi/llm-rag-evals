@@ -9,9 +9,11 @@ loadEnv();
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/includes/ownership.php';
 
 // Phase 4: Require an authenticated user.
-if (currentUser() === null) {
+$standaloneUser = currentUser();
+if ($standaloneUser === null) {
     http_response_code(401);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
@@ -129,6 +131,15 @@ try {
         standaloneResponse(422, [
             'ok' => false,
             'error' => 'Provide a valid response_id and action=preflight or execute.',
+        ]);
+    }
+
+    // Citation scoring only runs on the signed-in user's own saved answers.
+    // Another user's answer is reported exactly like a missing one.
+    if (!userOwnsResponse(databaseConnection(), (int) $responseId, (int) $standaloneUser['user_id'])) {
+        standaloneResponse(404, [
+            'ok' => false,
+            'error' => 'Saved response was not found.',
         ]);
     }
 

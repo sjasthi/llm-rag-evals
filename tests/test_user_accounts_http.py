@@ -335,6 +335,267 @@ class UserAccountHttpTests(unittest.TestCase):
         self.assertEqual([], andrew.chats()[1]["data"]["conversations"])
         self.assertEqual(404, andrew.ask("Is it online?", chat_id)[0])
 
+    # --- Evaluation data is isolated by account (Improvement 1) ---------------
+
+    def saved_response_id(self, browser: Browser, question: str) -> int:
+        """Ask in Chat and return the rag_responses id saved for the answer."""
+        status, body = browser.ask(question)
+        self.assertEqual(200, status, body)
+        conversation_id = body["data"]["conversation_id"]
+        _, thread = browser.messages(conversation_id)
+        response_ids = [m["response_id"] for m in thread["data"]["messages"] if m["response_id"]]
+        self.assertEqual(1, len(response_ids), thread)
+        return int(response_ids[0])
+
+    def owned_run(self, browser_username: str, setting_from_response: int) -> tuple[int, int]:
+        """Store a completed test run with one saved answer for an account."""
+        with database_connection(load_settings()) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT user_id FROM users WHERE username=%s", (browser_username,))
+                user_id = int(cursor.fetchone()[0])
+                cursor.execute(
+                    "SELECT setting_id FROM rag_responses WHERE response_id=%s",
+                    (setting_from_response,),
+                )
+                setting_id = int(cursor.fetchone()[0])
+                cursor.execute(
+                    "INSERT INTO evaluation_runs (setting_id, user_id, run_name, status, started_at, completed_at) "
+                    "VALUES (%s, %s, %s, 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    (setting_id, user_id, f"isolation run {self.marker}"),
+                )
+                run_id = int(cursor.lastrowid)
+                cursor.execute(
+                    "INSERT INTO rag_responses (run_id, user_id, setting_id, question_text, answer_text, retrieval_method) "
+                    "VALUES (%s, %s, %s, 'Run question?', 'Run answer.', 'chroma_vector')",
+                    (run_id, user_id, setting_id),
+                )
+                response_id = int(cursor.lastrowid)
+            connection.commit()
+        self.addCleanup(self.delete_run, run_id)
+        return run_id, response_id
+
+    @staticmethod
+    def delete_run(run_id: int) -> None:
+        with database_connection(load_settings()) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM rag_responses WHERE run_id=%s", (run_id,))
+                cursor.execute("DELETE FROM evaluation_runs WHERE run_id=%s", (run_id,))
+            connection.commit()
+
+    def review(self, browser: Browser, response_id: int):
+        return browser.call(
+            "api/evaluations.php",
+            {
+                "action": "human_review",
+                "response_id": response_id,
+                "reviewer_alias": "tester",
+                "overall_decision": "acceptable",
+            },
+        )
+
+    def test_evaluation_lists_only_show_the_signed_in_users_data(self) -> None:
+        chris = self.signed_in("evalchris", "Chris")
+        neha = self.signed_in("evalneha", "Neha")
+        chris_answer = self.saved_response_id(chris, "What are the first-year admission requirements?")
+        neha_answer = self.saved_response_id(neha, "When is the tuition payment deadline?")
+        chris_run, chris_run_answer = self.owned_run(self.name("evalchris"), chris_answer)
+        self.assertEqual(201, self.review(chris, chris_answer)[0])
+
+        status, chris_view = chris.call("api/evaluations.php")
+        self.assertEqual(200, status, chris_view)
+        data = chris_view["data"]
+        self.assertIn(chris_answer, [int(r["response_id"]) for r in data["standaloneResponses"]])
+        self.assertNotIn(neha_answer, [int(r["response_id"]) for r in data["standaloneResponses"]])
+        self.assertIn(chris_run, [int(r["run_id"]) for r in data["runs"]])
+        self.assertIn(chris_run_answer, [int(r["response_id"]) for r in data["responses"]])
+        self.assertEqual(1, data["findings"]["human_review_count"])
+
+        status, neha_view = neha.call("api/evaluations.php")
+        self.assertEqual(200, status, neha_view)
+        data = neha_view["data"]
+        self.assertEqual([neha_answer], [int(r["response_id"]) for r in data["standaloneResponses"]])
+        self.assertEqual([], data["runs"])
+        self.assertEqual([], data["responses"])
+        self.assertEqual([], data["findings"]["run_metric_summaries"])
+        self.assertEqual(0, data["findings"]["human_review_count"])
+        listing = json.dumps(neha_view)
+        self.assertNotIn("first-year admission requirements", listing)
+        self.assertNotIn(f"isolation run {self.marker}", listing)
+
+    def test_users_cannot_open_score_review_or_export_another_users_records(self) -> None:
+        chris = self.signed_in("evalchris2", "Chris")
+        neha = self.signed_in("evalneha2", "Neha")
+        chris_answer = self.saved_response_id(chris, "What are the first-year admission requirements?")
+        neha_answer = self.saved_response_id(neha, "When is the tuition payment deadline?")
+        chris_run, chris_run_answer = self.owned_run(self.name("evalchris2"), chris_answer)
+
+        # Each user can open their own saved answers.
+        self.assertEqual(200, chris.call(f"api/evaluations.php?response_id={chris_answer}")[0])
+        self.assertEqual(200, chris.call(f"api/evaluations.php?response_id={chris_run_answer}")[0])
+        self.assertEqual(200, neha.call(f"api/evaluations.php?response_id={neha_answer}")[0])
+
+        # Changing an ID in the request never reaches another user's data, and
+        # the answer is the same 404 as for an ID that does not exist.
+        missing = neha.call("api/evaluations.php?response_id=999999999")
+        for response_id in (chris_answer, chris_run_answer):
+            status, body = neha.call(f"api/evaluations.php?response_id={response_id}")
+            self.assertEqual((404, missing[1]), (status, body))
+            self.assertEqual(404, self.review(neha, response_id)[0])
+            status, body = neha.call(
+                "api/evaluate_standalone.php", {"action": "preflight", "response_id": response_id}
+            )
+            self.assertEqual(404, status, body)
+        self.assertEqual(404, neha.call(f"api/exports.php?run_id={chris_run}&format=json")[0])
+        self.assertEqual(404, neha.call(f"api/exports.php?run_id={chris_run}&format=csv")[0])
+        status, body = neha.call(
+            "api/run_evaluation.php", {"action": "preflight", "run_id": chris_run, "limit": 1}
+        )
+        self.assertEqual(404, status, body)
+        status, body = neha.call(
+            "api/run_evaluation.php",
+            {"action": "evaluate", "run_id": chris_run, "response_id": chris_run_answer, "limit": 1},
+        )
+        self.assertEqual(404, status, body)
+        status, body = neha.call(
+            "api/test_runs.php",
+            {
+                "action": "preflight",
+                "dataset_id": 1,
+                "name": "Borrowed baseline",
+                "question_ids": [1],
+                "retrieval_method": "chroma_vector",
+                "top_k": 3,
+                "temperature": 0.0,
+                "top_p": 0.9,
+                "model": "gemini-2.5-flash",
+                "experiment_mode": "comparison",
+                "experiment_key": "borrowed",
+                "baseline_run_id": chris_run,
+                "controlled_variable": "top_k",
+                "change_from_baseline": "top_k 3 instead of 5",
+            },
+        )
+        self.assertEqual(404, status, body)
+
+        # A response ID that belongs to a different run is rejected too.
+        status, body = chris.call(
+            "api/run_evaluation.php",
+            {"action": "preflight", "run_id": chris_run, "response_id": chris_answer, "limit": 1},
+        )
+        self.assertEqual(404, status, body)
+
+        # Nothing was written to Chris's records.
+        with database_connection(load_settings()) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM human_reviews WHERE response_id IN (%s, %s)",
+                    (chris_answer, chris_run_answer),
+                )
+                self.assertEqual(0, int(cursor.fetchone()[0]))
+
+        # The owner can still export their own run.
+        status, export = chris.call(f"api/exports.php?run_id={chris_run}&format=json")
+        self.assertEqual(200, status, export)
+        self.assertEqual([chris_run_answer], [int(r["response_id"]) for r in export["responses"]])
+
+
+@unittest.skipUnless(DATABASE_READY, "MySQL with the current schema is required")
+class EvaluationOwnershipMigrationTests(unittest.TestCase):
+    """Migration 011 and rag/claim_evaluations.py keep history without deleting it."""
+
+    def setUp(self) -> None:
+        self.marker = uuid4().hex[:10]
+        self.settings = load_settings()
+
+    def tearDown(self) -> None:
+        with database_connection(self.settings) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM rag_responses WHERE question_text LIKE %s", (f"%{self.marker}",)
+                )
+                cursor.execute("DELETE FROM evaluation_runs WHERE run_name LIKE %s", (f"%{self.marker}",))
+                cursor.execute("DELETE FROM users WHERE username LIKE %s", (f"%{self.marker}",))
+            connection.commit()
+
+    def test_migration_assigns_provable_owners_and_claim_keeps_the_rest(self) -> None:
+        sys.path.insert(0, str(PROJECT_ROOT / "rag"))
+        from claim_evaluations import claim_unowned_evaluations  # noqa: PLC0415
+        from database import _execute_sql_script  # noqa: PLC0415
+
+        with database_connection(self.settings) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO users (username, display_name, password_hash) VALUES (%s, 'Owner', 'x')",
+                    (f"owner_{self.marker}",),
+                )
+                owner = int(cursor.lastrowid)
+                cursor.execute(
+                    "INSERT INTO conversations (user_id, title) VALUES (%s, %s)", (owner, self.marker)
+                )
+                conversation = int(cursor.lastrowid)
+                cursor.execute("SELECT setting_id FROM model_settings LIMIT 1")
+                row = cursor.fetchone()
+                if row is None:
+                    self.skipTest("model_settings has no rows")
+                setting = int(row[0])
+
+                def legacy_answer(label: str, run_id: int | None = None) -> int:
+                    cursor.execute(
+                        "INSERT INTO rag_responses (run_id, setting_id, question_text, answer_text, retrieval_method) "
+                        "VALUES (%s, %s, %s, 'answer', 'chroma_vector')",
+                        (run_id, setting, f"{label} {self.marker}"),
+                    )
+                    return int(cursor.lastrowid)
+
+                chat_answer = legacy_answer("chat")
+                cursor.execute(
+                    "INSERT INTO conversation_messages (conversation_id, role, content, sequence_number, response_id) "
+                    "VALUES (%s, 'assistant', 'answer', 1, %s)",
+                    (conversation, chat_answer),
+                )
+                cursor.execute(
+                    "INSERT INTO evaluation_runs (setting_id, user_id, run_name) VALUES (%s, %s, %s)",
+                    (setting, owner, f"owned {self.marker}"),
+                )
+                owned_run_answer = legacy_answer("owned run", int(cursor.lastrowid))
+                cursor.execute(
+                    "INSERT INTO evaluation_runs (setting_id, run_name) VALUES (%s, %s)",
+                    (setting, f"legacy {self.marker}"),
+                )
+                legacy_run = int(cursor.lastrowid)
+                legacy_run_answer = legacy_answer("legacy run", legacy_run)
+                orphan_answer = legacy_answer("cli")
+            connection.commit()
+
+            migration = PROJECT_ROOT / "database" / "migrations" / "011_evaluation_ownership.sql"
+            _execute_sql_script(connection, migration.read_text(encoding="utf-8"))
+            connection.commit()
+
+            def owners() -> dict[int, int | None]:
+                with connection.cursor() as cursor:
+                    ids = (chat_answer, owned_run_answer, legacy_run_answer, orphan_answer)
+                    cursor.execute(
+                        "SELECT response_id, user_id FROM rag_responses WHERE response_id IN (%s,%s,%s,%s)",
+                        ids,
+                    )
+                    return {int(r[0]): (None if r[1] is None else int(r[1])) for r in cursor.fetchall()}
+
+            self.assertEqual(
+                {chat_answer: owner, owned_run_answer: owner, legacy_run_answer: None, orphan_answer: None},
+                owners(),
+            )
+
+            claimed = claim_unowned_evaluations(connection, owner)
+            self.assertGreaterEqual(claimed["runs"], 1)
+            self.assertGreaterEqual(claimed["responses"], 2)
+            self.assertEqual(
+                {chat_answer: owner, owned_run_answer: owner, legacy_run_answer: owner, orphan_answer: owner},
+                owners(),
+            )
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT user_id FROM evaluation_runs WHERE run_id=%s", (legacy_run,))
+                self.assertEqual(owner, int(cursor.fetchone()[0]))
+
 
 if __name__ == "__main__":
     unittest.main()

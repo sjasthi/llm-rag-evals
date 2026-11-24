@@ -160,6 +160,14 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                 "conversations": (
                     ("user_id", "BIGINT UNSIGNED NULL AFTER conversation_id"),
                 ),
+                # Evaluation ownership: each saved answer and test run belongs
+                # to the account that created it (migration 011 backfills).
+                "rag_responses": (
+                    ("user_id", "BIGINT UNSIGNED NULL AFTER run_id"),
+                ),
+                "evaluation_runs": (
+                    ("user_id", "BIGINT UNSIGNED NULL AFTER baseline_run_id"),
+                ),
                 "model_settings": (
                     (
                         "chunking_strategy",
@@ -210,12 +218,39 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                     "ALTER TABLE conversations ADD KEY idx_conversations_user_status_updated "
                     "(user_id, status, updated_at)"
                 )
+            ownership_indexes = (
+                ("rag_responses", "idx_rag_responses_user", "(user_id, run_id, response_id)"),
+                ("evaluation_runs", "idx_evaluation_runs_user", "(user_id, run_id)"),
+            )
+            for table_name, index_name, columns in ownership_indexes:
+                cursor.execute(
+                    """SELECT COUNT(*) FROM information_schema.statistics
+                       WHERE table_schema=%s AND table_name=%s AND index_name=%s""",
+                    (settings.db_name, table_name, index_name),
+                )
+                row = cursor.fetchone()
+                if not row or int(row[0]) == 0:
+                    cursor.execute(f"ALTER TABLE {table_name} ADD KEY {index_name} {columns}")
             v2_constraints = v2_constraints + (
                 (
                     "conversations",
                     "fk_conversations_user",
                     "ALTER TABLE conversations ADD CONSTRAINT fk_conversations_user "
                     "FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE",
+                ),
+                # Deleting an account keeps its research data; the rows become
+                # unowned and are hidden from every account.
+                (
+                    "rag_responses",
+                    "fk_rag_responses_user",
+                    "ALTER TABLE rag_responses ADD CONSTRAINT fk_rag_responses_user "
+                    "FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE SET NULL",
+                ),
+                (
+                    "evaluation_runs",
+                    "fk_evaluation_runs_user",
+                    "ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_user "
+                    "FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE SET NULL",
                 ),
             )
             for table_name, constraint_name, statement in v2_constraints:
@@ -841,6 +876,7 @@ def save_grounded_response(
     contexts: Sequence[Any],
     question_id: int | None = None,
     run_id: int | None = None,
+    user_id: int | None = None,
     retrieval_method: str = "chroma_vector",
     evaluation_snapshot: dict[str, Any] | None = None,
     snapshot_provenance: str = "not_applicable",
@@ -859,15 +895,16 @@ def save_grounded_response(
             cursor.execute(
                 """
                 INSERT INTO rag_responses (
-                    run_id, setting_id, question_id, question_text, answer_text,
+                    run_id, user_id, setting_id, question_id, question_text, answer_text,
                     retrieval_method, latency_ms, estimated_cost,
                     evaluation_snapshot_json, snapshot_provenance, code_version,
                     input_tokens, output_tokens, total_tokens,
                     generation_cost_status, generation_metadata_json
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     run_id,
+                    user_id,
                     setting_id,
                     question_id,
                     question,

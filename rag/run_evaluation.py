@@ -113,7 +113,16 @@ def create_run(
     allow_unknown_cost: bool = False,
     max_responses: int = 5,
     max_estimated_cost: float = 1.0,
+    user_id: int | None = None,
 ) -> dict[str, object]:
+    """Generate and score one saved test run.
+
+    ``user_id`` is the account that owns the run and its saved answers; a
+    comparison baseline must belong to the same account. ``None`` is a trusted
+    CLI caller and creates an unowned run.
+    """
+    if user_id is not None and user_id <= 0:
+        raise ValueError("user_id must be a positive integer")
     if dataset_id <= 0:
         raise ValueError("dataset_id must be greater than zero")
     if not name.strip():
@@ -206,8 +215,9 @@ def create_run(
                                WHERE response.run_id=run.run_id) AS response_count
                        FROM evaluation_runs run
                        JOIN model_settings settings ON settings.setting_id=run.setting_id
-                       WHERE run.run_id=%s""",
-                    (baseline_run_id,),
+                       WHERE run.run_id=%s
+                         AND (%s IS NULL OR run.user_id=%s)""",
+                    (baseline_run_id, user_id, user_id),
                 )
                 baseline = cursor.fetchone()
                 if not baseline:
@@ -427,11 +437,11 @@ def create_run(
         with connection.cursor() as cursor:
             cursor.execute(
                 """INSERT INTO evaluation_runs
-                   (setting_id, dataset_id, baseline_run_id, run_name, experiment_key,
+                   (setting_id, dataset_id, baseline_run_id, user_id, run_name, experiment_key,
                     corpus_variant_key, run_configuration_json, status, started_at, notes)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,'running',CURRENT_TIMESTAMP,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'running',CURRENT_TIMESTAMP,%s)""",
                 (
-                    setting_id, dataset_id, baseline_run_id, name, experiment_key,
+                    setting_id, dataset_id, baseline_run_id, user_id, name, experiment_key,
                     corpus_variant_key, json.dumps(run_configuration),
                     "Reviewed questions only; one saved answer/context set per question.",
                 ),
@@ -448,6 +458,7 @@ def create_run(
                 top_k=selected_top_k,
                 question_id=int(question["question_id"]),
                 run_id=run_id,
+                user_id=user_id,
                 retrieval_method=retrieval_method,
                 categories=normalized_categories,
                 evaluation_snapshot=evaluation_snapshot(question, dataset),
@@ -526,6 +537,11 @@ def main() -> None:
         action="store_true",
         help="Print the frozen configuration and cost preflight without saving a run or calling Gemini.",
     )
+    parser.add_argument(
+        "--user-id",
+        type=int,
+        help="Account that owns the run (set by the PHP endpoint).",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
     if args.limit is not None and args.limit <= 0:
@@ -565,6 +581,7 @@ def main() -> None:
             allow_unknown_cost=args.allow_unknown_cost,
             max_responses=args.max_responses,
             max_estimated_cost=args.max_estimated_cost,
+            user_id=args.user_id,
         )
     except ValueError as error:
         parser.error(str(error))

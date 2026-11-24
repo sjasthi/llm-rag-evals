@@ -10,9 +10,11 @@ loadEnv();
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 require_once dirname(__DIR__) . '/includes/auth.php';
+require_once dirname(__DIR__) . '/includes/ownership.php';
 
 // Phase 4: Require an authenticated user.
-if (currentUser() === null) {
+$testRunUser = currentUser();
+if ($testRunUser === null) {
     http_response_code(401);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
@@ -68,7 +70,7 @@ function testRunUserError(string $technicalError): string
     return $fallback;
 }
 
-function runTestCommand(array $payload): array
+function runTestCommand(array $payload, int $userId): array
 {
     $action = (string) ($payload['action'] ?? '');
     $datasetId = filter_var($payload['dataset_id'] ?? null, FILTER_VALIDATE_INT);
@@ -185,6 +187,10 @@ function runTestCommand(array $payload): array
         if ($changeFromBaseline === '' || strlen($changeFromBaseline) > 500) {
             testRunResponse(422, ['ok' => false, 'error' => 'The comparison must describe its one changed setting.']);
         }
+        // A comparison can only build on the user's own baseline run.
+        if (!userOwnsRun(databaseConnection(), $baselineRunId, $userId)) {
+            testRunResponse(404, ['ok' => false, 'error' => 'The selected baseline run was not found.']);
+        }
     }
 
     $root = projectRoot();
@@ -217,6 +223,9 @@ function runTestCommand(array $payload): array
         (string) $maxResponses,
         '--max-estimated-cost',
         (string) envValue('MAX_GENERATION_COST', '0.25'),
+        // The new run and its saved answers belong to the signed-in user.
+        '--user-id',
+        (string) $userId,
         '--json',
     ];
     if ($experimentKey !== '') {
@@ -310,7 +319,7 @@ try {
     if (!is_array($payload)) {
         testRunResponse(400, ['ok' => false, 'error' => 'Request body must contain a JSON object.']);
     }
-    testRunResponse(200, ['ok' => true, 'data' => runTestCommand($payload)]);
+    testRunResponse(200, ['ok' => true, 'data' => runTestCommand($payload, (int) $testRunUser['user_id'])]);
 }  catch (Throwable $error) {
     testRunDiagnosticLog('php_endpoint_exception', [
         'exception_type' => get_class($error),

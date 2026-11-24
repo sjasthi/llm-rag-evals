@@ -6,7 +6,8 @@ require_once dirname(__DIR__) . '/config/database.php';
 require_once dirname(__DIR__) . '/includes/auth.php';
 
 // Phase 4: Require an authenticated user.
-if (currentUser() === null) {
+$exportUser = currentUser();
+if ($exportUser === null) {
     http_response_code(401);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
@@ -64,7 +65,8 @@ function exportFilename(array $run, string $extension): string
     return sprintf('%s-run-%d.%s', substr($slug, 0, 70), (int) $run['run_id'], $extension);
 }
 
-function loadRunExport(PDO $database, int $runId): ?array
+/** Exports one run, or returns null when it is missing or owned by another user. */
+function loadRunExport(PDO $database, int $runId, int $userId): ?array
 {
     $statement = $database->prepare(
         "SELECT run.run_id, run.run_name, run.status, run.baseline_run_id,
@@ -78,9 +80,9 @@ function loadRunExport(PDO $database, int $runId): ?array
          FROM evaluation_runs run
          JOIN model_settings settings ON settings.setting_id=run.setting_id
          LEFT JOIN evaluation_datasets dataset ON dataset.dataset_id=run.dataset_id
-         WHERE run.run_id=?"
+         WHERE run.run_id=? AND run.user_id=?"
     );
-    $statement->execute([$runId]);
+    $statement->execute([$runId, $userId]);
     $run = $statement->fetch();
     if (!$run) {
         return null;
@@ -99,10 +101,10 @@ function loadRunExport(PDO $database, int $runId): ?array
          FROM rag_responses response
          LEFT JOIN evaluation_question_memberships membership
            ON membership.dataset_id=? AND membership.question_id=response.question_id
-         WHERE response.run_id=?
+         WHERE response.run_id=? AND response.user_id=?
          ORDER BY COALESCE(membership.display_order, 2147483647), response.response_id"
     );
-    $statement->execute([(int) ($run['dataset_id'] ?? 0), $runId]);
+    $statement->execute([(int) ($run['dataset_id'] ?? 0), $runId, $userId]);
     $responses = decodeExportColumns(
         $statement->fetchAll(),
         ['generation_metadata_json', 'evaluation_snapshot_json']
@@ -224,10 +226,12 @@ function loadRunExport(PDO $database, int $runId): ?array
          JOIN evaluator_definitions definition ON definition.evaluator_id=comparison_result.evaluator_id
          WHERE comparison_run.status='completed' AND baseline_run.status='completed'
            AND (comparison_run.run_id=? OR baseline_run.run_id=?)
+           AND comparison_run.user_id=? AND baseline_run.user_id=?
+           AND comparison_response.user_id=? AND baseline_response.user_id=?
          GROUP BY comparison_run.run_id, baseline_run.run_id, definition.evaluator_id
          ORDER BY comparison_run.run_id DESC, definition.evaluator_id"
     );
-    $statement->execute([$runId, $runId]);
+    $statement->execute([$runId, $runId, $userId, $userId, $userId, $userId]);
 
     return [
         'export_schema_version' => EXPORT_SCHEMA_VERSION,
@@ -345,7 +349,7 @@ if (!$runId || !in_array($format, ['json', 'csv'], true)) {
 }
 
 try {
-    $export = loadRunExport(databaseConnection(), (int) $runId);
+    $export = loadRunExport(databaseConnection(), (int) $runId, (int) $exportUser['user_id']);
     if ($export === null) {
         exportError(404, 'The saved run was not found.');
     }

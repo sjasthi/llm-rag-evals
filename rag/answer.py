@@ -230,6 +230,7 @@ def answer_question(
                     contexts=contexts,
                     question_id=question_id,
                     run_id=run_id,
+                    user_id=user_id,
                     retrieval_method=retrieval_method,
                     evaluation_snapshot=evaluation_snapshot,
                     snapshot_provenance=(

@@ -1,0 +1,1184 @@
+From a2c75112cecabc037a4f50855ee6a06d76ac4d6e Mon Sep 17 00:00:00 2001
+From: Neha Virani <NehaVirani@users.noreply.github.com>
+Date: Mon, 23 Nov 2026 23:52:19 -0600
+Subject: [PATCH] Isolate evaluation data by user account
+
+Each saved answer and test run now records its owner (rag_responses.user_id,
+evaluation_runs.user_id), and every evaluation endpoint enforces ownership in
+the backend:
+
+- evaluations.php lists, dashboards, metric summaries and comparisons only
+  include the signed-in user's rows; response details and human reviews return
+  404 for another user's answer
+- evaluate_standalone.php, run_evaluation.php and exports.php return 404 for
+  another user's answer or run
+- test_runs.php records the new run's owner and only accepts the user's own
+  baseline
+- Migration 011 assigns owners where provable (conversation owner, run owner)
+  without deleting anything; rag/claim_evaluations.py assigns pre-account
+  history to one account
+- Two-account HTTP tests cover listing, opening, reviewing, scoring,
+  comparing and exporting, plus the migration and claim command
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_015X6GjaC31WebNrBymNFZ4N
+---
+ api/evaluate_standalone.php                   |  13 +-
+ api/evaluations.php                           |  80 ++++--
+ api/exports.php                               |  20 +-
+ api/run_evaluation.php                        |  18 +-
+ api/test_runs.php                             |  15 +-
+ .../migrations/011_evaluation_ownership.sql   |  25 ++
+ database/schema.sql                           |   6 +
+ .../Conversation_Memory_Architecture.md       |  37 +++
+ includes/ownership.php                        |  52 ++++
+ rag/answer.py                                 |   1 +
+ rag/claim_evaluations.py                      |  71 +++++
+ rag/database.py                               |  41 ++-
+ rag/run_evaluation.py                         |  27 +-
+ tests/test_user_accounts_http.py              | 261 ++++++++++++++++++
+ 14 files changed, 621 insertions(+), 46 deletions(-)
+ create mode 100644 database/migrations/011_evaluation_ownership.sql
+ create mode 100644 includes/ownership.php
+ create mode 100644 rag/claim_evaluations.py
+
+diff --git a/api/evaluate_standalone.php b/api/evaluate_standalone.php
+index 529056d..412b5e8 100644
+--- a/api/evaluate_standalone.php
++++ b/api/evaluate_standalone.php
+@@ -9,9 +9,11 @@ loadEnv();
+ header('Content-Type: application/json; charset=utf-8');
+ header('Cache-Control: no-store');
+ require_once dirname(__DIR__) . '/includes/auth.php';
++require_once dirname(__DIR__) . '/includes/ownership.php';
+ 
+ // Phase 4: Require an authenticated user.
+-if (currentUser() === null) {
++$standaloneUser = currentUser();
++if ($standaloneUser === null) {
+     http_response_code(401);
+     header('Content-Type: application/json; charset=utf-8');
+     header('Cache-Control: no-store');
+@@ -132,6 +134,15 @@ try {
+         ]);
+     }
+ 
++    // Citation scoring only runs on the signed-in user's own saved answers.
++    // Another user's answer is reported exactly like a missing one.
++    if (!userOwnsResponse(databaseConnection(), (int) $responseId, (int) $standaloneUser['user_id'])) {
++        standaloneResponse(404, [
++            'ok' => false,
++            'error' => 'Saved response was not found.',
++        ]);
++    }
++
+     // Execution remains disabled until explicitly enabled in server configuration.
+     $executionEnabled = envValue('ENABLE_STANDALONE_EVALUATION', '0') === '1';
+ 
+diff --git a/api/evaluations.php b/api/evaluations.php
+index 89e3dc4..9c5df29 100644
+--- a/api/evaluations.php
++++ b/api/evaluations.php
+@@ -4,12 +4,15 @@ declare(strict_types=1);
+ 
+ require_once dirname(__DIR__) . '/config/database.php';
+ require_once dirname(__DIR__) . '/includes/auth.php';
++require_once dirname(__DIR__) . '/includes/ownership.php';
+ 
+ header('Content-Type: application/json; charset=utf-8');
+ header('Cache-Control: no-store');
+ 
+ // Require an authenticated session before accessing application data.
+-if (currentUser() === null) {
++// Every query below is limited to this user's own answers, runs and results.
++$evaluationUser = currentUser();
++if ($evaluationUser === null) {
+     http_response_code(401);
+     echo json_encode([
+         'ok' => false,
+@@ -187,6 +190,7 @@ function validatedRating(mixed $value, string $field): ?int
+ try {
+     $database = databaseConnection();
+     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
++    $userId = (int) $evaluationUser['user_id'];
+ 
+     if ($method === 'GET') {
+         $responseId = filter_input(INPUT_GET, 'response_id', FILTER_VALIDATE_INT);
+@@ -213,10 +217,11 @@ try {
+                    ON membership.dataset_id = run.dataset_id
+                   AND membership.question_id = r.question_id
+                  LEFT JOIN model_settings settings ON settings.setting_id = r.setting_id
+-                 WHERE r.response_id = ?"
++                 WHERE r.response_id = ? AND r.user_id = ?"
+             );
+-            $statement->execute([$responseId]);
++            $statement->execute([$responseId, $userId]);
+             $response = $statement->fetch();
++            // Another user's answer is reported exactly like a missing one.
+             if (!$response) {
+                 evaluationResponse(404, ['ok' => false, 'error' => 'Saved response was not found.']);
+             }
+@@ -286,6 +291,7 @@ try {
+                     JOIN evaluation_runs global_run
+                       ON global_run.run_id=global_response.run_id
+                     WHERE global_result.status='completed' AND global_run.status='completed'
++                      AND global_run.user_id=? AND global_response.user_id=?
+                     GROUP BY global_result.evaluator_id
+                  ) global_scores ON global_scores.evaluator_id=er.evaluator_id
+                  LEFT JOIN evaluator_result_attempts attempt
+@@ -294,7 +300,7 @@ try {
+                  GROUP BY er.result_id, e.evaluator_id
+                  ORDER BY FIELD(JSON_UNQUOTE(JSON_EXTRACT(e.configuration_json, '$.layer')), 'baseline', 'advanced'), e.evaluator_id"
+             );
+-            $statement->execute([$responseId]);
++            $statement->execute([$userId, $userId, $responseId]);
+             $results = normalizeJsonColumns($statement->fetchAll(), ['configuration_json', 'details_json']);
+             foreach ($results as &$result) {
+                 $result['layer'] = $result['configuration_json']['layer'] ?? 'baseline';
+@@ -412,7 +418,7 @@ try {
+         }
+         unset($evaluator);
+ 
+-        $runs = normalizeJsonColumns($database->query(
++        $runStatement = $database->prepare(
+             "SELECT run.run_id, run.run_name, run.status, run.started_at, run.completed_at,
+                     run.dataset_id, run.baseline_run_id, run.experiment_key,
+                     run.corpus_variant_key, run.run_configuration_json,
+@@ -469,10 +475,13 @@ try {
+                  JOIN evaluator_definitions attempt_definition ON attempt_definition.evaluator_id=attempt.evaluator_id
+                  GROUP BY response.run_id
+              ) attempt_summary ON attempt_summary.run_id=run.run_id
++             WHERE run.user_id=?
+              ORDER BY run.run_id DESC LIMIT 25"
+-        )->fetchAll(), ['run_configuration_json']);
++        );
++        $runStatement->execute([$userId]);
++        $runs = normalizeJsonColumns($runStatement->fetchAll(), ['run_configuration_json']);
+ 
+-        $responses = $database->query(
++        $responseStatement = $database->prepare(
+             "SELECT response.response_id, response.run_id, response.question_id,
+                      response.question_text, MAX(membership.display_order) AS dataset_question_number,
+                      response.latency_ms, response.created_at,
+@@ -500,12 +509,15 @@ try {
+               AND membership.question_id=response.question_id
+              LEFT JOIN (" . preferredEvaluatorResultsSql() . ") result ON result.response_id=response.response_id
+              LEFT JOIN evaluator_definitions definition ON definition.evaluator_id=result.evaluator_id
++             WHERE response.user_id=? AND run.user_id=?
+              GROUP BY response.response_id
+              ORDER BY response.run_id DESC,
+                       COALESCE(dataset_question_number, 2147483647),
+                       response.response_id
+              LIMIT 250"
+-        )->fetchAll();
++        );
++        $responseStatement->execute([$userId, $userId]);
++        $responses = $responseStatement->fetchAll();
+         $runQuestionNumbers = [];
+         foreach ($responses as &$savedResponse) {
+             $savedRunId = (int) $savedResponse['run_id'];
+@@ -515,8 +527,8 @@ try {
+         unset($savedResponse);
+ 
+         // Standalone Chat and CLI responses are not associated
+-        // with a structured evaluation test run.
+-        $standaloneResponses = $database->query(
++        // with a structured evaluation test run. Only this user's are listed.
++        $standaloneStatement = $database->prepare(
+             "SELECT
+                  response.response_id,
+                  response.run_id,
+@@ -546,13 +558,15 @@ try {
+                ON result.response_id=response.response_id
+              LEFT JOIN evaluator_definitions definition
+                ON definition.evaluator_id=result.evaluator_id
+-             WHERE response.run_id IS NULL
++             WHERE response.run_id IS NULL AND response.user_id=?
+              GROUP BY response.response_id
+              ORDER BY response.response_id DESC
+              LIMIT 100"
+-        )->fetchAll();
++        );
++        $standaloneStatement->execute([$userId]);
++        $standaloneResponses = $standaloneStatement->fetchAll();
+ 
+-        $metricSummaries = normalizeJsonColumns($database->query(
++        $metricStatement = $database->prepare(
+             "SELECT definition.evaluator_key, definition.display_name, definition.family,
+                     definition.dimension, definition.configuration_json, definition.is_local,
+                     COALESCE(scores.result_count, 0) AS result_count,
+@@ -591,6 +605,8 @@ try {
+                         SUM(r.status='failed') AS failed_count,
+                         AVG(CASE WHEN r.status='completed' THEN r.normalized_score END) AS mean_score
+                  FROM (" . preferredEvaluatorResultsSql() . ") r
++                 JOIN rag_responses owned_response
++                   ON owned_response.response_id=r.response_id AND owned_response.user_id=?
+                  JOIN evaluator_definitions d ON d.evaluator_id=r.evaluator_id
+                  GROUP BY d.evaluator_key
+              ) scores ON scores.evaluator_key=definition.evaluator_key
+@@ -605,16 +621,20 @@ try {
+                             AS unpriced_attempt_count
+                  FROM evaluator_definitions d
+                  JOIN evaluator_result_attempts a ON a.evaluator_id=d.evaluator_id
++                 JOIN rag_responses owned_response
++                   ON owned_response.response_id=a.response_id AND owned_response.user_id=?
+                  GROUP BY d.evaluator_key
+              ) attempt_summary ON attempt_summary.evaluator_key=definition.evaluator_key
+              ORDER BY definition.evaluator_key"
+-        )->fetchAll(), ['configuration_json']);
++        );
++        $metricStatement->execute([$userId, $userId]);
++        $metricSummaries = normalizeJsonColumns($metricStatement->fetchAll(), ['configuration_json']);
+         foreach ($metricSummaries as &$summary) {
+             $summary['layer'] = $summary['configuration_json']['layer'] ?? 'baseline';
+         }
+         unset($summary);
+ 
+-        $runMetricSummaries = $database->query(
++        $runMetricStatement = $database->prepare(
+             "SELECT run.run_id, run.run_name, definition.evaluator_key,
+                     definition.display_name, definition.dimension,
+                     COUNT(result.result_id) AS completed_count,
+@@ -626,12 +646,14 @@ try {
+              JOIN rag_responses response ON response.run_id=run.run_id
+              JOIN (" . preferredEvaluatorResultsSql() . ") result ON result.response_id=response.response_id
+              JOIN evaluator_definitions definition ON definition.evaluator_id=result.evaluator_id
+-             WHERE result.status='completed'
++             WHERE result.status='completed' AND run.user_id=? AND response.user_id=?
+              GROUP BY run.run_id, definition.evaluator_key, definition.display_name, definition.dimension
+              ORDER BY run.run_id DESC, definition.evaluator_key"
+-        )->fetchAll();
++        );
++        $runMetricStatement->execute([$userId, $userId]);
++        $runMetricSummaries = $runMetricStatement->fetchAll();
+ 
+-        $matchedComparisons = $database->query(
++        $comparisonStatement = $database->prepare(
+             "SELECT comparison_run.run_id AS comparison_run_id,
+                     comparison_run.run_name AS comparison_run_name,
+                     baseline_run.run_id AS baseline_run_id,
+@@ -662,18 +684,27 @@ try {
+              JOIN evaluator_definitions definition
+                ON definition.evaluator_id=comparison_result.evaluator_id
+              WHERE comparison_run.status='completed' AND baseline_run.status='completed'
++               AND comparison_run.user_id=? AND baseline_run.user_id=?
++               AND comparison_response.user_id=? AND baseline_response.user_id=?
+              GROUP BY comparison_run.run_id, baseline_run.run_id, definition.evaluator_id
+              ORDER BY comparison_run.run_id DESC, definition.evaluator_id"
+-        )->fetchAll();
++        );
++        $comparisonStatement->execute([$userId, $userId, $userId, $userId]);
++        $matchedComparisons = $comparisonStatement->fetchAll();
+ 
+         $layers = ['baseline' => 0, 'advanced' => 0];
+         foreach ($evaluators as $evaluator) {
+             $layer = (string) $evaluator['layer'];
+             $layers[$layer] = ($layers[$layer] ?? 0) + 1;
+         }
+-        $humanReviewCount = (int) $database->query(
+-            "SELECT COUNT(*) FROM human_reviews WHERE is_current=TRUE"
+-        )->fetchColumn();
++        $reviewCountStatement = $database->prepare(
++            "SELECT COUNT(*)
++             FROM human_reviews review
++             JOIN rag_responses response ON response.response_id=review.response_id
++             WHERE review.is_current=TRUE AND response.user_id=?"
++        );
++        $reviewCountStatement->execute([$userId]);
++        $humanReviewCount = (int) $reviewCountStatement->fetchColumn();
+         $findings = [
+             'layers' => $layers,
+             'human_review_count' => $humanReviewCount,
+@@ -729,10 +760,11 @@ try {
+         ];
+         $database->beginTransaction();
+         try {
++            // Only the answer's owner can review it; others get a 404.
+             $statement = $database->prepare(
+-                'SELECT 1 FROM rag_responses WHERE response_id=? FOR UPDATE'
++                'SELECT 1 FROM rag_responses WHERE response_id=? AND user_id=? FOR UPDATE'
+             );
+-            $statement->execute([$responseId]);
++            $statement->execute([$responseId, $userId]);
+             if (!$statement->fetchColumn()) {
+                 $database->rollBack();
+                 evaluationResponse(404, ['ok' => false, 'error' => 'Saved response was not found.']);
+diff --git a/api/exports.php b/api/exports.php
+index 7166b65..0a57b80 100644
+--- a/api/exports.php
++++ b/api/exports.php
+@@ -6,7 +6,8 @@ require_once dirname(__DIR__) . '/config/database.php';
+ require_once dirname(__DIR__) . '/includes/auth.php';
+ 
+ // Phase 4: Require an authenticated user.
+-if (currentUser() === null) {
++$exportUser = currentUser();
++if ($exportUser === null) {
+     http_response_code(401);
+     header('Content-Type: application/json; charset=utf-8');
+     header('Cache-Control: no-store');
+@@ -64,7 +65,8 @@ function exportFilename(array $run, string $extension): string
+     return sprintf('%s-run-%d.%s', substr($slug, 0, 70), (int) $run['run_id'], $extension);
+ }
+ 
+-function loadRunExport(PDO $database, int $runId): ?array
++/** Exports one run, or returns null when it is missing or owned by another user. */
++function loadRunExport(PDO $database, int $runId, int $userId): ?array
+ {
+     $statement = $database->prepare(
+         "SELECT run.run_id, run.run_name, run.status, run.baseline_run_id,
+@@ -78,9 +80,9 @@ function loadRunExport(PDO $database, int $runId): ?array
+          FROM evaluation_runs run
+          JOIN model_settings settings ON settings.setting_id=run.setting_id
+          LEFT JOIN evaluation_datasets dataset ON dataset.dataset_id=run.dataset_id
+-         WHERE run.run_id=?"
++         WHERE run.run_id=? AND run.user_id=?"
+     );
+-    $statement->execute([$runId]);
++    $statement->execute([$runId, $userId]);
+     $run = $statement->fetch();
+     if (!$run) {
+         return null;
+@@ -99,10 +101,10 @@ function loadRunExport(PDO $database, int $runId): ?array
+          FROM rag_responses response
+          LEFT JOIN evaluation_question_memberships membership
+            ON membership.dataset_id=? AND membership.question_id=response.question_id
+-         WHERE response.run_id=?
++         WHERE response.run_id=? AND response.user_id=?
+          ORDER BY COALESCE(membership.display_order, 2147483647), response.response_id"
+     );
+-    $statement->execute([(int) ($run['dataset_id'] ?? 0), $runId]);
++    $statement->execute([(int) ($run['dataset_id'] ?? 0), $runId, $userId]);
+     $responses = decodeExportColumns(
+         $statement->fetchAll(),
+         ['generation_metadata_json', 'evaluation_snapshot_json']
+@@ -224,10 +226,12 @@ function loadRunExport(PDO $database, int $runId): ?array
+          JOIN evaluator_definitions definition ON definition.evaluator_id=comparison_result.evaluator_id
+          WHERE comparison_run.status='completed' AND baseline_run.status='completed'
+            AND (comparison_run.run_id=? OR baseline_run.run_id=?)
++           AND comparison_run.user_id=? AND baseline_run.user_id=?
++           AND comparison_response.user_id=? AND baseline_response.user_id=?
+          GROUP BY comparison_run.run_id, baseline_run.run_id, definition.evaluator_id
+          ORDER BY comparison_run.run_id DESC, definition.evaluator_id"
+     );
+-    $statement->execute([$runId, $runId]);
++    $statement->execute([$runId, $runId, $userId, $userId, $userId, $userId]);
+ 
+     return [
+         'export_schema_version' => EXPORT_SCHEMA_VERSION,
+@@ -345,7 +349,7 @@ if (!$runId || !in_array($format, ['json', 'csv'], true)) {
+ }
+ 
+ try {
+-    $export = loadRunExport(databaseConnection(), (int) $runId);
++    $export = loadRunExport(databaseConnection(), (int) $runId, (int) $exportUser['user_id']);
+     if ($export === null) {
+         exportError(404, 'The saved run was not found.');
+     }
+diff --git a/api/run_evaluation.php b/api/run_evaluation.php
+index 0599b47..231cdd1 100644
+--- a/api/run_evaluation.php
++++ b/api/run_evaluation.php
+@@ -10,9 +10,11 @@ loadEnv();
+ header('Content-Type: application/json; charset=utf-8');
+ header('Cache-Control: no-store');
+ require_once dirname(__DIR__) . '/includes/auth.php';
++require_once dirname(__DIR__) . '/includes/ownership.php';
+ 
+ // Phase 4: Require an authenticated user.
+-if (currentUser() === null) {
++$evaluationUser = currentUser();
++if ($evaluationUser === null) {
+     http_response_code(401);
+     header('Content-Type: application/json; charset=utf-8');
+     header('Cache-Control: no-store');
+@@ -70,7 +72,7 @@ function runEvaluationUserError(string $technicalError): string
+     return $fallback;
+ }
+ 
+-function runEvaluationCommand(array $payload): array
++function runEvaluationCommand(array $payload, int $userId): array
+ {
+     $runId = filter_var($payload['run_id'] ?? null, FILTER_VALIDATE_INT);
+     $responseId = isset($payload['response_id'])
+@@ -94,6 +96,16 @@ function runEvaluationCommand(array $payload): array
+         ]);
+     }
+ 
++    // Only the run's owner can score it, and a single answer must belong to
++    // that run. Another user's run or answer is reported like a missing one.
++    $database = databaseConnection();
++    $ownsTarget = $responseId === null
++        ? userOwnsRun($database, (int) $runId, $userId)
++        : userOwnsRunResponse($database, (int) $runId, (int) $responseId, $userId);
++    if (!$ownsTarget) {
++        runEvaluationResponse(404, ['ok' => false, 'error' => 'The saved run was not found.']);
++    }
++
+     $includeAdvanced = filter_var(
+         $payload['include_advanced'] ?? false,
+         FILTER_VALIDATE_BOOLEAN
+@@ -203,7 +215,7 @@ try {
+     if (!is_array($payload)) {
+         runEvaluationResponse(400, ['ok' => false, 'error' => 'Request body must contain a JSON object.']);
+     }
+-    runEvaluationResponse(200, ['ok' => true, 'data' => runEvaluationCommand($payload)]);
++    runEvaluationResponse(200, ['ok' => true, 'data' => runEvaluationCommand($payload, (int) $evaluationUser['user_id'])]);
+ } catch (Throwable $error) {
+     testRunDiagnosticLog('saved_answer_scoring_exception', [
+         'exception_type' => get_class($error),
+diff --git a/api/test_runs.php b/api/test_runs.php
+index 96a6314..62590e3 100644
+--- a/api/test_runs.php
++++ b/api/test_runs.php
+@@ -10,9 +10,11 @@ loadEnv();
+ header('Content-Type: application/json; charset=utf-8');
+ header('Cache-Control: no-store');
+ require_once dirname(__DIR__) . '/includes/auth.php';
++require_once dirname(__DIR__) . '/includes/ownership.php';
+ 
+ // Phase 4: Require an authenticated user.
+-if (currentUser() === null) {
++$testRunUser = currentUser();
++if ($testRunUser === null) {
+     http_response_code(401);
+     header('Content-Type: application/json; charset=utf-8');
+     header('Cache-Control: no-store');
+@@ -68,7 +70,7 @@ function testRunUserError(string $technicalError): string
+     return $fallback;
+ }
+ 
+-function runTestCommand(array $payload): array
++function runTestCommand(array $payload, int $userId): array
+ {
+     $action = (string) ($payload['action'] ?? '');
+     $datasetId = filter_var($payload['dataset_id'] ?? null, FILTER_VALIDATE_INT);
+@@ -185,6 +187,10 @@ function runTestCommand(array $payload): array
+         if ($changeFromBaseline === '' || strlen($changeFromBaseline) > 500) {
+             testRunResponse(422, ['ok' => false, 'error' => 'The comparison must describe its one changed setting.']);
+         }
++        // A comparison can only build on the user's own baseline run.
++        if (!userOwnsRun(databaseConnection(), $baselineRunId, $userId)) {
++            testRunResponse(404, ['ok' => false, 'error' => 'The selected baseline run was not found.']);
++        }
+     }
+ 
+     $root = projectRoot();
+@@ -217,6 +223,9 @@ function runTestCommand(array $payload): array
+         (string) $maxResponses,
+         '--max-estimated-cost',
+         (string) envValue('MAX_GENERATION_COST', '0.25'),
++        // The new run and its saved answers belong to the signed-in user.
++        '--user-id',
++        (string) $userId,
+         '--json',
+     ];
+     if ($experimentKey !== '') {
+@@ -310,7 +319,7 @@ try {
+     if (!is_array($payload)) {
+         testRunResponse(400, ['ok' => false, 'error' => 'Request body must contain a JSON object.']);
+     }
+-    testRunResponse(200, ['ok' => true, 'data' => runTestCommand($payload)]);
++    testRunResponse(200, ['ok' => true, 'data' => runTestCommand($payload, (int) $testRunUser['user_id'])]);
+ }  catch (Throwable $error) {
+     testRunDiagnosticLog('php_endpoint_exception', [
+         'exception_type' => get_class($error),
+diff --git a/database/migrations/011_evaluation_ownership.sql b/database/migrations/011_evaluation_ownership.sql
+new file mode 100644
+index 0000000..12f1866
+--- /dev/null
++++ b/database/migrations/011_evaluation_ownership.sql
+@@ -0,0 +1,25 @@
++-- Evaluation ownership: rag_responses.user_id and evaluation_runs.user_id
++-- (created by schema.sql and initialize_schema()). The Evaluation API only
++-- shows a signed-in user their own saved answers, runs and results.
++--
++-- Ownership is assigned only where it can be proven; nothing is deleted.
++--  1. A Chat answer linked to a conversation belongs to that conversation's
++--     owner.
++--  2. An answer saved inside a test run belongs to the run's owner.
++-- Runs and answers saved before accounts existed stay unowned (NULL). They
++-- keep all of their contexts, scores and reviews, but no account sees them
++-- until an administrator assigns them with:
++--     python rag/claim_evaluations.py --username <name>
++
++UPDATE rag_responses response
++JOIN conversation_messages message ON message.response_id = response.response_id
++JOIN conversations conversation ON conversation.conversation_id = message.conversation_id
++SET response.user_id = conversation.user_id
++WHERE response.user_id IS NULL
++  AND conversation.user_id IS NOT NULL;
++
++UPDATE rag_responses response
++JOIN evaluation_runs run ON run.run_id = response.run_id
++SET response.user_id = run.user_id
++WHERE response.user_id IS NULL
++  AND run.user_id IS NOT NULL;
+diff --git a/database/schema.sql b/database/schema.sql
+index c70a110..b6d751b 100644
+--- a/database/schema.sql
++++ b/database/schema.sql
+@@ -134,6 +134,8 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
+     setting_id BIGINT UNSIGNED NOT NULL,
+     dataset_id BIGINT UNSIGNED NULL,
+     baseline_run_id BIGINT UNSIGNED NULL,
++    -- Owner of the run; NULL for runs created before accounts (see migration 011).
++    user_id BIGINT UNSIGNED NULL,
+     run_name VARCHAR(160) NOT NULL,
+     experiment_key VARCHAR(120) NULL,
+     corpus_variant_key VARCHAR(120) NOT NULL DEFAULT 'full_current',
+@@ -143,6 +145,7 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
+     completed_at TIMESTAMP NULL,
+     notes TEXT NULL,
+     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
++    KEY idx_evaluation_runs_user (user_id, run_id),
+     CONSTRAINT fk_evaluation_runs_setting
+         FOREIGN KEY (setting_id) REFERENCES model_settings (setting_id),
+     CONSTRAINT fk_evaluation_runs_dataset
+@@ -156,6 +159,8 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
+ CREATE TABLE IF NOT EXISTS rag_responses (
+     response_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+     run_id BIGINT UNSIGNED NULL,
++    -- Owner of the answer; NULL for answers saved before accounts (see migration 011).
++    user_id BIGINT UNSIGNED NULL,
+     setting_id BIGINT UNSIGNED NULL,
+     question_id BIGINT UNSIGNED NULL,
+     question_text TEXT NOT NULL,
+@@ -173,6 +178,7 @@ CREATE TABLE IF NOT EXISTS rag_responses (
+     generation_metadata_json JSON NULL,
+     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     UNIQUE KEY uq_rag_responses_run_question (run_id, question_id),
++    KEY idx_rag_responses_user (user_id, run_id, response_id),
+     CONSTRAINT fk_rag_responses_run
+         FOREIGN KEY (run_id) REFERENCES evaluation_runs (run_id)
+         ON DELETE SET NULL,
+diff --git a/docs/V2 docs/Conversation_Memory_Architecture.md b/docs/V2 docs/Conversation_Memory_Architecture.md
+index 4497549..ddd6d15 100644
+--- a/docs/V2 docs/Conversation_Memory_Architecture.md	
++++ b/docs/V2 docs/Conversation_Memory_Architecture.md	
+@@ -169,3 +169,40 @@ Tests: `tests/test_conversation_memory.py` (provider-free tests, including
+ MySQL round trips and ownership checks) and `tests/test_user_accounts_http.py`
+ (end-to-end tests through the real PHP endpoints with two users; retrieval and
+ Gemini are replaced by `tests/fixtures/fake_answer_runner.py`).
++
++## Evaluation data ownership
++
++Accounts also separate evaluation data. `rag_responses.user_id` and
++`evaluation_runs.user_id` record the account that saved each answer and test
++run (`rag/answer.py` and `rag/run_evaluation.py` set them from the signed-in
++user that the PHP endpoint passes with `--user-id`).
++
++Every evaluation endpoint filters by the signed-in user in SQL, not only in the
++browser:
++
++| Endpoint | Enforcement |
++| --- | --- |
++| `api/evaluations.php` GET | Runs, saved answers, standalone Chat answers, metric summaries, run summaries, comparisons and review counts include only the user's rows. `?response_id=` returns 404 unless the user owns the answer. |
++| `api/evaluations.php` POST `human_review` | 404 unless the user owns the answer. |
++| `api/evaluate_standalone.php` | Citation scoring returns 404 unless the user owns the answer. |
++| `api/run_evaluation.php` | 404 unless the user owns the run (and the answer belongs to that run). |
++| `api/test_runs.php` | New runs belong to the user; a comparison baseline must be the user's own run. |
++| `api/exports.php` | 404 unless the user owns the run. |
++
++Another user's record is reported exactly like a missing one, so IDs cannot be
++probed. The shared Gold Standard questions and evaluator definitions are not
++user data and stay visible to every account.
++
++Migration `011_evaluation_ownership.sql` assigns owners without deleting
++anything: Chat answers go to their conversation's owner and run answers to the
++run's owner. Answers and runs saved before accounts stay unowned and hidden. To
++give that history to one account:
++
++```bash
++python rag/claim_evaluations.py --username <name> --dry-run   # count
++python rag/claim_evaluations.py --username <name>             # assign
++```
++
++`tests/test_user_accounts_http.py` signs in two accounts and checks that
++neither can list, open, review, score, compare against or export the other's
++records, and that the migration and claim command keep every row.
+diff --git a/includes/ownership.php b/includes/ownership.php
+new file mode 100644
+index 0000000..09faff4
+--- /dev/null
++++ b/includes/ownership.php
+@@ -0,0 +1,52 @@
++<?php
++
++declare(strict_types=1);
++
++/*
++ * Evaluation ownership.
++ *
++ * Every saved answer (rag_responses.user_id) and test run
++ * (evaluation_runs.user_id) belongs to the account that created it. Endpoints
++ * that read, score, review, export or compare evaluation data call these
++ * helpers before touching an ID from the request. Another account's record is
++ * reported exactly like a missing one (404), so IDs cannot be probed.
++ * Unowned rows from before accounts are visible to no one; see
++ * rag/claim_evaluations.py.
++ */
++
++require_once dirname(__DIR__) . '/config/database.php';
++
++function userOwnsResponse(PDO $database, int $responseId, int $userId): bool
++{
++    $statement = $database->prepare(
++        'SELECT 1 FROM rag_responses WHERE response_id = ? AND user_id = ?'
++    );
++    $statement->execute([$responseId, $userId]);
++
++    return $statement->fetchColumn() !== false;
++}
++
++function userOwnsRun(PDO $database, int $runId, int $userId): bool
++{
++    $statement = $database->prepare(
++        'SELECT 1 FROM evaluation_runs WHERE run_id = ? AND user_id = ?'
++    );
++    $statement->execute([$runId, $userId]);
++
++    return $statement->fetchColumn() !== false;
++}
++
++/** True when the saved answer is part of the run and both belong to the user. */
++function userOwnsRunResponse(PDO $database, int $runId, int $responseId, int $userId): bool
++{
++    $statement = $database->prepare(
++        'SELECT 1
++         FROM rag_responses response
++         JOIN evaluation_runs run ON run.run_id = response.run_id
++         WHERE response.response_id = ? AND run.run_id = ?
++           AND response.user_id = ? AND run.user_id = ?'
++    );
++    $statement->execute([$responseId, $runId, $userId, $userId]);
++
++    return $statement->fetchColumn() !== false;
++}
+diff --git a/rag/answer.py b/rag/answer.py
+index 90ce1bd..35a4a7f 100644
+--- a/rag/answer.py
++++ b/rag/answer.py
+@@ -230,6 +230,7 @@ def answer_question(
+                     contexts=contexts,
+                     question_id=question_id,
+                     run_id=run_id,
++                    user_id=user_id,
+                     retrieval_method=retrieval_method,
+                     evaluation_snapshot=evaluation_snapshot,
+                     snapshot_provenance=(
+diff --git a/rag/claim_evaluations.py b/rag/claim_evaluations.py
+new file mode 100644
+index 0000000..58a1ac2
+--- /dev/null
++++ b/rag/claim_evaluations.py
+@@ -0,0 +1,71 @@
++"""Assign evaluation data saved before accounts existed to one account.
++
++Migration 011 gives every saved answer and test run an owner where ownership
++can be proven. Runs and answers from before accounts stay unowned, so the
++Evaluation page hides them from everyone. Run this once to give that history
++to the account that should keep it:
++
++    python rag/claim_evaluations.py --username neha --dry-run
++    python rag/claim_evaluations.py --username neha
++
++Nothing is deleted, and rows that already have an owner are never changed.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++
++from database import database_connection
++from settings import load_settings
++
++
++def unowned_counts(connection) -> dict[str, int]:
++    with connection.cursor() as cursor:
++        cursor.execute("SELECT COUNT(*) FROM evaluation_runs WHERE user_id IS NULL")
++        runs = int(cursor.fetchone()[0])
++        cursor.execute("SELECT COUNT(*) FROM rag_responses WHERE user_id IS NULL")
++        responses = int(cursor.fetchone()[0])
++    return {"runs": runs, "responses": responses}
++
++
++def claim_unowned_evaluations(connection, user_id: int) -> dict[str, int]:
++    """Give every unowned run, and every unowned saved answer, to ``user_id``."""
++    with connection.cursor() as cursor:
++        cursor.execute(
++            "UPDATE evaluation_runs SET user_id=%s WHERE user_id IS NULL", (user_id,)
++        )
++        runs = int(cursor.rowcount)
++        cursor.execute(
++            "UPDATE rag_responses SET user_id=%s WHERE user_id IS NULL", (user_id,)
++        )
++        responses = int(cursor.rowcount)
++    connection.commit()
++    return {"runs": runs, "responses": responses}
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--username", required=True, help="Account that receives the history.")
++    parser.add_argument("--dry-run", action="store_true", help="Only count unowned rows.")
++    args = parser.parse_args()
++
++    with database_connection(load_settings()) as connection:
++        with connection.cursor() as cursor:
++            cursor.execute("SELECT user_id FROM users WHERE username=%s", (args.username,))
++            row = cursor.fetchone()
++        if row is None:
++            parser.error(f"No account is named {args.username!r}.")
++        user_id = int(row[0])
++        if args.dry_run:
++            result = {"dry_run": True, "unowned": unowned_counts(connection)}
++        else:
++            result = {"dry_run": False, "claimed": claim_unowned_evaluations(connection, user_id)}
++    result["username"] = args.username
++    json.dump(result, sys.stdout)
++    sys.stdout.write("\n")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/rag/database.py b/rag/database.py
+index 7a15ff3..b24496b 100644
+--- a/rag/database.py
++++ b/rag/database.py
+@@ -160,6 +160,14 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
+                 "conversations": (
+                     ("user_id", "BIGINT UNSIGNED NULL AFTER conversation_id"),
+                 ),
++                # Evaluation ownership: each saved answer and test run belongs
++                # to the account that created it (migration 011 backfills).
++                "rag_responses": (
++                    ("user_id", "BIGINT UNSIGNED NULL AFTER run_id"),
++                ),
++                "evaluation_runs": (
++                    ("user_id", "BIGINT UNSIGNED NULL AFTER baseline_run_id"),
++                ),
+                 "model_settings": (
+                     (
+                         "chunking_strategy",
+@@ -210,6 +218,19 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
+                     "ALTER TABLE conversations ADD KEY idx_conversations_user_status_updated "
+                     "(user_id, status, updated_at)"
+                 )
++            ownership_indexes = (
++                ("rag_responses", "idx_rag_responses_user", "(user_id, run_id, response_id)"),
++                ("evaluation_runs", "idx_evaluation_runs_user", "(user_id, run_id)"),
++            )
++            for table_name, index_name, columns in ownership_indexes:
++                cursor.execute(
++                    """SELECT COUNT(*) FROM information_schema.statistics
++                       WHERE table_schema=%s AND table_name=%s AND index_name=%s""",
++                    (settings.db_name, table_name, index_name),
++                )
++                row = cursor.fetchone()
++                if not row or int(row[0]) == 0:
++                    cursor.execute(f"ALTER TABLE {table_name} ADD KEY {index_name} {columns}")
+             v2_constraints = v2_constraints + (
+                 (
+                     "conversations",
+@@ -217,6 +238,20 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
+                     "ALTER TABLE conversations ADD CONSTRAINT fk_conversations_user "
+                     "FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE",
+                 ),
++                # Deleting an account keeps its research data; the rows become
++                # unowned and are hidden from every account.
++                (
++                    "rag_responses",
++                    "fk_rag_responses_user",
++                    "ALTER TABLE rag_responses ADD CONSTRAINT fk_rag_responses_user "
++                    "FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE SET NULL",
++                ),
++                (
++                    "evaluation_runs",
++                    "fk_evaluation_runs_user",
++                    "ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_user "
++                    "FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE SET NULL",
++                ),
+             )
+             for table_name, constraint_name, statement in v2_constraints:
+                 cursor.execute(
+@@ -841,6 +876,7 @@ def save_grounded_response(
+     contexts: Sequence[Any],
+     question_id: int | None = None,
+     run_id: int | None = None,
++    user_id: int | None = None,
+     retrieval_method: str = "chroma_vector",
+     evaluation_snapshot: dict[str, Any] | None = None,
+     snapshot_provenance: str = "not_applicable",
+@@ -859,15 +895,16 @@ def save_grounded_response(
+             cursor.execute(
+                 """
+                 INSERT INTO rag_responses (
+-                    run_id, setting_id, question_id, question_text, answer_text,
++                    run_id, user_id, setting_id, question_id, question_text, answer_text,
+                     retrieval_method, latency_ms, estimated_cost,
+                     evaluation_snapshot_json, snapshot_provenance, code_version,
+                     input_tokens, output_tokens, total_tokens,
+                     generation_cost_status, generation_metadata_json
+-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
++                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 """,
+                 (
+                     run_id,
++                    user_id,
+                     setting_id,
+                     question_id,
+                     question,
+diff --git a/rag/run_evaluation.py b/rag/run_evaluation.py
+index 67800b3..c53c34d 100644
+--- a/rag/run_evaluation.py
++++ b/rag/run_evaluation.py
+@@ -113,7 +113,16 @@ def create_run(
+     allow_unknown_cost: bool = False,
+     max_responses: int = 5,
+     max_estimated_cost: float = 1.0,
++    user_id: int | None = None,
+ ) -> dict[str, object]:
++    """Generate and score one saved test run.
++
++    ``user_id`` is the account that owns the run and its saved answers; a
++    comparison baseline must belong to the same account. ``None`` is a trusted
++    CLI caller and creates an unowned run.
++    """
++    if user_id is not None and user_id <= 0:
++        raise ValueError("user_id must be a positive integer")
+     if dataset_id <= 0:
+         raise ValueError("dataset_id must be greater than zero")
+     if not name.strip():
+@@ -206,8 +215,9 @@ def create_run(
+                                WHERE response.run_id=run.run_id) AS response_count
+                        FROM evaluation_runs run
+                        JOIN model_settings settings ON settings.setting_id=run.setting_id
+-                       WHERE run.run_id=%s""",
+-                    (baseline_run_id,),
++                       WHERE run.run_id=%s
++                         AND (%s IS NULL OR run.user_id=%s)""",
++                    (baseline_run_id, user_id, user_id),
+                 )
+                 baseline = cursor.fetchone()
+                 if not baseline:
+@@ -427,11 +437,11 @@ def create_run(
+         with connection.cursor() as cursor:
+             cursor.execute(
+                 """INSERT INTO evaluation_runs
+-                   (setting_id, dataset_id, baseline_run_id, run_name, experiment_key,
++                   (setting_id, dataset_id, baseline_run_id, user_id, run_name, experiment_key,
+                     corpus_variant_key, run_configuration_json, status, started_at, notes)
+-                   VALUES (%s,%s,%s,%s,%s,%s,%s,'running',CURRENT_TIMESTAMP,%s)""",
++                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'running',CURRENT_TIMESTAMP,%s)""",
+                 (
+-                    setting_id, dataset_id, baseline_run_id, name, experiment_key,
++                    setting_id, dataset_id, baseline_run_id, user_id, name, experiment_key,
+                     corpus_variant_key, json.dumps(run_configuration),
+                     "Reviewed questions only; one saved answer/context set per question.",
+                 ),
+@@ -448,6 +458,7 @@ def create_run(
+                 top_k=selected_top_k,
+                 question_id=int(question["question_id"]),
+                 run_id=run_id,
++                user_id=user_id,
+                 retrieval_method=retrieval_method,
+                 categories=normalized_categories,
+                 evaluation_snapshot=evaluation_snapshot(question, dataset),
+@@ -526,6 +537,11 @@ def main() -> None:
+         action="store_true",
+         help="Print the frozen configuration and cost preflight without saving a run or calling Gemini.",
+     )
++    parser.add_argument(
++        "--user-id",
++        type=int,
++        help="Account that owns the run (set by the PHP endpoint).",
++    )
+     parser.add_argument("--json", action="store_true")
+     args = parser.parse_args()
+     if args.limit is not None and args.limit <= 0:
+@@ -565,6 +581,7 @@ def main() -> None:
+             allow_unknown_cost=args.allow_unknown_cost,
+             max_responses=args.max_responses,
+             max_estimated_cost=args.max_estimated_cost,
++            user_id=args.user_id,
+         )
+     except ValueError as error:
+         parser.error(str(error))
+diff --git a/tests/test_user_accounts_http.py b/tests/test_user_accounts_http.py
+index c2dedff..d97b29f 100644
+--- a/tests/test_user_accounts_http.py
++++ b/tests/test_user_accounts_http.py
+@@ -335,6 +335,267 @@ class UserAccountHttpTests(unittest.TestCase):
+         self.assertEqual([], andrew.chats()[1]["data"]["conversations"])
+         self.assertEqual(404, andrew.ask("Is it online?", chat_id)[0])
+ 
++    # --- Evaluation data is isolated by account (Improvement 1) ---------------
++
++    def saved_response_id(self, browser: Browser, question: str) -> int:
++        """Ask in Chat and return the rag_responses id saved for the answer."""
++        status, body = browser.ask(question)
++        self.assertEqual(200, status, body)
++        conversation_id = body["data"]["conversation_id"]
++        _, thread = browser.messages(conversation_id)
++        response_ids = [m["response_id"] for m in thread["data"]["messages"] if m["response_id"]]
++        self.assertEqual(1, len(response_ids), thread)
++        return int(response_ids[0])
++
++    def owned_run(self, browser_username: str, setting_from_response: int) -> tuple[int, int]:
++        """Store a completed test run with one saved answer for an account."""
++        with database_connection(load_settings()) as connection:
++            with connection.cursor() as cursor:
++                cursor.execute("SELECT user_id FROM users WHERE username=%s", (browser_username,))
++                user_id = int(cursor.fetchone()[0])
++                cursor.execute(
++                    "SELECT setting_id FROM rag_responses WHERE response_id=%s",
++                    (setting_from_response,),
++                )
++                setting_id = int(cursor.fetchone()[0])
++                cursor.execute(
++                    "INSERT INTO evaluation_runs (setting_id, user_id, run_name, status, started_at, completed_at) "
++                    "VALUES (%s, %s, %s, 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
++                    (setting_id, user_id, f"isolation run {self.marker}"),
++                )
++                run_id = int(cursor.lastrowid)
++                cursor.execute(
++                    "INSERT INTO rag_responses (run_id, user_id, setting_id, question_text, answer_text, retrieval_method) "
++                    "VALUES (%s, %s, %s, 'Run question?', 'Run answer.', 'chroma_vector')",
++                    (run_id, user_id, setting_id),
++                )
++                response_id = int(cursor.lastrowid)
++            connection.commit()
++        self.addCleanup(self.delete_run, run_id)
++        return run_id, response_id
++
++    @staticmethod
++    def delete_run(run_id: int) -> None:
++        with database_connection(load_settings()) as connection:
++            with connection.cursor() as cursor:
++                cursor.execute("DELETE FROM rag_responses WHERE run_id=%s", (run_id,))
++                cursor.execute("DELETE FROM evaluation_runs WHERE run_id=%s", (run_id,))
++            connection.commit()
++
++    def review(self, browser: Browser, response_id: int):
++        return browser.call(
++            "api/evaluations.php",
++            {
++                "action": "human_review",
++                "response_id": response_id,
++                "reviewer_alias": "tester",
++                "overall_decision": "acceptable",
++            },
++        )
++
++    def test_evaluation_lists_only_show_the_signed_in_users_data(self) -> None:
++        chris = self.signed_in("evalchris", "Chris")
++        neha = self.signed_in("evalneha", "Neha")
++        chris_answer = self.saved_response_id(chris, "What are the first-year admission requirements?")
++        neha_answer = self.saved_response_id(neha, "When is the tuition payment deadline?")
++        chris_run, chris_run_answer = self.owned_run(self.name("evalchris"), chris_answer)
++        self.assertEqual(201, self.review(chris, chris_answer)[0])
++
++        status, chris_view = chris.call("api/evaluations.php")
++        self.assertEqual(200, status, chris_view)
++        data = chris_view["data"]
++        self.assertIn(chris_answer, [int(r["response_id"]) for r in data["standaloneResponses"]])
++        self.assertNotIn(neha_answer, [int(r["response_id"]) for r in data["standaloneResponses"]])
++        self.assertIn(chris_run, [int(r["run_id"]) for r in data["runs"]])
++        self.assertIn(chris_run_answer, [int(r["response_id"]) for r in data["responses"]])
++        self.assertEqual(1, data["findings"]["human_review_count"])
++
++        status, neha_view = neha.call("api/evaluations.php")
++        self.assertEqual(200, status, neha_view)
++        data = neha_view["data"]
++        self.assertEqual([neha_answer], [int(r["response_id"]) for r in data["standaloneResponses"]])
++        self.assertEqual([], data["runs"])
++        self.assertEqual([], data["responses"])
++        self.assertEqual([], data["findings"]["run_metric_summaries"])
++        self.assertEqual(0, data["findings"]["human_review_count"])
++        listing = json.dumps(neha_view)
++        self.assertNotIn("first-year admission requirements", listing)
++        self.assertNotIn(f"isolation run {self.marker}", listing)
++
++    def test_users_cannot_open_score_review_or_export_another_users_records(self) -> None:
++        chris = self.signed_in("evalchris2", "Chris")
++        neha = self.signed_in("evalneha2", "Neha")
++        chris_answer = self.saved_response_id(chris, "What are the first-year admission requirements?")
++        neha_answer = self.saved_response_id(neha, "When is the tuition payment deadline?")
++        chris_run, chris_run_answer = self.owned_run(self.name("evalchris2"), chris_answer)
++
++        # Each user can open their own saved answers.
++        self.assertEqual(200, chris.call(f"api/evaluations.php?response_id={chris_answer}")[0])
++        self.assertEqual(200, chris.call(f"api/evaluations.php?response_id={chris_run_answer}")[0])
++        self.assertEqual(200, neha.call(f"api/evaluations.php?response_id={neha_answer}")[0])
++
++        # Changing an ID in the request never reaches another user's data, and
++        # the answer is the same 404 as for an ID that does not exist.
++        missing = neha.call("api/evaluations.php?response_id=999999999")
++        for response_id in (chris_answer, chris_run_answer):
++            status, body = neha.call(f"api/evaluations.php?response_id={response_id}")
++            self.assertEqual((404, missing[1]), (status, body))
++            self.assertEqual(404, self.review(neha, response_id)[0])
++            status, body = neha.call(
++                "api/evaluate_standalone.php", {"action": "preflight", "response_id": response_id}
++            )
++            self.assertEqual(404, status, body)
++        self.assertEqual(404, neha.call(f"api/exports.php?run_id={chris_run}&format=json")[0])
++        self.assertEqual(404, neha.call(f"api/exports.php?run_id={chris_run}&format=csv")[0])
++        status, body = neha.call(
++            "api/run_evaluation.php", {"action": "preflight", "run_id": chris_run, "limit": 1}
++        )
++        self.assertEqual(404, status, body)
++        status, body = neha.call(
++            "api/run_evaluation.php",
++            {"action": "evaluate", "run_id": chris_run, "response_id": chris_run_answer, "limit": 1},
++        )
++        self.assertEqual(404, status, body)
++        status, body = neha.call(
++            "api/test_runs.php",
++            {
++                "action": "preflight",
++                "dataset_id": 1,
++                "name": "Borrowed baseline",
++                "question_ids": [1],
++                "retrieval_method": "chroma_vector",
++                "top_k": 3,
++                "temperature": 0.0,
++                "top_p": 0.9,
++                "model": "gemini-2.5-flash",
++                "experiment_mode": "comparison",
++                "experiment_key": "borrowed",
++                "baseline_run_id": chris_run,
++                "controlled_variable": "top_k",
++                "change_from_baseline": "top_k 3 instead of 5",
++            },
++        )
++        self.assertEqual(404, status, body)
++
++        # A response ID that belongs to a different run is rejected too.
++        status, body = chris.call(
++            "api/run_evaluation.php",
++            {"action": "preflight", "run_id": chris_run, "response_id": chris_answer, "limit": 1},
++        )
++        self.assertEqual(404, status, body)
++
++        # Nothing was written to Chris's records.
++        with database_connection(load_settings()) as connection:
++            with connection.cursor() as cursor:
++                cursor.execute(
++                    "SELECT COUNT(*) FROM human_reviews WHERE response_id IN (%s, %s)",
++                    (chris_answer, chris_run_answer),
++                )
++                self.assertEqual(0, int(cursor.fetchone()[0]))
++
++        # The owner can still export their own run.
++        status, export = chris.call(f"api/exports.php?run_id={chris_run}&format=json")
++        self.assertEqual(200, status, export)
++        self.assertEqual([chris_run_answer], [int(r["response_id"]) for r in export["responses"]])
++
++
++@unittest.skipUnless(DATABASE_READY, "MySQL with the current schema is required")
++class EvaluationOwnershipMigrationTests(unittest.TestCase):
++    """Migration 011 and rag/claim_evaluations.py keep history without deleting it."""
++
++    def setUp(self) -> None:
++        self.marker = uuid4().hex[:10]
++        self.settings = load_settings()
++
++    def tearDown(self) -> None:
++        with database_connection(self.settings) as connection:
++            with connection.cursor() as cursor:
++                cursor.execute(
++                    "DELETE FROM rag_responses WHERE question_text LIKE %s", (f"%{self.marker}",)
++                )
++                cursor.execute("DELETE FROM evaluation_runs WHERE run_name LIKE %s", (f"%{self.marker}",))
++                cursor.execute("DELETE FROM users WHERE username LIKE %s", (f"%{self.marker}",))
++            connection.commit()
++
++    def test_migration_assigns_provable_owners_and_claim_keeps_the_rest(self) -> None:
++        sys.path.insert(0, str(PROJECT_ROOT / "rag"))
++        from claim_evaluations import claim_unowned_evaluations  # noqa: PLC0415
++        from database import _execute_sql_script  # noqa: PLC0415
++
++        with database_connection(self.settings) as connection:
++            with connection.cursor() as cursor:
++                cursor.execute(
++                    "INSERT INTO users (username, display_name, password_hash) VALUES (%s, 'Owner', 'x')",
++                    (f"owner_{self.marker}",),
++                )
++                owner = int(cursor.lastrowid)
++                cursor.execute(
++                    "INSERT INTO conversations (user_id, title) VALUES (%s, %s)", (owner, self.marker)
++                )
++                conversation = int(cursor.lastrowid)
++                cursor.execute("SELECT setting_id FROM model_settings LIMIT 1")
++                row = cursor.fetchone()
++                if row is None:
++                    self.skipTest("model_settings has no rows")
++                setting = int(row[0])
++
++                def legacy_answer(label: str, run_id: int | None = None) -> int:
++                    cursor.execute(
++                        "INSERT INTO rag_responses (run_id, setting_id, question_text, answer_text, retrieval_method) "
++                        "VALUES (%s, %s, %s, 'answer', 'chroma_vector')",
++                        (run_id, setting, f"{label} {self.marker}"),
++                    )
++                    return int(cursor.lastrowid)
++
++                chat_answer = legacy_answer("chat")
++                cursor.execute(
++                    "INSERT INTO conversation_messages (conversation_id, role, content, sequence_number, response_id) "
++                    "VALUES (%s, 'assistant', 'answer', 1, %s)",
++                    (conversation, chat_answer),
++                )
++                cursor.execute(
++                    "INSERT INTO evaluation_runs (setting_id, user_id, run_name) VALUES (%s, %s, %s)",
++                    (setting, owner, f"owned {self.marker}"),
++                )
++                owned_run_answer = legacy_answer("owned run", int(cursor.lastrowid))
++                cursor.execute(
++                    "INSERT INTO evaluation_runs (setting_id, run_name) VALUES (%s, %s)",
++                    (setting, f"legacy {self.marker}"),
++                )
++                legacy_run = int(cursor.lastrowid)
++                legacy_run_answer = legacy_answer("legacy run", legacy_run)
++                orphan_answer = legacy_answer("cli")
++            connection.commit()
++
++            migration = PROJECT_ROOT / "database" / "migrations" / "011_evaluation_ownership.sql"
++            _execute_sql_script(connection, migration.read_text(encoding="utf-8"))
++            connection.commit()
++
++            def owners() -> dict[int, int | None]:
++                with connection.cursor() as cursor:
++                    ids = (chat_answer, owned_run_answer, legacy_run_answer, orphan_answer)
++                    cursor.execute(
++                        "SELECT response_id, user_id FROM rag_responses WHERE response_id IN (%s,%s,%s,%s)",
++                        ids,
++                    )
++                    return {int(r[0]): (None if r[1] is None else int(r[1])) for r in cursor.fetchall()}
++
++            self.assertEqual(
++                {chat_answer: owner, owned_run_answer: owner, legacy_run_answer: None, orphan_answer: None},
++                owners(),
++            )
++
++            claimed = claim_unowned_evaluations(connection, owner)
++            self.assertGreaterEqual(claimed["runs"], 1)
++            self.assertGreaterEqual(claimed["responses"], 2)
++            self.assertEqual(
++                {chat_answer: owner, owned_run_answer: owner, legacy_run_answer: owner, orphan_answer: owner},
++                owners(),
++            )
++            with connection.cursor() as cursor:
++                cursor.execute("SELECT user_id FROM evaluation_runs WHERE run_id=%s", (legacy_run,))
++                self.assertEqual(owner, int(cursor.fetchone()[0]))
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
+-- 
+2.43.0
+

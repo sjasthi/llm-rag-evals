@@ -251,10 +251,14 @@ def create_run(
                 raise ValueError(
                     "change_from_baseline requires a declared baseline_run_id."
                 )
+            # The run's corpus is what its owner can retrieve: the shared
+            # library plus their own uploads (Improvement 5).
             cursor.execute(
                 """SELECT document_id, source_path, source_hash, category
                    FROM documents WHERE status='ingested'
-                   ORDER BY document_id"""
+                     AND (%s IS NULL OR user_id IS NULL OR user_id=%s)
+                   ORDER BY document_id""",
+                (user_id, user_id),
             )
             documents = [
                 row for row in cursor.fetchall()

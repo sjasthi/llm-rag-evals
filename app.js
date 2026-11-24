@@ -1,0 +1,6236 @@
+$(function () {
+    const $navigation = $("#mainNavigation");
+    const $applicationStatusPill = $("#applicationStatusPill");
+    const $applicationStatusText = $("#applicationStatusText");
+    const $askForm = $("#askForm");
+    const $questionInput = $("#questionInput");
+    const $askButton = $("#askButton");
+    const $previewSourcesButton = $("#previewSourcesButton");
+    const $clearButton = $("#clearQuestionButton");
+    const $resetChatSettings = $("#resetChatSettings");
+    const $chatModel = $("#chatModel");
+    const $chatRetrievalMethod = $("#chatRetrievalMethod");
+    const $chatTopK = $("#chatTopK");
+    const $chatTemperature = $("#chatTemperature");
+    const $chatTopP = $("#chatTopP");
+    const $chatSettingsControls = $chatModel.add($chatRetrievalMethod).add($chatTopK).add($chatTemperature).add($chatTopP);
+    const $chatSettingsSummary = $("#chatSettingsSummary");
+    const $suggestionButtons = $(".suggestion-button");
+    const $emptyState = $("#answerEmptyState");
+    const $loadingState = $("#answerLoadingState");
+    const $loadingText = $("#answerLoadingText");
+    const $errorState = $("#answerErrorState");
+    const $answerResult = $("#answerResult");
+    const $answerResultLabel = $("#answerResultLabel");
+    const $answerText = $("#answerText");
+    const $answerSaveWarning = $("#answerSaveWarning");
+    const ANSWER_NOT_SAVED_MESSAGE =
+        "Your answer was generated, but the conversation could not be saved. " +
+        "It may be lost if you refresh or leave this page.";
+    const $answerMeta = $("#answerMeta");
+    const $sourceList = $("#sourceList");
+    const $conversationThread = $("#conversationThread");
+    const $conversationStatus = $("#conversationStatus");
+    const $conversationTurns = $("#conversationTurns");
+    const $newConversationButton = $("#newConversationButton");
+    // Conversation memory: the server stores every turn; the page only keeps
+    // the active thread id and the completed turns it has displayed.
+    let conversationId = null;
+    let conversationTurns = [];
+    // True when the newest turn is displayed in the answer panel (just answered);
+    // false after reopening a saved chat, where every turn is listed in the thread.
+    let latestTurnInAnswerPanel = true;
+    // Improvement 3: a reopened chat shows its newest messages; older ones are
+    // fetched on request with the sequence number of the oldest one shown.
+    let earliestLoadedSequence = null;
+    let hasEarlierMessages = false;
+    let loadingEarlierMessages = false;
+
+    // Accounts: the signed-in user owns their conversations. Every request to the
+    // server carries the session's CSRF token.
+    const $authScreen = $("#authScreen");
+    const $authenticatedWorkspace = $("#authenticatedWorkspace");
+    const $accountSignedOut = $("#accountSignedOut");
+    const $accountSignedIn = $("#accountSignedIn");
+    const $accountForm = $("#accountForm");
+    const $accountUsername = $("#accountUsername");
+    const $accountPassword = $("#accountPassword");
+    const $accountDisplayName = $("#accountDisplayName");
+    const $accountDisplayNameField = $("#accountDisplayNameField");
+    const $accountPasswordHint = $("#accountPasswordHint");
+    const $accountError = $("#accountError");
+    const $accountSubmitButton = $("#accountSubmitButton");
+    const $signInModeButton = $("#signInModeButton");
+    const $registerModeButton = $("#registerModeButton");
+    const $accountDisplayNameLabel = $("#accountDisplayNameLabel");
+    const $signOutButton = $("#signOutButton");
+    const $refreshChatsButton = $("#refreshChatsButton");
+    const $recentChatList = $("#recentChatList");
+    const $recentChatsEmpty = $("#recentChatsEmpty");
+    const $recentChatSearch = $("#recentChatSearch");
+    const $recentChatCount = $("#recentChatCount");
+    const $sidebarNewChatButton = $("#sidebarNewChatButton");
+    let cachedRecentChats = [];
+
+    // Phase 7.1.3: Conversation archive confirmation state.
+    const chatArchiveDialog = document.getElementById("chatArchiveDialog");
+    const $chatArchiveTitle = $("#chatArchiveTitle");
+    const $chatArchiveError = $("#chatArchiveError");
+    const $chatArchiveNotice = $("#chatArchiveNotice");
+    const $cancelChatArchiveButton = $("#cancelChatArchiveButton");
+    const $confirmChatArchiveButton = $("#confirmChatArchiveButton");
+
+    let pendingChatArchiveId = null;
+    let chatArchiveRequestActive = false;
+    let chatArchiveTrigger = null;
+    let currentUser = null;
+    let csrfToken = "";
+    let accountMode = "login";
+    let registrationAllowed = true;
+
+    $.ajaxSetup({
+        beforeSend: function (xhr) {
+            if (csrfToken) {
+                xhr.setRequestHeader("X-CSRF-Token", csrfToken);
+            }
+        },
+    });
+    const $documentForm = $("#documentUploadForm");
+    const $documentFile = $("#documentFile");
+    const $documentTitle = $("#documentTitle");
+    const $documentCategory = $("#documentCategory");
+    const $replaceDocumentId = $("#replaceDocumentId");
+    const $cancelReplaceButton = $("#cancelReplaceButton");
+    const $uploadDocumentButton = $("#uploadDocumentButton");
+    const $uploadSelection = $("#uploadSelection");
+    const $duplicateDocumentPrompt = $("#duplicateDocumentPrompt");
+    const $duplicateDocumentName = $("#duplicateDocumentName");
+    const $confirmDuplicateReplacement = $("#confirmDuplicateReplacement");
+    const $cancelDuplicateUpload = $("#cancelDuplicateUpload");
+    const $documentMessage = $("#documentMessage");
+    const $documentList = $("#documentList");
+    const $refreshDocumentsButton = $("#refreshDocumentsButton");
+    const $restoreBundledDocumentsButton = $("#restoreBundledDocumentsButton");
+    const $deleteAllDocumentsButton = $("#deleteAllDocumentsButton");
+    const $documentSearch = $("#documentSearch");
+    const $documentCategoryFilter = $("#documentCategoryFilter");
+    const $documentTypeFilter = $("#documentTypeFilter");
+    const $documentSort = $("#documentSort");
+    const $documentVisibleCount = $("#documentVisibleCount");
+    const $documentCount = $("#documentCount");
+    const $categoryCount = $("#categoryCount");
+    const $overviewChunkCount = $("#overviewChunkCount");
+    const $evaluationQuestionCount = $("#evaluationQuestionCount");
+    const $evaluationDatasetSummary = $("#evaluationDatasetSummary");
+    const $evaluationDatasetSelect = $("#evaluationDatasetSelect");
+    const $evaluationQuestionList = $("#evaluationQuestionList");
+    const $evaluationCategoryFilter = $("#evaluationCategoryFilter");
+    const $evaluationStatusFilter = $("#evaluationStatusFilter");
+    // Phase 6.3: Gold Standard filtering and sorting controls.
+    const $goldQuestionSearch = $("#goldQuestionSearch");
+    const $goldDifficultyFilter = $("#goldDifficultyFilter");
+    const $goldAnswerabilityFilter = $("#goldAnswerabilityFilter");
+    const $goldQuestionSort = $("#goldQuestionSort");
+    const $goldQuestionVisibleCount = $("#goldQuestionVisibleCount");
+    const $clearGoldQuestionFilters = $("#clearGoldQuestionFilters");
+
+    const $experimentDatasetCount = $("#experimentDatasetCount");
+    const $experimentRunCount = $("#experimentRunCount");
+    const $experimentRunCountNote = $("#experimentRunCountNote");
+    const $evaluatorCount = $("#evaluatorCount");
+    const $overviewEvaluatorCount = $("#overviewEvaluatorCount");
+    const $experimentHumanReviewCount = $("#experimentHumanReviewCount");
+    const $researchReadinessList = $("#researchReadinessList");
+    const $evaluatorSummary = $("#evaluatorSummary");
+    const $evaluatorGoalSelect = $("#evaluatorGoalSelect");
+    const $evaluatorGoalPrimary = $("#evaluatorGoalPrimary");
+    const $evaluatorGoalSecondary = $("#evaluatorGoalSecondary");
+    const $evaluatorGoalCaution = $("#evaluatorGoalCaution");
+    const $evaluatorGoalReference = $("#evaluatorGoalReference");
+    const $standaloneResponseList = $("#standaloneResponseList");
+    const $evaluationRunList = $("#evaluationRunList");
+    const $evaluationRunHistory = $("#evaluationRunHistory");
+    let selectedEvaluationRunId = null;
+    const $chatEvaluationResultDetail = $("#evaluationResultDetail");
+    const $evaluationRunResultDetail = $("#evaluationRunResultDetail");
+    const $evaluationResultDetails =
+        $chatEvaluationResultDetail.add($evaluationRunResultDetail);
+    let $evaluationResultDetail = $chatEvaluationResultDetail;
+    const $evaluationLists = $standaloneResponseList.add($evaluationRunList);
+    const $newTestRunToggle = $("#newTestRunToggle");
+    const $newTestRunForm = $("#newTestRunForm");
+    const $closeNewTestRun = $("#closeNewTestRun");
+    const $newTestDatasetId = $("#newTestDatasetId");
+    const $newTestExperimentMode = $("#newTestExperimentMode");
+    const $newTestBaselineField = $("#newTestBaselineField");
+    const $newTestBaselineRun = $("#newTestBaselineRun");
+    const $newTestExperimentField = $("#newTestExperimentField");
+    const $newTestExperimentKey = $("#newTestExperimentKey");
+    const $newTestChangeField = $("#newTestChangeField");
+    const $newTestControlledVariable = $("#newTestControlledVariable");
+    const $newTestComparisonGuide = $("#newTestComparisonGuide");
+    const $newTestBaselineSummary = $("#newTestBaselineSummary");
+    const $newTestName = $("#newTestName");
+    const $newTestLimit = $("#newTestLimit");
+    const $newTestQuestionIds = $("#newTestQuestionIds");
+    const $newTestModel = $("#newTestModel");
+    const $newTestRetrieval = $("#newTestRetrieval");
+    const $newTestTopK = $("#newTestTopK");
+    const $newTestTemperature = $("#newTestTemperature");
+    const $newTestTopP = $("#newTestTopP");
+    const $newTestCorpusScope = $("#newTestCorpusScope");
+    const $newTestCategoryField = $("#newTestCategoryField");
+    const $newTestCategoryChoices = $("#newTestCategoryChoices");
+    const $previewNewTestRun = $("#previewNewTestRun");
+    const $createNewTestRun = $("#createNewTestRun");
+    const $newTestRunStatus = $("#newTestRunStatus");
+    const $findingBaselineCount = $("#findingBaselineCount");
+    const $findingAdvancedCount = $("#findingAdvancedCount");
+    const $findingHumanCount = $("#findingHumanCount");
+    const $findingRules = $("#findingRules");
+    const $findingMatchedComparisons = $("#findingMatchedComparisons");
+    const $findingRunComparison = $("#findingRunComparison");
+    const $findingMetricCatalog = $("#findingMetricCatalog");
+    const generationEnabled = $askForm.data("generationEnabled") === true;
+    let evaluationQuestions = [];
+    let evaluationDatasetQuestionCount = 0;
+    let evaluationRuns = [];
+    let evaluatorCatalog = [];
+    let dashboardEvaluatorCatalog = [];
+
+    function refreshDashboardEvaluatorCatalog() {
+        const methods = new Map();
+
+        evaluatorCatalog.forEach(function (evaluator) {
+            const key = String(evaluator.evaluator_key || "");
+            if (!key) {
+                return;
+            }
+
+            const existing = methods.get(key);
+            if (!existing) {
+                methods.set(key, evaluator);
+                return;
+            }
+
+            const versionParts = function (value) {
+                return String(value || "0").split(".").map(function (part) {
+                    return Number(part) || 0;
+                });
+            };
+
+            const currentParts = versionParts(evaluator.version);
+            const existingParts = versionParts(existing.version);
+
+            for (let i = 0; i < Math.max(currentParts.length, existingParts.length); i++) {
+                const difference = (currentParts[i] || 0) - (existingParts[i] || 0);
+                if (difference > 0) {
+                    methods.set(key, evaluator);
+                    break;
+                }
+                if (difference < 0) {
+                    break;
+                }
+            }
+        });
+
+        dashboardEvaluatorCatalog = Array.from(methods.values());
+    }
+
+    let currentEvaluationResponseId = null;
+    let evaluationResponseContexts = new Map();
+    let indexedDocuments = [];
+    let requestedNewTestCategories = [];
+    let pendingDuplicateDocument = null;
+    let documentListRequest = null;
+    let ingestionStartedAt = null;
+    let documentUploadPanelBusy = false;
+    let ingestionTimer = null;
+
+    const $workspaceViews = $("[data-view-panel]");
+
+    // Evaluation page tabs: keep existing inspectors and data loaded.
+    const evaluationTabs = {
+        overview: ["evaluationTabOverview", "evaluationPanelOverview"],
+        chat: ["evaluationTabChat", "evaluationPanelChat"],
+        runs: ["evaluationTabRuns", "evaluationPanelRuns"],
+    };
+
+    function activateEvaluationTab(tabName) {
+        const selected = Object.prototype.hasOwnProperty.call(
+            evaluationTabs, tabName
+        ) ? tabName : "overview";
+
+        Object.entries(evaluationTabs).forEach(function ([name, ids]) {
+            const isActive = name === selected;
+            const $button = $("#" + ids[0]);
+            const $panel = $("#" + ids[1]);
+
+            $button
+                .toggleClass("is-active", isActive)
+                .attr("aria-selected", String(isActive))
+                .attr("tabindex", isActive ? "0" : "-1");
+
+            $panel.prop("hidden", !isActive);
+        });
+    }
+
+    $(".evaluation-tab").on("click", function () {
+        const tabName = Object.keys(evaluationTabs).find(function (name) {
+            return evaluationTabs[name][0] === this.id;
+        }, this);
+
+        if (tabName) {
+            activateEvaluationTab(tabName);
+        }
+    });
+
+    $(".evaluation-tab").on("keydown", function (event) {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+            return;
+        }
+
+        event.preventDefault();
+
+        const names = Object.keys(evaluationTabs);
+        const current = names.findIndex(
+            name => evaluationTabs[name][0] === this.id
+        );
+
+        let next = current;
+
+        if (event.key === "ArrowRight") {
+            next = (current + 1) % names.length;
+        } else if (event.key === "ArrowLeft") {
+            next = (current - 1 + names.length) % names.length;
+        } else if (event.key === "Home") {
+            next = 0;
+        } else if (event.key === "End") {
+            next = names.length - 1;
+        }
+
+        activateEvaluationTab(names[next]);
+        $("#" + evaluationTabs[names[next]][0]).trigger("focus");
+    });
+
+    activateEvaluationTab("overview");
+
+
+    function loadApplicationHealth() {
+        function showUnavailable(message) {
+            $applicationStatusPill.removeClass("live-pill muted").addClass("unavailable-pill");
+            $applicationStatusText.text("Application data unavailable");
+            $applicationStatusPill.attr("title", message);
+        }
+        $.ajax({
+            url: "api/health.php",
+            method: "GET",
+            dataType: "json",
+            timeout: 10000,
+        })
+            .done(function (response) {
+                if (response?.ok !== true || response.data?.status !== "ready") {
+                    showUnavailable("Application readiness could not be confirmed. Try again or contact the application administrator.");
+                    return;
+                }
+                $applicationStatusPill.removeClass("muted unavailable-pill").addClass("live-pill");
+                $applicationStatusText.text("Application data ready");
+                $applicationStatusPill.removeAttr("title");
+            })
+            .fail(function (xhr) {
+                const message = xhr.responseJSON?.error ||
+                    "Application data is temporarily unavailable. Try again or contact the application administrator.";
+                showUnavailable(message);
+            });
+    }
+
+    function preferredScrollBehavior() {
+        return window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+    }
+
+    function activateWorkspaceView(viewName, updateHistory, focusHeading) {
+        const normalizedView = $workspaceViews.filter('[data-view-panel="' + viewName + '"]').length
+            ? viewName
+            : "overview";
+        $workspaceViews.each(function () {
+            $(this).prop("hidden", $(this).data("viewPanel") !== normalizedView);
+        });
+        const navigationView = normalizedView === "report" ? "results" : normalizedView;
+        $navigation.find("[data-view]").each(function () {
+            const isActive = $(this).data("view") === navigationView;
+            $(this).toggleClass("active", isActive).attr("aria-current", isActive ? "page" : null);
+        });
+        if (updateHistory) {
+            window.history.pushState({ view: normalizedView }, "", "#" + normalizedView);
+        }
+        window.scrollTo({ top: 0, behavior: preferredScrollBehavior() });
+        if (focusHeading) {
+            const $heading = $workspaceViews
+                .filter('[data-view-panel="' + normalizedView + '"]')
+                .find("h1, h2")
+                .first();
+            if ($heading.length) {
+                $heading.attr("tabindex", "-1").trigger("focus");
+            }
+        }
+    }
+
+    $(document).on("click", 'a[href^="#"]', function (event) {
+        const viewName = String($(this).attr("href") || "").slice(1);
+        if ($workspaceViews.filter('[data-view-panel="' + viewName + '"]').length) {
+            event.preventDefault();
+            activateWorkspaceView(viewName, true, true);
+        }
+    });
+
+    $(window).on("hashchange", function () {
+        activateWorkspaceView(window.location.hash.slice(1), false);
+    });
+
+    $(window).on("popstate", function () {
+        activateWorkspaceView(window.location.hash.slice(1), false);
+    });
+
+    function setBusy(isBusy) {
+        $questionInput.prop("disabled", isBusy);
+        $askButton.prop("disabled", isBusy || !generationEnabled || !currentUser);
+        $clearButton.prop("disabled", isBusy);
+        $previewSourcesButton.prop("disabled", isBusy);
+        $resetChatSettings.prop("disabled", isBusy);
+        $chatSettingsControls.prop("disabled", isBusy);
+        $suggestionButtons.prop("disabled", isBusy);
+        $newConversationButton.prop("disabled", isBusy);
+        $sidebarNewChatButton.prop("disabled", isBusy);
+    }
+
+    // Phase 7.4.4.5.2: Render saved citations safely as
+    // text and buttons, never as untrusted HTML.
+    function renderSavedAnswerCitations($target, answer, responseId) {
+        const text = String(answer || "");
+        const id = Number(responseId);
+        const canInspect = (
+            responseId !== null &&
+            responseId !== undefined &&
+            Number.isSafeInteger(id) &&
+            id > 0
+        );
+
+        $target.empty();
+
+        if (!canInspect) {
+            $target.text(text);
+            return;
+        }
+
+        const pattern = /\[(\d+)\]/g;
+        let cursor = 0;
+        let match;
+
+        while ((match = pattern.exec(text)) !== null) {
+            $target.append(
+                document.createTextNode(
+                    text.slice(cursor, match.index)
+                )
+            );
+
+            const rank = Number(match[1]);
+            const previous = text[match.index - 1] || "";
+
+            if (
+                !/[A-Za-z0-9_]/.test(previous) &&
+                Number.isSafeInteger(rank) &&
+                rank > 0
+            ) {
+                $("<button>")
+                    .addClass(
+                        "chat-citation-button " +
+                        "chat-saved-citation-button"
+                    )
+                    .attr({
+                        type: "button",
+                        "data-citation-rank": rank,
+                        "aria-label": "Inspect saved source " + rank,
+                        title: "Inspect saved source " + rank
+                    })
+                    .text(match[0])
+                    .appendTo($target);
+            } else {
+                $target.append(
+                    document.createTextNode(match[0])
+                );
+            }
+
+            cursor = pattern.lastIndex;
+        }
+
+        $target.append(
+            document.createTextNode(text.slice(cursor))
+        );
+    }
+
+    function renderConversation(options) {
+        // Phase 7.2.2: One chronological visual message stream.
+        // The latest assistant answer stays in #answerResult while
+        // its metadata and source cards are being displayed there.
+        const keepScrollPosition = Boolean(options && options.keepScrollPosition);
+        const scrollPanel = document.getElementById("answerPanel");
+        const previousScrollHeight = scrollPanel ? scrollPanel.scrollHeight : 0;
+        const previousScrollTop = scrollPanel ? scrollPanel.scrollTop : 0;
+        $conversationTurns.empty();
+
+        if (conversationId !== null && hasEarlierMessages) {
+            $("<li>")
+                .addClass("conversation-load-earlier")
+                .append(
+                    $("<button>")
+                        .addClass("btn btn-sm btn-outline-secondary conversation-load-earlier-button")
+                        .attr("type", "button")
+                        .prop("disabled", loadingEarlierMessages)
+                        .text(loadingEarlierMessages ? "Loading earlier messages..." : "Load earlier messages")
+                )
+                .appendTo($conversationTurns);
+        }
+
+        conversationTurns.forEach(function (turn, index) {
+            const $item = $("<li>")
+                .addClass("conversation-turn");
+
+            const $userMessage = $("<div>")
+                .addClass("chat-message chat-message-user")
+                .attr("aria-label", "Your question");
+
+            $userMessage.append(
+                $("<span>")
+                    .addClass("chat-message-speaker")
+                    .text("You"),
+                $("<p>")
+                    .addClass("conversation-question")
+                    .text(turn.question || "")
+            );
+
+            $item.append($userMessage);
+
+            const isLatestLiveTurn =
+                latestTurnInAnswerPanel &&
+                index === conversationTurns.length - 1;
+
+            // Do not duplicate the newest assistant answer.
+            // showAnswer() already presents it with its sources.
+            if (!isLatestLiveTurn && turn.answer) {
+                const $assistantMessage = $("<div>")
+                    .addClass("chat-message chat-message-assistant")
+                    .attr("aria-label", "Assistant answer");
+
+                $assistantMessage.append(
+                    $("<span>")
+                        .addClass("chat-message-speaker")
+                        .text("RAG Observatory"),
+                    $("<p>")
+                        .addClass("conversation-answer")
+                        .each(function () {
+                            renderSavedAnswerCitations(
+                                $(this),
+                                turn.answer,
+                                turn.responseId
+                            );
+                        })
+                );
+
+                // Historical evidence is loaded only when requested.
+                const savedResponseId = Number(turn.responseId);
+
+                if (
+                    turn.responseId !== null &&
+                    turn.responseId !== undefined &&
+                    Number.isSafeInteger(savedResponseId) &&
+                    savedResponseId > 0
+                ) {
+                    const panelId = "chat-evidence-" + savedResponseId;
+
+                    const $evidenceButton = $("<button>")
+                        .addClass(
+                            "btn btn-sm btn-outline-secondary " +
+                            "chat-saved-evidence-button"
+                        )
+                        .attr({
+                            type: "button",
+                            "data-response-id": savedResponseId,
+                            "aria-expanded": "false",
+                            "aria-controls": panelId
+                        })
+                        .text("View sources");
+
+                    const $evidencePanel = $("<div>")
+                        .addClass("chat-saved-evidence")
+                        .attr("id", panelId)
+                        .prop("hidden", true);
+
+                    $assistantMessage.append(
+                        $evidenceButton,
+                        $evidencePanel
+                    );
+                }
+
+                $item.append($assistantMessage);
+            }
+
+            $item.appendTo($conversationTurns);
+        });
+
+        const count = conversationTurns.length;
+
+        $conversationStatus.text(
+            "Conversation in progress - " + count +
+            " question" + (count === 1 ? "" : "s")
+        );
+
+        $conversationThread.prop(
+            "hidden",
+            conversationId === null
+        );
+
+        $recentChatList.find(".recent-chat").each(function () {
+            $(this).toggleClass(
+                "active",
+                Number($(this).data("conversationId")) === conversationId
+            );
+        });
+
+        // Scroll within the chat panel, not the whole page.
+        // This also works when a saved conversation is reopened, so the
+        // newest message is visible. Loading earlier messages keeps the
+        // reader's place instead of jumping to the bottom.
+        if (scrollPanel && conversationId !== null) {
+            scrollPanel.scrollTop = keepScrollPosition
+                ? previousScrollTop + (scrollPanel.scrollHeight - previousScrollHeight)
+                : scrollPanel.scrollHeight;
+        }
+    }
+
+    function messagesToTurns(messages) {
+        const turns = [];
+        messages.forEach(function (message) {
+            if (message.role === "user" || !turns.length) {
+                turns.push({
+                    question: message.role === "user" ? message.content : "",
+                    answer: "",
+                    responseId: null
+                });
+                if (message.role === "user") {
+                    return;
+                }
+            }
+            const turn = turns[turns.length - 1];
+            turn.answer = message.content;
+
+            const responseId = Number(message.response_id);
+            turn.responseId = (
+                message.response_id !== null &&
+                message.response_id !== undefined &&
+                Number.isSafeInteger(responseId) &&
+                responseId > 0
+            ) ? responseId : null;
+        });
+        return turns;
+    }
+
+    function applyMessagePage(data) {
+        const earliest = Number(data?.earliest_sequence);
+        earliestLoadedSequence = Number.isSafeInteger(earliest) && earliest > 0 ? earliest : null;
+        hasEarlierMessages = data?.has_earlier === true && earliestLoadedSequence !== null;
+    }
+
+    function loadEarlierMessages() {
+        if (!currentUser || conversationId === null || !hasEarlierMessages || loadingEarlierMessages) {
+            return;
+        }
+        const requestedConversationId = conversationId;
+        loadingEarlierMessages = true;
+        renderConversation({ keepScrollPosition: true });
+        $.ajax({
+            url: "api/conversations.php",
+            method: "GET",
+            dataType: "json",
+            data: {
+                conversation_id: requestedConversationId,
+                before_sequence: earliestLoadedSequence
+            },
+        })
+            .done(function (response) {
+                if (conversationId !== requestedConversationId) {
+                    return;
+                }
+                const olderTurns = messagesToTurns(response?.data?.messages || []);
+                conversationTurns = olderTurns.concat(conversationTurns);
+                applyMessagePage(response?.data);
+            })
+            .fail(function (xhr) {
+                showError(xhr.responseJSON?.error || "Earlier messages could not be loaded. Try again.");
+            })
+            .always(function () {
+                loadingEarlierMessages = false;
+                if (conversationId === requestedConversationId) {
+                    renderConversation({ keepScrollPosition: true });
+                }
+            });
+    }
+
+    $conversationTurns.on("click", ".conversation-load-earlier-button", function () {
+        loadEarlierMessages();
+    });
+
+    // Phase 7.4.4.5: Load saved evidence only for the
+    // currently selected conversation and assistant message.
+    $conversationTurns.on(
+        "click",
+        ".chat-saved-evidence-button",
+        function () {
+            const $button = $(this);
+            const responseId = Number(
+                $button.attr("data-response-id")
+            );
+            const requestedConversationId = conversationId;
+            const $panel = $button.siblings(
+                ".chat-saved-evidence"
+            );
+
+            if (
+                !currentUser ||
+                !Number.isSafeInteger(requestedConversationId) ||
+                requestedConversationId < 1 ||
+                !Number.isSafeInteger(responseId) ||
+                responseId < 1 ||
+                !$panel.length
+            ) {
+                return;
+            }
+
+            if ($panel.data("loaded") === true) {
+                const willOpen = $panel.prop("hidden");
+
+                $panel.prop("hidden", !willOpen);
+                $button
+                    .attr("aria-expanded", String(willOpen))
+                    .text(willOpen ? "Hide sources" : "View sources");
+                return;
+            }
+
+            const buttonElement = $button.get(0);
+
+            $button.prop("disabled", true).text("Loading sources...");
+            $panel
+                .empty()
+                .prop("hidden", false)
+                .append(
+                    $("<p>")
+                        .addClass("text-muted")
+                        .text("Loading original retrieved evidence...")
+                );
+
+            $.ajax({
+                url: "api/conversation_evidence.php",
+                method: "GET",
+                dataType: "json",
+                cache: false,
+                data: {
+                    conversation_id: requestedConversationId,
+                    response_id: responseId
+                }
+            })
+                .done(function (response) {
+                    // Ignore requests that finished after navigation.
+                    if (
+                        conversationId !== requestedConversationId ||
+                        !document.contains(buttonElement)
+                    ) {
+                        return;
+                    }
+
+                    const data = response?.data;
+                    const sources = data?.sources;
+
+                    if (
+                        response?.ok !== true ||
+                        Number(data.conversation_id) !==
+                            requestedConversationId ||
+                        Number(data.response_id) !== responseId ||
+                        !Array.isArray(sources)
+                    ) {
+                        $panel
+                            .empty()
+                            .text(
+                                "Saved source data was incomplete. " +
+                                "Try loading it again."
+                            );
+                        $panel.removeData("pendingCitationRank");
+                        $button.text("Retry sources");
+                        return;
+                    }
+
+                    $panel.empty();
+
+                    $("<p>")
+                        .addClass("chat-saved-evidence-heading")
+                        .text("Original retrieved sources")
+                        .appendTo($panel);
+
+                    if (!sources.length) {
+                        $("<p>")
+                            .addClass("text-muted")
+                            .text(
+                                "No saved source passages are " +
+                                "available for this answer."
+                            )
+                            .appendTo($panel);
+                    }
+
+                    sources.forEach(function (source) {
+                        const rank = Number(source.rank);
+
+                        if (
+                            !Number.isSafeInteger(rank) ||
+                            rank < 1
+                        ) {
+                            return;
+                        }
+
+                        const filename = String(
+                            source.original_filename ||
+                            source.source_path ||
+                            "Unknown document"
+                        );
+
+                        const $card = $("<article>")
+                            .addClass("source-card")
+                            .attr("data-source-rank", rank);
+
+                        $("<strong>")
+                            .text("[" + rank + "] " + filename)
+                            .appendTo($card);
+
+                        const details = [];
+
+                        if (source.page_number != null) {
+                            details.push(
+                                "Page " + source.page_number
+                            );
+                        }
+
+                        if (source.chunk_index != null) {
+                            details.push(
+                                "Chunk " + source.chunk_index
+                            );
+                        }
+
+                        if (source.content_type) {
+                            details.push(
+                                "Type: " +
+                                String(source.content_type)
+                                    .replace(/_/g, " ")
+                            );
+                        }
+
+                        if (details.length) {
+                            $("<small>")
+                                .addClass("chat-saved-source-meta")
+                                .text(details.join(" | "))
+                                .appendTo($card);
+                        }
+
+                        $("<p>")
+                            .text(
+                                source.text ||
+                                "No extracted text available."
+                            )
+                            .appendTo($card);
+
+                        $card.appendTo($panel);
+                    });
+
+                    $panel.data("loaded", true);
+                    $button
+                        .attr("aria-expanded", "true")
+                        .text("Hide sources");
+
+                    const pendingRank = Number(
+                        $panel.data("pendingCitationRank")
+                    );
+
+                    if (
+                        Number.isSafeInteger(pendingRank) &&
+                        pendingRank > 0
+                    ) {
+                        selectSavedEvidenceRank($panel, pendingRank);
+                    }
+
+                    $panel.removeData("pendingCitationRank");
+                })
+                .fail(function (xhr) {
+                    if (
+                        conversationId !== requestedConversationId ||
+                        !document.contains(buttonElement)
+                    ) {
+                        return;
+                    }
+
+                    $panel
+                        .empty()
+                        .text(
+                            xhr.status === 404
+                                ? "Saved evidence is not available."
+                                : xhr.status === 401
+                                    ? "Sign in to view saved evidence."
+                                    : "Unable to load sources. Try again."
+                        );
+
+                    $button.text("Retry sources");
+                })
+                .always(function () {
+                    if (
+                        conversationId === requestedConversationId &&
+                        document.contains(buttonElement)
+                    ) {
+                        $button.prop("disabled", false);
+                    }
+                });
+        }
+    );
+
+    // Select an actual saved source by rank. Missing ranks
+    // never silently select a different passage.
+    function selectSavedEvidenceRank($panel, rank) {
+        const $cards = $panel.find(".source-card");
+
+        const $match = $cards.filter(function () {
+            return Number(
+                $(this).attr("data-source-rank")
+            ) === rank;
+        }).first();
+
+        $cards.removeClass("chat-source-selected");
+        $panel.find(".chat-saved-citation-note").remove();
+
+        if (!$match.length) {
+            $("<p>")
+                .addClass("chat-saved-citation-note")
+                .attr("role", "status")
+                .text(
+                    "Saved source [" + rank +
+                    "] is not available for this answer."
+                )
+                .prependTo($panel);
+            return;
+        }
+
+        $match.addClass("chat-source-selected");
+
+        const element = $match.get(0);
+
+        if (element) {
+            element.scrollIntoView({
+                behavior: window.matchMedia(
+                    "(prefers-reduced-motion: reduce)"
+                ).matches ? "auto" : "smooth",
+                block: "nearest"
+            });
+        }
+    }
+
+    // Clicking a saved citation opens or reuses the
+    // original evidence for that assistant message.
+    $conversationTurns.on(
+        "click",
+        ".chat-saved-citation-button",
+        function () {
+            const $citation = $(this);
+            const rank = Number(
+                $citation.attr("data-citation-rank")
+            );
+
+            if (
+                !Number.isSafeInteger(rank) ||
+                rank < 1 ||
+                !currentUser ||
+                !Number.isSafeInteger(conversationId) ||
+                conversationId < 1
+            ) {
+                return;
+            }
+
+            const $message = $citation.closest(
+                ".chat-message-assistant"
+            );
+
+            const $button = $message.find(
+                ".chat-saved-evidence-button"
+            ).first();
+
+            const $panel = $message.find(
+                ".chat-saved-evidence"
+            ).first();
+
+            if (!$button.length || !$panel.length) {
+                return;
+            }
+
+            // Evidence already loaded: show it without
+            // another network request.
+            if ($panel.data("loaded") === true) {
+                $panel.prop("hidden", false);
+
+                $button
+                    .attr("aria-expanded", "true")
+                    .text("Hide sources");
+
+                selectSavedEvidenceRank($panel, rank);
+                return;
+            }
+
+            // A request may already be running.
+            // Remember the latest requested rank.
+            $panel.data("pendingCitationRank", rank);
+
+            if (!$button.prop("disabled")) {
+                $button.trigger("click");
+            }
+        }
+    );
+
+    function startNewConversation() {
+        conversationId = null;
+        conversationTurns = [];
+        earliestLoadedSequence = null;
+        hasEarlierMessages = false;
+        latestTurnInAnswerPanel = true;
+        renderConversation();
+    }
+
+    function shortDate(value) {
+        const date = new Date(String(value || "").replace(" ", "T"));
+        if (Number.isNaN(date.getTime())) {
+            return "";
+        }
+        return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
+    function filterRecentChats() {
+        const search = String(
+            $recentChatSearch.val() || ""
+        ).trim().toLocaleLowerCase();
+
+        const filtered = cachedRecentChats.filter(function (chat) {
+            return String(chat.title || "Untitled chat")
+                .toLocaleLowerCase()
+                .includes(search);
+        });
+
+        $recentChatList.find(".recent-chat").each(function () {
+            const id = Number($(this).attr("data-conversation-id"));
+            const visible = filtered.some(function (chat) {
+                return Number(chat.conversation_id) === id;
+            });
+            $(this).prop("hidden", !visible);
+        });
+
+        $recentChatsEmpty
+            .prop("hidden", filtered.length > 0)
+            .text(
+                cachedRecentChats.length === 0
+                    ? "No chats yet. Ask a question to start one."
+                    : "No conversations match your search."
+            );
+
+        $recentChatCount.text(
+            "Showing " + filtered.length +
+            " of " + cachedRecentChats.length + " conversations"
+        );
+    }
+
+    function renderRecentChats(conversations) {
+        cachedRecentChats = conversations.slice();
+        $recentChatList.empty();
+        conversations.forEach(function (chat) {
+            const id = Number(chat.conversation_id);
+            const count = Number(chat.question_count) || 0;
+            const $item = $("<li>").addClass("recent-chat").attr("data-conversation-id", id);
+            const $open = $("<button>")
+                .addClass("recent-chat-open")
+                .attr("type", "button")
+                .attr("data-conversation-id", id);
+            $("<strong>").text(chat.title || "Untitled chat").appendTo($open);
+            $("<span>")
+                .text(count + " question" + (count === 1 ? "" : "s") + " · " + shortDate(chat.updated_at))
+                .appendTo($open);
+            const $remove = $("<button>")
+                .addClass("recent-chat-remove")
+                .attr("type", "button")
+                .attr("data-conversation-id", id)
+                .attr("aria-label", "Remove " + (chat.title || "chat") + " from recent chats")
+                .text("Remove");
+            $item.append($open, $remove).appendTo($recentChatList);
+        });
+        renderConversation();
+        filterRecentChats();
+    }
+
+    function loadRecentChats() {
+        if (!currentUser) {
+            renderRecentChats([]);
+            return;
+        }
+        $.ajax({ url: "api/conversations.php", method: "GET", dataType: "json" })
+            .done(function (response) {
+                renderRecentChats(response?.data?.conversations || []);
+            })
+            .fail(function (xhr) {
+                if (xhr.status === 401) {
+                    applySession({ user: null, csrf_token: csrfToken });
+                }
+            });
+    }
+
+    function openConversation(id) {
+        if (!currentUser) {
+            return;
+        }
+        $.ajax({
+            url: "api/conversations.php",
+            method: "GET",
+            dataType: "json",
+            data: { conversation_id: id },
+        })
+            .done(function (response) {
+                const turns = messagesToTurns(response?.data?.messages || []);
+                conversationId = Number(response.data.conversation.conversation_id);
+                conversationTurns = turns;
+                applyMessagePage(response.data);
+                latestTurnInAnswerPanel = false;
+                resetAnswer();
+                renderConversation();
+                $questionInput.val("").trigger("focus");
+            })
+            .fail(function (xhr) {
+                if (xhr.responseJSON?.conversation_reset) {
+                    startNewConversation();
+                    loadRecentChats();
+                }
+                showError(xhr.responseJSON?.error || "That chat could not be opened. Try again.");
+            });
+    }
+
+    function setAccountMode(mode) {
+        accountMode = mode === "register" && registrationAllowed ? "register" : "login";
+        const registering = accountMode === "register";
+        $signInModeButton.toggleClass("active", !registering).attr("aria-pressed", String(!registering));
+        $registerModeButton.toggleClass("active", registering).attr("aria-pressed", String(registering));
+        $registerModeButton.prop("hidden", !registrationAllowed);
+        $accountDisplayNameField.prop("hidden", !registering);
+        $accountPasswordHint.prop("hidden", !registering);
+        $accountPassword.attr("autocomplete", registering ? "new-password" : "current-password");
+        $accountSubmitButton.text(registering ? "Create account" : "Sign in");
+        $accountError.prop("hidden", true).text("");
+    }
+
+    function currentUserIsAdmin() {
+        return Boolean(currentUser && currentUser.is_admin === true);
+    }
+
+    function applySession(session) {
+        const previousUser = currentUser ? currentUser.username : null;
+        currentUser = session.user || null;
+        if (session.csrf_token) {
+            csrfToken = String(session.csrf_token);
+        }
+        if (typeof session.registration_allowed === "boolean") {
+            registrationAllowed = session.registration_allowed;
+        }
+        const isAuthenticated = currentUser !== null;
+        // Only administrators manage the shared library.
+        $restoreBundledDocumentsButton.prop("hidden", !currentUserIsAdmin());
+
+        // The application is available only after a valid session
+        // has been established or restored.
+        $authScreen.prop("hidden", isAuthenticated);
+        $authenticatedWorkspace.prop("hidden", !isAuthenticated);
+
+        $accountSignedOut.prop("hidden", isAuthenticated);
+        $accountSignedIn.prop("hidden", !isAuthenticated);
+        $accountDisplayNameLabel.text(
+            isAuthenticated ? currentUser.display_name : ""
+        );
+
+        if (!isAuthenticated) {
+            // Clear credentials from the form when returning to login.
+            $accountPassword.val("");
+        }
+        if ((currentUser ? currentUser.username : null) !== previousUser) {
+            // Never carry one person's chat into another person's session.
+            startNewConversation();
+            resetAnswer();
+        }
+        setAccountMode(accountMode);
+        setBusy(false);
+        loadRecentChats();
+
+        // Protected application data must load only after session
+        // restoration or a successful sign-in.
+        if (currentUser !== null &&
+            currentUser.username !== previousUser) {
+            loadDocuments();
+            loadEvaluationDataset();
+        }
+    }
+
+    function loadSession() {
+        $.ajax({ url: "api/auth.php", method: "GET", dataType: "json" })
+            .done(applySession)
+            .fail(function () {
+                applySession({ user: null });
+            });
+    }
+
+    $signInModeButton.on("click", function () { setAccountMode("login"); });
+    $registerModeButton.on("click", function () { setAccountMode("register"); });
+
+    $accountForm.on("submit", function (event) {
+        event.preventDefault();
+        const username = String($accountUsername.val() || "").trim();
+        const password = String($accountPassword.val() || "");
+        if (!username || !password) {
+            $accountError.prop("hidden", false).text("Enter your username and password.");
+            return;
+        }
+        $accountSubmitButton.prop("disabled", true);
+        $.ajax({
+            url: "api/auth.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({
+                action: accountMode,
+                username: username,
+                password: password,
+                display_name: String($accountDisplayName.val() || "").trim(),
+            }),
+        })
+            .done(function (session) {
+                $accountPassword.val("");
+                $accountDisplayName.val("");
+                accountMode = "login";
+                applySession(session);
+            })
+            .fail(function (xhr) {
+                $accountError
+                    .prop("hidden", false)
+                    .text(xhr.responseJSON?.error || "You could not be signed in. Try again.");
+            })
+            .always(function () {
+                $accountSubmitButton.prop("disabled", false);
+            });
+    });
+
+    $signOutButton.on("click", function () {
+        $.ajax({
+            url: "api/auth.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({ action: "logout" }),
+        }).always(function (session) {
+            applySession(session && session.ok ? session : { user: null });
+        });
+    });
+
+    $refreshChatsButton.on("click", loadRecentChats);
+
+    $recentChatSearch.on("input", filterRecentChats);
+
+    $sidebarNewChatButton.on("click", function () {
+        if ($newConversationButton.prop("disabled")) {
+            return;
+        }
+        $newConversationButton.trigger("click");
+    });
+
+    $recentChatList.on("click", ".recent-chat-open", function () {
+        openConversation(Number($(this).data("conversationId")));
+    });
+
+    // Phase 7.1.3: Confirm before archiving a saved conversation.
+    $recentChatList.on("click", ".recent-chat-remove", function () {
+        if (
+            !chatArchiveDialog ||
+            chatArchiveDialog.open ||
+            chatArchiveRequestActive
+        ) {
+            return;
+        }
+
+        const id = Number($(this).data("conversationId"));
+        const chat = cachedRecentChats.find(function (item) {
+            return Number(item.conversation_id) === id;
+        });
+
+        if (!Number.isInteger(id) || id <= 0 || !chat) {
+            return;
+        }
+
+        pendingChatArchiveId = id;
+        chatArchiveTrigger = this;
+
+        $chatArchiveTitle.text(chat.title || "Untitled chat");
+        $chatArchiveError.prop("hidden", true).text("");
+        $chatArchiveNotice.prop("hidden", true).text("");
+
+        chatArchiveDialog.showModal();
+        $cancelChatArchiveButton.trigger("focus");
+    });
+
+    function closeChatArchiveDialog() {
+        if (
+            chatArchiveDialog &&
+            chatArchiveDialog.open &&
+            !chatArchiveRequestActive
+        ) {
+            chatArchiveDialog.close();
+        }
+    }
+
+    $cancelChatArchiveButton.on("click", closeChatArchiveDialog);
+
+    if (chatArchiveDialog) {
+        $(chatArchiveDialog).on("cancel", function (event) {
+            if (chatArchiveRequestActive) {
+                event.preventDefault();
+            }
+        });
+
+        $(chatArchiveDialog).on("close", function () {
+            if (
+                chatArchiveTrigger &&
+                chatArchiveTrigger.isConnected
+            ) {
+                chatArchiveTrigger.focus();
+            } else {
+                $("#sidebarNewChatButton").trigger("focus");
+            }
+
+            if (!chatArchiveRequestActive) {
+                pendingChatArchiveId = null;
+            }
+
+            chatArchiveTrigger = null;
+        });
+    }
+
+    $confirmChatArchiveButton.on("click", function () {
+        if (
+            chatArchiveRequestActive ||
+            !chatArchiveDialog ||
+            !chatArchiveDialog.open ||
+            !Number.isInteger(pendingChatArchiveId) ||
+            pendingChatArchiveId <= 0
+        ) {
+            return;
+        }
+
+        const id = pendingChatArchiveId;
+        chatArchiveRequestActive = true;
+
+        $confirmChatArchiveButton
+            .prop("disabled", true)
+            .text("Removing...");
+
+        $cancelChatArchiveButton.prop("disabled", true);
+        $chatArchiveError.prop("hidden", true).text("");
+
+        function finishArchiveRequest() {
+            chatArchiveRequestActive = false;
+
+            $confirmChatArchiveButton
+                .prop("disabled", false)
+                .text("Remove conversation");
+
+            $cancelChatArchiveButton.prop("disabled", false);
+        }
+
+        $.ajax({
+            url: "api/conversations.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({
+                action: "archive",
+                conversation_id: id,
+            }),
+        })
+        .done(function (response) {
+            if (!response || response.ok !== true) {
+                finishArchiveRequest();
+
+                $chatArchiveError
+                    .text(
+                        "The server did not confirm removal. " +
+                        "Your conversation has not been removed " +
+                        "from this view."
+                    )
+                    .prop("hidden", false);
+
+                return;
+            }
+
+            finishArchiveRequest();
+            closeChatArchiveDialog();
+
+            if (id === conversationId) {
+                startNewConversation();
+                resetAnswer();
+            }
+
+            $chatArchiveNotice
+                .text("Conversation removed from recent chats.")
+                .prop("hidden", false);
+
+            // Refresh only after a confirmed archive.
+            loadRecentChats();
+        })
+        .fail(function (xhr) {
+            finishArchiveRequest();
+
+            const serverMessage =
+                xhr &&
+                xhr.responseJSON &&
+                typeof xhr.responseJSON.error === "string"
+                    ? xhr.responseJSON.error
+                    : "The conversation could not be removed. " +
+                      "Please try again.";
+
+            $chatArchiveError
+                .text(serverMessage)
+                .prop("hidden", false);
+        });
+    });
+
+    function showLoading(previewOnly) {
+        $askForm.attr("aria-busy", "true");
+        $emptyState.prop("hidden", true);
+        $errorState.prop("hidden", true).text("");
+        $answerResult.prop("hidden", true);
+        $loadingState.prop("hidden", false);
+        $answerSaveWarning.prop("hidden", true).text("");
+        $loadingText.text(previewOnly
+            ? "Retrieving the sources these settings would use..."
+            : "Retrieving sources and generating an answer...");
+        setBusy(true);
+    }
+
+    function showError(message) {
+        $askForm.attr("aria-busy", "false");
+        $emptyState.prop("hidden", true);
+        $loadingState.prop("hidden", true);
+        $answerResult.prop("hidden", true);
+        $answerSaveWarning.prop("hidden", true).text("");
+        $errorState.prop("hidden", false).text(message);
+    }
+
+    function resetAnswer() {
+        $askForm.attr("aria-busy", "false");
+        $loadingState.prop("hidden", true);
+        $errorState.prop("hidden", true).text("");
+        $answerResult.prop("hidden", true);
+        $emptyState.prop("hidden", false);
+        $answerText.text("");
+        $answerSaveWarning.prop("hidden", true).text("");
+        $answerMeta.empty();
+        $sourceList.empty();
+    }
+
+    function addMeta(label, value) {
+        $("<span>")
+            .append($("<strong>").text(label + ": "))
+            .append(document.createTextNode(value))
+            .appendTo($answerMeta);
+    }
+
+    function renderSources(sources) {
+        $sourceList.empty();
+
+        if (!Array.isArray(sources) || sources.length === 0) {
+            $("<p>")
+                .addClass("text-muted mb-0")
+                .text("No sources were returned.")
+                .appendTo($sourceList);
+            return;
+        }
+
+        sources.forEach(function (source, index) {
+            const distance = Number(source.distance);
+            const finalScore = Number(source.retrieval_score);
+            const scoreParts = [];
+
+            if (source.distance !== null &&
+                source.distance !== undefined &&
+                Number.isFinite(distance)) {
+                scoreParts.push("distance " + distance.toFixed(6));
+            }
+
+            if (source.keyword_score !== null &&
+                source.keyword_score !== undefined) {
+                scoreParts.push(
+                    "lexical " + compactNumber(source.keyword_score, 3)
+                );
+            }
+
+            if (source.retrieval_score !== null &&
+                source.retrieval_score !== undefined &&
+                Number.isFinite(finalScore)) {
+                scoreParts.push("final " + finalScore.toFixed(6));
+            }
+
+            // Prefer the original filename retrieved from MySQL.
+            const filename = source.original_filename ||
+                source.source_path ||
+                "Unknown document";
+
+            // Normalize the extracted content type.
+            const contentType = String(
+                source.content_type || "text"
+            ).replace(/_/g, " ");
+
+            const formattedType = contentType
+                .replace(/\b\w/g, function (character) {
+                    return character.toUpperCase();
+                });
+
+            // Use the document extension to label the source location.
+            const extension = filename.split(".").pop().toLowerCase();
+
+            let locationLabel = "Page";
+            if (extension === "pptx") {
+                locationLabel = "Slide";
+            }
+
+            const metadata = [];
+
+            if (source.page_number !== null &&
+                source.page_number !== undefined) {
+                metadata.push(locationLabel + " " + source.page_number);
+            }
+
+            if (source.chunk_index !== null &&
+                source.chunk_index !== undefined) {
+                metadata.push("Chunk " + source.chunk_index);
+            }
+
+            metadata.push("Type: " + formattedType);
+
+            if (scoreParts.length > 0) {
+                metadata.push(scoreParts.join(" · "));
+            }
+
+            // Create the source card.
+            const sourceRank = Number(
+                source.rank ?? index + 1
+            );
+
+            const $card = $("<article>")
+                .addClass("source-card");
+
+            if (
+                Number.isSafeInteger(sourceRank) &&
+                sourceRank > 0
+            ) {
+                $card.attr("data-source-rank", sourceRank);
+            }
+            const $heading = $("<div>").addClass("source-heading");
+
+            $("<strong>")
+                .text((source.rank ?? index + 1) + ". " + filename)
+                .appendTo($heading);
+
+            $("<span>")
+                .text(metadata.join(" · "))
+                .appendTo($heading);
+
+            $heading.appendTo($card);
+
+            // Display the extracted evidence.
+            $("<p>")
+                .text(source.text || "No extracted text available.")
+                .appendTo($card);
+
+            $card.appendTo($sourceList);
+        });
+    }
+
+    // Phase 7.4.3: Link citations only when the current
+    // answer includes the matching ranked source evidence.
+    function renderClickableCitations(answer, sources) {
+        const text = String(answer || "");
+        const availableRanks = new Set();
+
+        if (Array.isArray(sources)) {
+            sources.forEach(function (source, index) {
+                const rank = Number(source.rank ?? index + 1);
+
+                if (
+                    Number.isSafeInteger(rank) &&
+                    rank > 0
+                ) {
+                    availableRanks.add(rank);
+                }
+            });
+        }
+
+        $answerText.empty();
+
+        const pattern = /\[(\d+)\]/g;
+        let cursor = 0;
+        let match;
+
+        while ((match = pattern.exec(text)) !== null) {
+            const before = text.slice(cursor, match.index);
+            const previousCharacter = text[match.index - 1] || "";
+            const rank = Number(match[1]);
+
+            $answerText.append(
+                document.createTextNode(before)
+            );
+
+            // Match the backend's standalone citation rule:
+            // no word character immediately before the marker.
+            const isStandalone =
+                !/[A-Za-z0-9_]/.test(previousCharacter);
+
+            if (
+                isStandalone &&
+                Number.isSafeInteger(rank) &&
+                availableRanks.has(rank)
+            ) {
+                $("<button>")
+                    .attr({
+                        type: "button",
+                        "data-citation-rank": rank,
+                        "aria-label": "Show retrieved source " + rank,
+                        title: "Inspect source " + rank
+                    })
+                    .addClass("chat-citation-button")
+                    .text(match[0])
+                    .appendTo($answerText);
+            } else {
+                $answerText.append(
+                    document.createTextNode(match[0])
+                );
+            }
+
+            cursor = pattern.lastIndex;
+        }
+
+        $answerText.append(
+            document.createTextNode(text.slice(cursor))
+        );
+    }
+
+    $answerText.on(
+        "click",
+        ".chat-citation-button",
+        function () {
+            const rank = Number(
+                $(this).attr("data-citation-rank")
+            );
+
+            if (
+                !Number.isSafeInteger(rank) ||
+                rank < 1
+            ) {
+                return;
+            }
+
+            const $source = $sourceList
+                .find(".source-card")
+                .filter(function () {
+                    return Number(
+                        $(this).attr("data-source-rank")
+                    ) === rank;
+                })
+                .first();
+
+            if (!$source.length) {
+                return;
+            }
+
+            $sourceList
+                .find(".source-card")
+                .removeClass("chat-source-selected");
+
+            $source.addClass("chat-source-selected");
+
+            const element = $source.get(0);
+
+            if (element) {
+                element.scrollIntoView({
+                    behavior: "smooth",
+                    block: "nearest"
+                });
+            }
+        }
+    );
+
+    function showAnswer(result, previewOnly) {
+        $askForm.attr("aria-busy", "false");
+        $loadingState.prop("hidden", true);
+        $emptyState.prop("hidden", true);
+        $errorState.prop("hidden", true).text("");
+        $answerResult.prop("hidden", false);
+
+        $answerResult
+            .toggleClass("chat-live-answer", !previewOnly)
+            .toggleClass("chat-source-preview", previewOnly);
+
+        $answerResultLabel.text(previewOnly ? "Source preview" : "Grounded answer");
+        $answerText.text(previewOnly
+            ? "No model was called. These are the source chunks the selected retrieval settings would send to the model."
+            : (result.answer || "No answer was returned."));
+        $answerMeta.empty();
+        if (!previewOnly) {
+            addMeta("Model", modelDisplayName(result.model));
+        }
+        addMeta("Retrieval", retrievalDisplayName(result.retrieval_method));
+        addMeta("Sources retrieved", String(result.top_k ?? "unknown"));
+        if (Number(result.history_messages_used) > 0) {
+            addMeta("Earlier messages used", String(result.history_messages_used));
+        }
+        if (result.retrieval_query && result.retrieval_query !== result.question) {
+            addMeta("Searched for", result.retrieval_query);
+        }
+        if (!previewOnly) {
+            addMeta("Latency", String(result.latency_ms ?? "unknown") + " ms");
+        }
+        // Improvement 2: a generated answer is not the same as a saved one.
+        const notSaved = !previewOnly && result.saved === false;
+        $answerSaveWarning
+            .prop("hidden", !notSaved)
+            .text(notSaved ? (result.save_warning || ANSWER_NOT_SAVED_MESSAGE) : "");
+
+        renderSources(result.sources);
+
+        if (!previewOnly) {
+            renderClickableCitations(
+                result.answer || "No answer was returned.",
+                result.sources
+            );
+        }
+    }
+
+    function chatConfiguration() {
+        return {
+            model: String($chatModel.val()),
+            retrieval_method: String($chatRetrievalMethod.val()),
+            top_k: Number($chatTopK.val()),
+            temperature: Number($chatTemperature.val()),
+            top_p: Number($chatTopP.val()),
+        };
+    }
+
+    function updateChatSettingsSummary() {
+        const configuration = chatConfiguration();
+        const usesDefaults = $chatSettingsControls.toArray().every(function (control) {
+            return String($(control).val()) === String($(control).data("default"));
+        });
+        $chatSettingsSummary.text(
+            (usesDefaults ? "Using recommended setup: " : "Using custom setup: ") +
+            modelDisplayName(configuration.model) + " · " +
+            retrievalDisplayName(configuration.retrieval_method) + " · " +
+            configuration.top_k + " source" + (configuration.top_k === 1 ? "" : "s")
+        );
+    }
+
+    function requestChat(action) {
+        const question = $questionInput.val().trim();
+
+        if (!question) {
+            showError("Enter a question before submitting.");
+            $questionInput.trigger("focus");
+            return;
+        }
+
+        const previewOnly = action === "preview";
+        const configuration = chatConfiguration();
+        showLoading(previewOnly);
+        $.ajax({
+            url: "api/ask.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({
+                question: question,
+                action: action,
+                model: configuration.model,
+                retrieval_method: configuration.retrieval_method,
+                top_k: configuration.top_k,
+                temperature: configuration.temperature,
+                top_p: configuration.top_p,
+                conversation_id: conversationId,
+            }),
+        })
+            .done(function (response) {
+                if (!response || response.ok !== true || !response.data) {
+                    showError("The server returned an incomplete answer.");
+                    return;
+                }
+                showAnswer(response.data, previewOnly);
+                if (!previewOnly && response.data.saved === false) {
+                    // Nothing was stored: keep the answer on screen with its
+                    // warning, but do not add it to the saved thread or to
+                    // Recent chats, and keep the question so it can be retried.
+                    // An existing thread stays open; a new one was never created.
+                    if (response.data.conversation_id) {
+                        conversationId = Number(response.data.conversation_id);
+                    }
+                    latestTurnInAnswerPanel = false;
+                    renderConversation();
+                    return;
+                }
+                if (!previewOnly && response.data.conversation_id) {
+                    conversationId = Number(response.data.conversation_id);
+                    const responseId = Number(response.data.response_id);
+
+                    conversationTurns.push({
+                        question: response.data.question || question,
+                        answer: response.data.answer || "",
+                        responseId: (
+                            response.data.response_id !== null &&
+                            response.data.response_id !== undefined &&
+                            Number.isSafeInteger(responseId) &&
+                            responseId > 0
+                        ) ? responseId : null,
+                    });
+                    latestTurnInAnswerPanel = true;
+                    renderConversation();
+                    $questionInput.val("");
+                    loadRecentChats();
+                }
+            })
+            .fail(function (xhr, status) {
+                if (status === "abort") {
+                    return;
+                }
+                if (xhr.responseJSON?.conversation_reset) {
+                    startNewConversation();
+                    loadRecentChats();
+                }
+                if (xhr.responseJSON?.sign_in_required) {
+                    applySession({ user: null });
+                    $accountUsername.trigger("focus");
+                }
+                const serverMessage = xhr.responseJSON?.error;
+                let message;
+
+                if (
+                    typeof serverMessage === "string" &&
+                    serverMessage.trim()
+                ) {
+                    message = serverMessage;
+                } else if (xhr.status === 0) {
+                    message =
+                        "Could not reach the server. Check the " +
+                        "connection and try again.";
+                } else if (xhr.status === 401) {
+                    message =
+                        "Your session may have expired. " +
+                        "Sign in and try again.";
+                } else if (xhr.status === 408 ||
+                           xhr.status === 504 ||
+                           status === "timeout") {
+                    message =
+                        "The request timed out. It may still be " +
+                        "processing on the server; check before retrying.";
+                } else if (previewOnly) {
+                    message =
+                        "Sources could not be previewed. " +
+                        "Check your settings and try again.";
+                } else {
+                    message =
+                        "The answer could not be generated. " +
+                        "Try again.";
+                }
+
+                showError(message);
+            })
+            .always(function () {
+                setBusy(false);
+            });
+    }
+
+    $askForm.on("submit", function (event) {
+        event.preventDefault();
+        requestChat("answer");
+    });
+
+    $previewSourcesButton.on("click", function () {
+        requestChat("preview");
+    });
+
+    $clearButton.on("click", function () {
+        $questionInput.val("").prop("disabled", false).trigger("focus");
+        setBusy(false);
+        resetAnswer();
+    });
+
+    $newConversationButton.on("click", function () {
+        startNewConversation();
+        $questionInput.val("").prop("disabled", false).trigger("focus");
+        setBusy(false);
+        resetAnswer();
+    });
+
+    $resetChatSettings.on("click", function () {
+        $chatSettingsControls.each(function () {
+            $(this).val(String($(this).data("default")));
+        });
+        updateChatSettingsSummary();
+    });
+
+    $chatSettingsControls.on("change", updateChatSettingsSummary);
+    updateChatSettingsSummary();
+    setAccountMode("login");
+    loadSession();
+
+    $suggestionButtons.on("click", function () {
+        $questionInput.val($(this).data("question")).trigger("focus");
+    });
+
+    // Phase 7.3: Enter submits, Shift+Enter inserts a newline.
+    // Ctrl+Enter remains supported for existing users.
+    $questionInput.on("keydown", function (event) {
+        if (
+            event.key !== "Enter" ||
+            event.shiftKey ||
+            event.isComposing ||
+            event.originalEvent?.isComposing
+        ) {
+            return;
+        }
+
+        if (event.altKey || event.metaKey) {
+            return;
+        }
+
+        event.preventDefault();
+
+        // Never bypass the paid-generation safeguard.
+        if (
+            $askButton.prop("disabled") ||
+            $questionInput.prop("disabled")
+        ) {
+            return;
+        }
+
+        $askForm.trigger("submit");
+    });
+
+    function showDocumentMessage(message, type) {
+        $documentMessage
+            .removeClass("alert-success alert-danger alert-info")
+            .addClass("alert-" + type)
+            .text(message)
+            .prop("hidden", false);
+    }
+
+    // Phase 5: Control the document upload panel without resetting the form.
+    const $toggleDocumentUploadButton = $("#toggleDocumentUploadButton");
+
+    function setDocumentUploadPanelOpen(open) {
+        const shouldOpen = Boolean(open);
+
+        // Never hide an active ingestion request.
+        if (!shouldOpen && documentUploadPanelBusy) {
+            return;
+        }
+
+        $documentForm.prop("hidden", !shouldOpen);
+        $toggleDocumentUploadButton
+            .attr("aria-expanded", String(shouldOpen))
+            .text(shouldOpen ? "Hide upload form" : "Upload document");
+    }
+
+    $toggleDocumentUploadButton.on("click", function () {
+        if (documentUploadPanelBusy) {
+            return;
+        }
+
+        setDocumentUploadPanelOpen($documentForm.prop("hidden"));
+    });
+
+    function resetReplacement() {
+        $replaceDocumentId.val("");
+        pendingDuplicateDocument = null;
+        $cancelReplaceButton.prop("hidden", true);
+        $duplicateDocumentPrompt.prop("hidden", true);
+        $duplicateDocumentName.text("");
+        $uploadDocumentButton.prop("disabled", false);
+        $uploadDocumentButton.text("Upload and ingest");
+        $uploadSelection.text("");
+    }
+
+    function selectReplacement(item) {
+        setDocumentUploadPanelOpen(true);
+        $replaceDocumentId.val(item.document_id);
+        pendingDuplicateDocument = null;
+        $duplicateDocumentPrompt.prop("hidden", true);
+        $duplicateDocumentName.text("");
+        $documentTitle.val(item.title);
+        $documentCategory.val(titleCaseLabel(item.category));
+        $cancelReplaceButton.prop("hidden", false);
+        $uploadDocumentButton.prop("disabled", false);
+        $uploadDocumentButton.text("Replace and re-ingest");
+        showDocumentMessage(
+            "The new file will replace " + item.title + " after ingestion succeeds.",
+            "info"
+        );
+    }
+
+    function updateDocumentFilterOptions(documents) {
+        const currentCategory = String($documentCategoryFilter.val() || "");
+        const categories = [...new Set(documents.map(function (item) { return item.category; }))].sort();
+        $documentCategoryFilter.find("option:not(:first)").remove();
+        categories.forEach(function (category) {
+            $documentCategoryFilter.append(
+                $("<option>").val(category).text(titleCaseLabel(category))
+            );
+        });
+        if (categories.includes(currentCategory)) {
+            $documentCategoryFilter.val(currentCategory);
+        }
+        updateNewTestCategoryChoices(categories);
+    }
+
+    function updateNewTestCategoryChoices(categories) {
+        const checkedValues = $newTestCategoryChoices.find("input:checked").map(function () {
+            return String($(this).val());
+        }).get();
+        const selected = new Set(checkedValues.length ? checkedValues : requestedNewTestCategories);
+        $newTestCategoryChoices.empty();
+        if (!categories.length) {
+            $newTestCategoryChoices.append($("<span>").text("No active source categories are available."));
+            syncNewTestExperimentControls(false);
+            return;
+        }
+        categories.forEach(function (category) {
+            const checkboxId = "newTestCategory_" + String(category).replace(/[^a-z0-9_-]/gi, "_");
+            const $checkbox = $("<input>").attr({
+                id: checkboxId,
+                type: "checkbox",
+                value: category,
+            }).addClass("form-check-input new-test-category-input");
+            if (selected.has(String(category))) {
+                $checkbox.prop("checked", true);
+            }
+            $newTestCategoryChoices.append(
+                $("<label>").attr("for", checkboxId).append($checkbox, $("<span>").text(titleCaseLabel(category)))
+            );
+        });
+        syncNewTestExperimentControls(false);
+    }
+
+    function selectedNewTestQuestionIds() {
+        return $newTestQuestionIds.find("option:selected").map(function () {
+            return Number($(this).val());
+        }).get().filter(Number.isInteger);
+    }
+
+    function setSelectedNewTestQuestionIds(questionIds) {
+        const selected = new Set((questionIds || []).map(Number));
+        $newTestQuestionIds.find("option").each(function () {
+            $(this).prop("selected", selected.has(Number($(this).val())));
+        });
+        $newTestLimit.val(String(selected.size));
+    }
+
+    function populateNewTestQuestionChoices() {
+        const previouslySelected = selectedNewTestQuestionIds();
+        const maxQuestions = Number($newTestLimit.data("max")) || 5;
+        $newTestQuestionIds.empty();
+        evaluationQuestions.forEach(function (question) {
+            const number = Number(question.display_order) || Number(question.question_id);
+            const label = "Question " + number + " · " + titleCaseLabel(question.category) + " · " + question.question_text;
+            $newTestQuestionIds.append(
+                $("<option>").val(question.question_id).text(label)
+            );
+        });
+        if (previouslySelected.length) {
+            setSelectedNewTestQuestionIds(previouslySelected.slice(0, maxQuestions));
+            return;
+        }
+        const finalStudyNumbers = [1, 23, 35, 38, 46].slice(0, maxQuestions);
+        const recommendedIds = evaluationQuestions.filter(function (question) {
+            return finalStudyNumbers.includes(Number(question.display_order));
+        }).map(function (question) {
+            return Number(question.question_id);
+        });
+        setSelectedNewTestQuestionIds(
+            recommendedIds.length === finalStudyNumbers.length
+                ? recommendedIds
+                : evaluationQuestions.slice(0, maxQuestions).map(function (question) {
+                    return Number(question.question_id);
+                })
+        );
+    }
+
+    function documentRow(item) {
+        const $row = $("<article>").addClass("list-item document-item");
+        const $details = $("<div>").addClass("document-details");
+        $("<strong>").text(item.title).appendTo($details);
+        $("<span>")
+            .text(item.original_filename + " · " + item.chunk_count + " chunks")
+            .appendTo($details);
+        if (item.ingestion_error) {
+            $("<span>").addClass("text-danger").text(item.ingestion_error).appendTo($details);
+        }
+        $details.appendTo($row);
+
+        // Improvement 5: shared library documents are visible to everyone but
+        // managed only by an administrator; uploads are private to their owner.
+        const isShared = item.shared === true;
+        const canManage = item.can_manage === true;
+        const $actions = $("<div>").addClass("document-actions");
+        $("<small>").text(
+            String(item.source_type).toUpperCase() + " · " + item.status + " · " +
+            (isShared ? "shared library" : "your upload")
+        ).appendTo($actions);
+        $("<button>")
+            .addClass("btn btn-sm btn-outline-primary view-document-details-button")
+            .attr("type", "button")
+            .data("document", item)
+            .text("View details")
+            .appendTo($actions);
+        if (!isShared) {
+            $("<button>")
+                .addClass("btn btn-sm btn-outline-secondary replace-document-button")
+                .attr("type", "button")
+                .data("document", item)
+                .text("Replace")
+                .appendTo($actions);
+        }
+        if (canManage) {
+            $("<button>")
+                .addClass("btn btn-sm btn-outline-danger delete-document-button")
+                .attr("type", "button")
+                .data("document", item)
+                .text("Delete")
+                .appendTo($actions);
+        }
+        $actions.appendTo($row);
+        return $row;
+    }
+
+    // Keep category expansion state during navigation and rerendering.
+    const expandedDocumentCategories = new Set();
+
+    function renderDocumentList() {
+        $documentList.empty();
+        const documentItems = indexedDocuments;
+        const categories = new Set(documentItems.map(function (item) {
+            return item.category;
+        }));
+        $documentCount.text(String(documentItems.length));
+        $categoryCount.text(String(categories.size));
+        const totalChunks = documentItems.reduce(function (total, item) {
+            return total + (Number(item.chunk_count) || 0);
+        }, 0);
+
+        $overviewChunkCount.text(String(totalChunks));
+
+        // Phase 5: Refresh the Documents page summary cards.
+        $("#libraryDocumentCount").text(String(documentItems.length));
+        $("#libraryCategoryCount").text(String(categories.size));
+        $("#libraryChunkCount").text(String(totalChunks));
+        if (documentItems.length === 0) {
+            $documentVisibleCount.text("0 indexed documents");
+            $("<p>").addClass("text-muted").text("No indexed documents were found.").appendTo($documentList);
+            return;
+        }
+
+        const query = String($documentSearch.val() || "").trim().toLowerCase();
+        const category = String($documentCategoryFilter.val() || "");
+        const type = String($documentTypeFilter.val() || "");
+        const sort = String($documentSort.val() || "category");
+
+        // Enable Clear Filters only when the user changes the defaults.
+        $("#clearDocumentFiltersButton").prop(
+            "disabled",
+            !query && !category && !type && sort === "category"
+        );
+        const visible = documentItems.filter(function (item) {
+            const haystack = (item.title + " " + item.original_filename).toLowerCase();
+            return (!query || haystack.includes(query)) &&
+                (!category || item.category === category) &&
+                (!type || item.source_type === type);
+        });
+        const comparators = {
+            category: function (left, right) {
+                return String(left.category).localeCompare(String(right.category)) ||
+                    String(left.title).localeCompare(String(right.title));
+            },
+            name: function (left, right) { return String(left.title).localeCompare(String(right.title)); },
+            newest: function (left, right) { return Number(right.document_id) - Number(left.document_id); },
+            chunks: function (left, right) { return Number(right.chunk_count) - Number(left.chunk_count); },
+        };
+        visible.sort(comparators[sort] || comparators.category);
+        $documentVisibleCount.text(
+            visible.length + " of " + documentItems.length + " indexed document" +
+            (documentItems.length === 1 ? "" : "s")
+        );
+        if (!visible.length) {
+            $("<p>").addClass("text-muted").text("No documents match these filters.").appendTo($documentList);
+            return;
+        }
+
+        if (sort === "category") {
+            const grouped = new Map();
+            visible.forEach(function (item) {
+                if (!grouped.has(item.category)) {
+                    grouped.set(item.category, []);
+                }
+                grouped.get(item.category).push(item);
+            });
+            grouped.forEach(function (items, groupName) {
+                const $group = $("<details>")
+                    .addClass("document-group document-accordion")
+                    .data("categoryKey", groupName);
+
+                // Categories start collapsed. Search results open automatically.
+                if (query || expandedDocumentCategories.has(groupName)) {
+                    $group.prop("open", true);
+                }
+
+                const $heading = $("<summary>")
+                    .addClass("document-group-heading")
+                    .append(
+                        $("<strong>").text(titleCaseLabel(groupName)),
+                        $("<span>").text(
+                            items.length + " document" +
+                            (items.length === 1 ? "" : "s")
+                        )
+                    );
+
+                const $stack = $("<div>").addClass("list-stack");
+                items.forEach(function (item) {
+                    $stack.append(documentRow(item));
+                });
+
+                $group.append($heading, $stack);
+
+                // Remember manual expansion choices when filters rerender.
+                $group.on("toggle", function () {
+                    if (query) {
+                        return;
+                    }
+                    if (this.open) {
+                        expandedDocumentCategories.add(groupName);
+                    } else {
+                        expandedDocumentCategories.delete(groupName);
+                    }
+                });
+
+                $documentList.append($group);
+            });
+            return;
+        }
+
+        const $stack = $("<div>").addClass("list-stack");
+        visible.forEach(function (item) { $stack.append(documentRow(item)); });
+        $documentList.append($stack);
+    }
+
+    function loadDocuments() {
+        if (documentListRequest) {
+            return documentListRequest;
+        }
+
+        const hasRenderedDocuments = $documentList.find(".document-item").length > 0;
+        if (!hasRenderedDocuments) {
+            $documentList.html('<p class="text-muted">Loading indexed documents...</p>');
+        }
+        $refreshDocumentsButton.prop("disabled", true).text("Refreshing...");
+
+        const delayedMessage = window.setTimeout(function () {
+            if (!hasRenderedDocuments) {
+                $documentList.html(
+                    '<p class="text-muted">The local server is still working. ' +
+                    "If a document is being ingested, this list will appear when it finishes.</p>"
+                );
+            }
+        }, 4000);
+
+        documentListRequest = $.ajax({
+            url: "api/documents.php",
+            method: "GET",
+            dataType: "json",
+            timeout: 130000,
+        })
+            .done(function (response) {
+                if (response?.ok !== true) {
+                    showDocumentMessage("The document list could not be loaded.", "danger");
+                    return;
+                }
+                indexedDocuments = Array.isArray(response.data) ? response.data : [];
+                updateDocumentFilterOptions(indexedDocuments);
+                renderDocumentList();
+            })
+            .fail(function (xhr) {
+                showDocumentMessage(xhr.responseJSON?.error || "The document list could not be loaded.", "danger");
+                if (!hasRenderedDocuments) {
+                    $documentList.html('<p class="text-danger">Document data is unavailable. Use Refresh to try again.</p>');
+                }
+            })
+            .always(function () {
+                window.clearTimeout(delayedMessage);
+                documentListRequest = null;
+                $refreshDocumentsButton.prop("disabled", false).text("Refresh");
+            });
+
+        return documentListRequest;
+    }
+
+    // Phase 5: Report actual transfer progress and processing state.
+    const $documentIngestionStatus = $("#documentIngestionStatus");
+    const $documentIngestionStatusTitle = $("#documentIngestionStatusTitle");
+    const $documentIngestionStatusDescription = $("#documentIngestionStatusDescription");
+    const $documentIngestionElapsed = $("#documentIngestionElapsed");
+    const $documentIngestionProgress = $("#documentIngestionProgress");
+
+    function setDocumentIngestionStatus(state, description) {
+        $documentIngestionStatus
+            .removeClass("is-uploading is-processing is-success is-error")
+            .addClass("is-" + state)
+            .prop("hidden", false);
+
+        const titles = {
+            uploading: "Uploading file",
+            processing: "Processing document",
+            success: "Document indexed successfully",
+            error: "Document ingestion failed"
+        };
+
+        $documentIngestionStatusTitle.text(titles[state] || "Document status");
+        $documentIngestionStatusDescription.text(description || "");
+
+        if (state !== "uploading") {
+            $documentIngestionProgress.removeAttr("value");
+        }
+
+        if (state === "success" || state === "error") {
+            $documentIngestionProgress.prop("hidden", true);
+        } else {
+            $documentIngestionProgress.prop("hidden", false);
+        }
+    }
+
+    function updateDocumentUploadProgress(event) {
+        if (!documentUploadPanelBusy || !event.lengthComputable ||
+                event.total <= 0) {
+            return;
+        }
+
+        const percent = Math.min(
+            100,
+            Math.max(0, Math.round(event.loaded / event.total * 100))
+        );
+
+        if (percent < 100) {
+            $documentIngestionProgress.val(percent);
+            setDocumentIngestionStatus(
+                "uploading",
+                percent + "% of the file transferred to the server."
+            );
+        } else {
+            setDocumentIngestionStatus(
+                "processing",
+                "File transfer complete. Waiting for server-side ingestion."
+            );
+        }
+    }
+
+    function startIngestionProgress() {
+        setDocumentUploadPanelOpen(true);
+        documentUploadPanelBusy = true;
+        $toggleDocumentUploadButton.prop("disabled", true);
+        ingestionStartedAt = Date.now();
+        $refreshDocumentsButton.prop("disabled", true);
+
+        $documentIngestionElapsed.text("Elapsed: 0s");
+        $documentIngestionProgress.val(0);
+        setDocumentIngestionStatus(
+            "uploading",
+            "Sending the selected document to the server."
+        );
+
+        window.clearInterval(ingestionTimer);
+        ingestionTimer = window.setInterval(function () {
+            const elapsedSeconds = Math.max(
+                1,
+                Math.floor((Date.now() - ingestionStartedAt) / 1000)
+            );
+            $documentIngestionElapsed.text(
+                "Elapsed: " + elapsedSeconds + "s"
+            );
+        }, 1000);
+    }
+
+    function stopIngestionProgress() {
+        documentUploadPanelBusy = false;
+        $toggleDocumentUploadButton.prop("disabled", false);
+        window.clearInterval(ingestionTimer);
+        ingestionTimer = null;
+        ingestionStartedAt = null;
+    }
+
+    $documentFile.on("change", function () {
+        const file = this.files[0];
+        if (!file) {
+            $uploadSelection.text("");
+            pendingDuplicateDocument = null;
+            $duplicateDocumentPrompt.prop("hidden", true);
+            if (!$replaceDocumentId.val()) {
+                $uploadDocumentButton.prop("disabled", false);
+            }
+            return;
+        }
+        $uploadSelection.text(file.name + " · " + Math.ceil(file.size / 1024) + " KB");
+        if (!$documentTitle.val().trim()) {
+            $documentTitle.val(file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "));
+        }
+        const duplicate = indexedDocuments.find(function (item) {
+            return String(item.original_filename).toLowerCase() === file.name.toLowerCase();
+        });
+        if (duplicate && !$replaceDocumentId.val()) {
+            pendingDuplicateDocument = duplicate;
+            $duplicateDocumentName.text(
+                "A document named " + file.name + " already exists (" + duplicate.chunk_count + " chunks)."
+            );
+            $duplicateDocumentPrompt.prop("hidden", false);
+            $uploadDocumentButton.prop("disabled", true);
+            $documentMessage.prop("hidden", true).text("");
+        } else {
+            pendingDuplicateDocument = null;
+            $duplicateDocumentPrompt.prop("hidden", true);
+            $duplicateDocumentName.text("");
+            $uploadDocumentButton.prop("disabled", false);
+        }
+    });
+
+    $confirmDuplicateReplacement.on("click", function () {
+        if (!pendingDuplicateDocument) {
+            return;
+        }
+        selectReplacement(pendingDuplicateDocument);
+    });
+
+    $cancelDuplicateUpload.on("click", function () {
+        $documentFile.val("");
+        resetReplacement();
+        $documentForm[0].reset();
+        showDocumentMessage("Duplicate upload cancelled. The existing indexed document was not changed.", "info");
+        $documentFile.trigger("focus");
+    });
+
+    // Phase 5: Read-only document metadata inspector.
+    const documentDetailsDialog =
+        document.getElementById("documentDetailsDialog");
+    let documentInspectorTrigger = null;
+
+    function inspectorValue(value) {
+        return value === null || value === undefined ||
+            String(value).trim() === ""
+            ? "Not available"
+            : String(value);
+    }
+
+    function openDocumentInspector(item, trigger) {
+        if (!documentDetailsDialog || !item) {
+            return;
+        }
+
+        documentInspectorTrigger = trigger || null;
+
+        const values = {
+            inspectorDocumentTitle: item.title,
+            inspectorDocumentId: item.document_id,
+            inspectorDocumentCategory: titleCaseLabel(item.category),
+            inspectorDocumentType: String(item.source_type || "").toUpperCase(),
+            inspectorDocumentStatus: item.status,
+            inspectorDocumentFilename: item.original_filename,
+            inspectorDocumentChunks: item.chunk_count,
+            inspectorDocumentSource:
+                String(item.source_path || "").startsWith("storage/uploads/")
+                    ? "Uploaded document"
+                    : "Bundled source",
+            inspectorDocumentCreated: item.created_at,
+            inspectorDocumentImported: item.imported_at
+        };
+
+        Object.entries(values).forEach(function ([id, value]) {
+            $("#" + id).text(inspectorValue(value));
+        });
+
+        const error = String(item.ingestion_error || "").trim();
+        $("#inspectorDocumentErrorBlock").prop("hidden", !error);
+        $("#inspectorDocumentError").text(error);
+
+        if (!documentDetailsDialog.open) {
+            documentDetailsDialog.showModal();
+        }
+
+        $("#closeDocumentInspectorButton").trigger("focus");
+    }
+
+    $documentList.on(
+        "click",
+        ".view-document-details-button",
+        function () {
+            openDocumentInspector($(this).data("document"), this);
+        }
+    );
+
+    $("#closeDocumentInspectorButton").on("click", function () {
+        documentDetailsDialog.close();
+    });
+
+    $(documentDetailsDialog).on("close", function () {
+        if (documentInspectorTrigger &&
+                documentInspectorTrigger.isConnected) {
+            documentInspectorTrigger.focus();
+        }
+        documentInspectorTrigger = null;
+    });
+
+    $documentList.on("click", ".replace-document-button", function () {
+        const item = $(this).data("document");
+        selectReplacement(item);
+        $documentFile.trigger("focus");
+    });
+
+    $documentList.on("click", ".delete-document-button", function () {
+        const $button = $(this);
+        const item = $button.data("document");
+        const isUploaded = String(item.source_path).startsWith("storage/uploads/");
+        const detail = isUploaded
+            ? "Its uploaded file, live chunks, and embeddings will be removed."
+            : "Its live chunks and embeddings will be removed; the bundled seed file will remain available for restoration.";
+        if (!window.confirm("Delete " + item.title + " from the active index?\n\n" + detail)) {
+            return;
+        }
+
+        $button.prop("disabled", true).text("Deleting...");
+        showDocumentMessage("Removing the document and its indexed chunks...", "info");
+        $.ajax({
+            url: "api/documents.php",
+            method: "DELETE",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({ document_id: item.document_id }),
+        })
+            .done(function () {
+                showDocumentMessage("Document deleted.", "success");
+                resetAnswer();
+                loadDocuments();
+            })
+            .fail(function (xhr) {
+                showDocumentMessage(xhr.responseJSON?.error || "Document deletion failed.", "danger");
+                $button.prop("disabled", false).text("Delete");
+            });
+    });
+
+    $cancelReplaceButton.on("click", function () {
+        resetReplacement();
+        $documentForm[0].reset();
+        $documentMessage.prop("hidden", true).text("");
+    });
+
+    $refreshDocumentsButton.on("click", function () {
+        loadDocuments();
+    });
+
+    $restoreBundledDocumentsButton.on("click", function () {
+        if (!window.confirm(
+            "Restore and re-index the bundled Metro State source collection?\n\n" +
+            "Bundled sources will be added or refreshed with the current index settings. Browser-uploaded documents will remain."
+        )) {
+            return;
+        }
+        $restoreBundledDocumentsButton.prop("disabled", true).text("Restoring…");
+        $uploadDocumentButton.add($deleteAllDocumentsButton).prop("disabled", true);
+        showDocumentMessage(
+            "Restoring the bundled sources and rebuilding their searchable chunks. Keep this page open until the source list refreshes.",
+            "info"
+        );
+        $.ajax({
+            url: "api/documents.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            timeout: 310000,
+            data: JSON.stringify({ action: "restore_bundled", confirmation: "RESTORE" }),
+        })
+            .done(function (response) {
+                showDocumentMessage(
+                    (response.data?.documents || 0) + " bundled documents restored with " +
+                    (response.data?.chunks || 0) + " searchable chunks.",
+                    "success"
+                );
+                resetAnswer();
+                loadDocuments();
+            })
+            .fail(function (xhr) {
+                showDocumentMessage(xhr.responseJSON?.error || "Bundled sources could not be restored.", "danger");
+            })
+            .always(function () {
+                $restoreBundledDocumentsButton.prop("disabled", false).text("Restore bundled sources");
+                $uploadDocumentButton.add($deleteAllDocumentsButton).prop("disabled", false);
+            });
+    });
+
+    // Expand/collapse the currently displayed document categories.
+    // Preserve the chosen state when search is cleared.
+    $("#expandAllDocumentCategories").on("click", function () {
+        const searching = Boolean(
+            String($documentSearch.val() || "").trim()
+        );
+
+        $documentList.find("details.document-accordion").each(function () {
+            const name = $(this)
+                .find("summary strong")
+                .first()
+                .text();
+
+            if (!searching) {
+                // Store the original category key from the DOM.
+                const key = $(this).data("categoryKey");
+                if (key !== undefined) {
+                    expandedDocumentCategories.add(key);
+                }
+            }
+
+            $(this).prop("open", true);
+        });
+    });
+
+    $("#collapseAllDocumentCategories").on("click", function () {
+        const searching = Boolean(
+            String($documentSearch.val() || "").trim()
+        );
+
+        $documentList.find("details.document-accordion").each(function () {
+            if (!searching) {
+                const key = $(this).data("categoryKey");
+                if (key !== undefined) {
+                    expandedDocumentCategories.delete(key);
+                }
+            }
+
+            $(this).prop("open", false);
+        });
+    });
+
+    // Phase 5: Reset the document search and filtering controls.
+    $("#clearDocumentFiltersButton").on("click", function () {
+        $documentSearch.val("");
+        $documentCategoryFilter.val("");
+        $documentTypeFilter.val("");
+        $documentSort.val("category");
+        renderDocumentList();
+    });
+
+    $documentSearch.on("input", renderDocumentList);
+    $documentCategoryFilter.add($documentTypeFilter).add($documentSort).on("change", renderDocumentList);
+
+    // Phase 5: Confirm destructive deletion using a native modal dialog.
+    const deleteAllDialog =
+        document.getElementById("deleteAllDocumentsDialog");
+    const $deleteAllConfirmationInput =
+        $("#deleteAllConfirmationInput");
+    const $confirmDeleteAllButton =
+        $("#confirmDeleteAllButton");
+
+    let deleteAllRequestActive = false;
+
+    function resetDeleteAllConfirmation() {
+        $deleteAllConfirmationInput.val("");
+        $confirmDeleteAllButton.prop("disabled", true);
+    }
+
+    function closeDeleteAllDialog() {
+        if (deleteAllDialog && deleteAllDialog.open) {
+            deleteAllDialog.close();
+        }
+    }
+
+    $deleteAllDocumentsButton.on("click", function () {
+        if (deleteAllRequestActive || documentUploadPanelBusy) {
+            return;
+        }
+
+        if (!indexedDocuments.length) {
+            setDocumentUploadPanelOpen(true);
+            showDocumentMessage(
+                "The active document index is already empty.",
+                "info"
+            );
+            return;
+        }
+
+        const totalChunks = indexedDocuments.reduce(
+            function (total, item) {
+                return total + (Number(item.chunk_count) || 0);
+            },
+            0
+        );
+
+        $("#deleteAllDocumentCount").text(
+            String(indexedDocuments.length)
+        );
+        $("#deleteAllChunkCount").text(String(totalChunks));
+
+        resetDeleteAllConfirmation();
+        deleteAllDialog.showModal();
+        $deleteAllConfirmationInput.trigger("focus");
+    });
+
+    $deleteAllConfirmationInput.on("input", function () {
+        $confirmDeleteAllButton.prop(
+            "disabled",
+            this.value !== "DELETE ALL"
+        );
+    });
+
+    $("#cancelDeleteAllButton").on("click", function () {
+        closeDeleteAllDialog();
+    });
+
+    $(deleteAllDialog).on("close", function () {
+        resetDeleteAllConfirmation();
+
+        if (!deleteAllRequestActive) {
+            $deleteAllDocumentsButton.trigger("focus");
+        }
+    });
+
+    $confirmDeleteAllButton.on("click", function () {
+        // Check again immediately before initiating the API request.
+        if (deleteAllRequestActive ||
+            documentUploadPanelBusy ||
+            $deleteAllConfirmationInput.val() !== "DELETE ALL") {
+            return;
+        }
+
+        // Capture the verified value before the dialog is reset.
+        const confirmation = "DELETE ALL";
+
+        deleteAllRequestActive = true;
+        closeDeleteAllDialog();
+
+        $deleteAllDocumentsButton
+            .prop("disabled", true)
+            .text("Deleting all...");
+
+        // The existing message element is inside the upload panel.
+        // Open that panel so completion feedback is visible.
+        setDocumentUploadPanelOpen(true);
+
+        showDocumentMessage(
+            "Clearing documents, chunks, and embeddings...",
+            "info"
+        );
+
+        $.ajax({
+            url: "api/documents.php",
+            method: "DELETE",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({
+                action: "delete_all",
+                confirmation: confirmation
+            })
+        })
+            .done(function (response) {
+                showDocumentMessage(
+                    (response.data?.deleted_count || 0) +
+                    " documents removed from the active index.",
+                    "success"
+                );
+                resetAnswer();
+                loadDocuments();
+            })
+            .fail(function (xhr) {
+                showDocumentMessage(
+                    xhr.responseJSON?.error ||
+                    "The active index could not be cleared.",
+                    "danger"
+                );
+            })
+            .always(function () {
+                deleteAllRequestActive = false;
+                $deleteAllDocumentsButton
+                    .prop("disabled", false)
+                    .text("Delete all");
+            });
+    });
+
+    $documentForm.on("submit", function (event) {
+        event.preventDefault();
+        if (pendingDuplicateDocument) {
+            showDocumentMessage("Choose Replace existing or Cancel upload before continuing.", "info");
+            $confirmDuplicateReplacement.trigger("focus");
+            return;
+        }
+        const categoryKey = normalizeCategoryKey($documentCategory.val());
+        if (categoryKey.length < 2 || categoryKey.length > 50) {
+            showDocumentMessage("Enter a category with at least two letters or numbers.", "danger");
+            $documentCategory.trigger("focus");
+            return;
+        }
+        const formData = new FormData(this);
+        formData.set("category", categoryKey);
+        $uploadDocumentButton.prop("disabled", true).text("Parsing and ingesting...");
+        $cancelReplaceButton.prop("disabled", true);
+        showDocumentMessage(
+            "Parsing, chunking, and embedding the document. Keep this page open; the indexed list will remain visible.",
+            "info"
+        );
+        startIngestionProgress();
+
+        $.ajax({
+            xhr: function () {
+                const xhr = $.ajaxSettings.xhr();
+                if (xhr.upload) {
+                    xhr.upload.addEventListener(
+                        "progress",
+                        updateDocumentUploadProgress
+                    );
+                }
+                return xhr;
+            },
+            url: "api/documents.php",
+            method: "POST",
+            data: formData,
+            processData: false,
+            contentType: false,
+            dataType: "json",
+        })
+            .done(function (response) {
+                const replacementText = Number(response.data.replaced_document_count)
+                    ? " Previous same-name index record replaced."
+                    : "";
+                const successMessage =
+                    "Document ingested with " +
+                    response.data.chunk_count +
+                    " chunks." + replacementText;
+
+                setDocumentIngestionStatus(
+                    "success",
+                    successMessage
+                );
+                showDocumentMessage(successMessage, "success");
+                resetAnswer();
+                $documentForm[0].reset();
+                resetReplacement();
+                loadDocuments();
+            })
+            .fail(function (xhr) {
+                const errorMessage =
+                    xhr.responseJSON?.error || "Document ingestion failed.";
+
+                setDocumentIngestionStatus(
+                    "error",
+                    errorMessage
+                );
+                showDocumentMessage(errorMessage, "danger");
+            })
+            .always(function () {
+                stopIngestionProgress();
+                $uploadDocumentButton.prop("disabled", false);
+                $cancelReplaceButton.prop("disabled", false);
+                $refreshDocumentsButton.prop("disabled", false);
+                $uploadDocumentButton.text($replaceDocumentId.val() ? "Replace and re-ingest" : "Upload and ingest");
+            });
+    });
+
+    // Phase 6.1: Dataset-specific review summary.
+    function renderGoldStandardDashboard(dataset) {
+        const questions = dataset ? evaluationQuestions : [];
+
+        const total = dataset
+            ? (Number(dataset.question_count) || questions.length)
+            : 0;
+
+        const countStatus = function (status) {
+            return questions.filter(function (question) {
+                return question.review_status === status;
+            }).length;
+        };
+
+        const reviewed = countStatus("reviewed");
+        const revision = countStatus("needs_revision");
+        const draft = countStatus("draft");
+
+        const unanswerable = questions.filter(function (question) {
+            return !Number(question.is_answerable);
+        }).length;
+
+        const categoryCount = new Set(
+            questions.map(function (question) {
+                return question.category;
+            }).filter(Boolean)
+        ).size;
+
+        const percentage = total > 0
+            ? Math.min(100, Math.round((reviewed / total) * 100))
+            : 0;
+
+        $("#goldTotalQuestions").text(total);
+        $("#goldReviewedQuestions").text(reviewed);
+        $("#goldRevisionQuestions").text(revision);
+        $("#goldDraftQuestions").text(draft);
+        $("#goldUnanswerableQuestions").text(unanswerable);
+        $("#goldCategoryCount").text(categoryCount);
+
+        $("#goldReviewProgressText").text(
+            reviewed + " of " + total + " reviewed (" + percentage + "%)"
+        );
+
+        $("#goldReviewProgress")
+            .attr("aria-valuenow", percentage);
+
+        $("#goldReviewProgressFill")
+            .css("width", percentage + "%");
+    }
+
+    // Phase 6.4: Remember expanded questions across list redraws.
+    const expandedGoldQuestionIds = new Set();
+    let goldExpansionDatasetKey = null;
+
+    function goldQuestionKey(questionId) {
+        return String(questionId);
+    }
+
+    function resetGoldExpansionForDataset() {
+        const datasetKey = String(
+            $evaluationDatasetSelect.val() || ""
+        );
+
+        if (datasetKey !== goldExpansionDatasetKey) {
+            expandedGoldQuestionIds.clear();
+            goldExpansionDatasetKey = datasetKey;
+        }
+    }
+
+    function renderEvaluationQuestions() {
+        resetGoldExpansionForDataset();
+        const category = $evaluationCategoryFilter.val() || "";
+        const status = $evaluationStatusFilter.val() || "";
+        const difficulty = $goldDifficultyFilter.val() || "";
+        const answerability = $goldAnswerabilityFilter.val() || "";
+        const sort = $goldQuestionSort.val() || "order";
+
+        const search = String($goldQuestionSearch.val() || "")
+            .trim()
+            .toLocaleLowerCase();
+
+        const filtered = evaluationQuestions.filter(function (question) {
+            if (category && question.category !== category) {
+                return false;
+            }
+            if (status && question.review_status !== status) {
+                return false;
+            }
+            if (difficulty && question.difficulty !== difficulty) {
+                return false;
+            }
+
+            const isAnswerable = Number(question.is_answerable) === 1;
+            if (answerability === "answerable" && !isAnswerable) {
+                return false;
+            }
+            if (answerability === "unanswerable" && isAnswerable) {
+                return false;
+            }
+
+            if (search) {
+                const searchable = [
+                    question.question_text,
+                    question.expected_answer,
+                    question.expected_source,
+                    question.expected_evidence,
+                    question.category,
+                    question.difficulty,
+                    question.review_status,
+                    question.required_facts
+                        ? JSON.stringify(question.required_facts)
+                        : "",
+                ].map(function (value) {
+                    return String(value || "");
+                }).join(" ").toLocaleLowerCase();
+
+                if (!searchable.includes(search)) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        const orderNumber = function (question) {
+            const value = Number(question.display_order);
+            return Number.isFinite(value) ? value : 0;
+        };
+
+        const difficultyRank = {
+            easy: 0,
+            medium: 1,
+            hard: 2,
+        };
+
+        filtered.sort(function (a, b) {
+            let comparison = 0;
+
+            if (sort === "category") {
+                comparison = String(a.category || "")
+                    .localeCompare(String(b.category || ""));
+            } else if (sort === "difficulty") {
+                comparison =
+                    (difficultyRank[a.difficulty] ?? 99) -
+                    (difficultyRank[b.difficulty] ?? 99);
+            } else if (sort === "status") {
+                comparison = String(a.review_status || "")
+                    .localeCompare(String(b.review_status || ""));
+            }
+
+            return comparison || orderNumber(a) - orderNumber(b);
+        });
+
+        $goldQuestionVisibleCount.text(
+            "Showing " + filtered.length +
+            " of " + evaluationQuestions.length + " questions"
+        );
+
+        $evaluationQuestionList.empty();
+        if (!filtered.length) {
+            $evaluationQuestionList.append($("<p>").addClass("text-muted").text("No questions match these filters."));
+            return;
+        }
+        filtered.forEach(function (question) {
+            const questionKey = goldQuestionKey(question.question_id);
+
+            const $item = $("<article>")
+                .addClass("evaluation-question gold-question-card");
+
+            const $details = $("<details>")
+                .addClass("gold-question-details")
+                .attr("data-question-id", questionKey);
+
+            // Search results reveal their matching content, including
+            // matches found only in an expected answer or source evidence.
+            const shouldExpand =
+                Boolean(search) ||
+                expandedGoldQuestionIds.has(questionKey);
+
+            $details.prop("open", shouldExpand);
+
+            const $summary = $("<summary>")
+                .addClass("gold-question-summary");
+
+            const $heading = $("<div>")
+                .addClass("evaluation-question-heading");
+
+            const $headingText = $("<div>")
+                .addClass("gold-question-heading-text");
+
+            $headingText.append(
+                $("<strong>").text(
+                    question.display_order + ". " +
+                    question.question_text
+                )
+            );
+
+            $headingText.append(
+                $("<small>")
+                    .addClass("gold-question-summary-meta")
+                    .text(
+                        titleCaseLabel(question.category) +
+                        " / " +
+                        titleCaseLabel(question.difficulty) +
+                        " / " +
+                        (Number(question.is_answerable)
+                            ? "Answerable"
+                            : "Unanswerable")
+                    )
+            );
+
+            $heading.append($headingText);
+
+            $heading.append(
+                $("<span>")
+                    .addClass(
+                        "status status-" +
+                        (question.review_status === "reviewed"
+                            ? "ready"
+                            : "planned")
+                    )
+                    .text(titleCaseLabel(question.review_status))
+            );
+
+            $summary.append($heading);
+
+            $summary.append(
+                $("<span>")
+                    .addClass("gold-question-chevron")
+                    .attr("aria-hidden", "true")
+            );
+
+            $details.append($summary);
+
+            const $body = $("<div>")
+                .addClass("gold-question-body");
+
+            $body.append(
+                $("<div>")
+                    .addClass("gold-question-answer-label")
+                    .text("Expected answer")
+            );
+
+            $body.append(
+                $("<p>").text(question.expected_answer)
+            );
+
+            if (
+                question.expected_source ||
+                question.expected_evidence
+            ) {
+                $body.append(
+                    $("<button>")
+                        .attr("type", "button")
+                        .addClass(
+                            "btn btn-sm btn-outline-secondary " +
+                            "gold-view-evidence-button"
+                        )
+                        .attr(
+                            "aria-label",
+                            "View cited evidence for question " +
+                            question.display_order
+                        )
+                        .data("questionId", question.question_id)
+                        .text("View cited evidence")
+                );
+            }
+
+            const $actions = $("<div>")
+                .addClass("evaluation-review-actions")
+                .attr("aria-label", "Test-case review status");
+
+            // Improvement 5: the shared Gold Standard is changed only by an
+            // administrator (the server enforces this too).
+            const reviewStatuses = currentUserIsAdmin()
+                ? ["reviewed", "needs_revision", "draft"]
+                : [];
+            if (!reviewStatuses.length) {
+                $actions.append(
+                    $("<small>")
+                        .addClass("text-muted")
+                        .text("Shared Gold Standard · only an administrator can change review status")
+                );
+            }
+
+            reviewStatuses.forEach(
+                function (nextStatus) {
+                    const labels = {
+                        reviewed: "Mark reviewed",
+                        needs_revision: "Mark needs revision",
+                        draft: "Mark draft",
+                    };
+
+                    $actions.append(
+                        $("<button>")
+                            .attr("type", "button")
+                            .addClass(
+                                "btn btn-sm btn-outline-secondary " +
+                                "evaluation-review-button"
+                            )
+                            .prop(
+                                "disabled",
+                                question.review_status === nextStatus
+                            )
+                            .data({
+                                questionId: question.question_id,
+                                reviewStatus: nextStatus,
+                            })
+                            .text(
+                                question.review_status === nextStatus
+                                    ? labels[nextStatus].replace(
+                                        "Mark ",
+                                        "Currently "
+                                    )
+                                    : labels[nextStatus]
+                            )
+                    );
+                }
+            );
+
+            $body.append($actions);
+            $details.append($body);
+            $item.append($details);
+            $evaluationQuestionList.append($item);
+        });
+    }
+
+
+    function readable(value, fallback) {
+        if (value === null || value === undefined || value === "") {
+            return fallback || "Not recorded";
+        }
+        return String(value).replaceAll("_", " ");
+    }
+
+    function titleCaseLabel(value, fallback) {
+        return readable(value, fallback).replace(/\b\w/g, function (character) {
+            return character.toUpperCase();
+        });
+    }
+
+    function modelDisplayName(model) {
+        const labels = {
+            "gemini-2.5-flash": "Gemini 2.5 Flash — standard",
+            "gemini-3.1-flash-lite": "Gemini 3.1 Flash-Lite — faster",
+            "gemini-3.6-flash": "Gemini 3.6 Flash",
+            "qwen2.5vl:7b": "Qwen 2.5 VL 7B - Local Ollama",
+        };
+        return labels[String(model || "")] || titleCaseLabel(model, "Model not recorded");
+    }
+
+    function retrievalDisplayName(method) {
+        return {
+            mysql_keyword: "Keyword search",
+            chroma_vector: "Vector search",
+            hybrid_rrf: "Hybrid search",
+        }[String(method || "")] || titleCaseLabel(method, "Retrieval not recorded");
+    }
+
+    function normalizeCategoryKey(value) {
+        return String(value || "")
+            .trim()
+            .toLowerCase()
+            .replace(/&/g, " and ")
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+    }
+
+    const evaluatorGoalRecommendations = {
+        overall: {
+            primary: "Run the local ten across the full reviewed test set.",
+            secondary: "Use the LLM judge and RAGAS on representative, difficult, changed, or failing answers; add human review where methods disagree.",
+            caution: "Overall confidence comes from a profile of evidence. No single score proves that an answer is correct, complete, grounded, and useful.",
+            reference: "Gold Standard recommended: it supplies verified correctness, source, fact, and answerability expectations.",
+        },
+        correctness: {
+            primary: "Required-fact coverage plus the versioned LLM judge.",
+            secondary: "Use exact/accepted variants and semantic or BERTScore signals for regression, then human-review important disagreements.",
+            caution: "Similarity can remain high when one date or number is wrong; fact coverage can miss unsupported extra claims.",
+            reference: "Gold Standard required: correctness and completeness need a reviewed answer, facts, and evidence.",
+        },
+        grounding: {
+            primary: "RAGAS Faithfulness beside the exact retrieved source chunks.",
+            secondary: "Add the judge faithfulness rubric and human inspection for consequential claims.",
+            caution: "A response can be faithful to retrieved context that is itself irrelevant, incomplete, or outdated.",
+            reference: "Gold Standard optional for the primary check: Faithfulness uses the saved answer and contexts; reviewed evidence is still needed to judge correctness.",
+        },
+        retrieval: {
+            primary: "Expected-source accuracy, including the saved source rank.",
+            secondary: "Add RAGAS Context Precision for ranking/noise and Context Recall for missing evidence; inspect the chunks directly.",
+            caution: "Finding the expected document does not prove that the selected passage was sufficient or used correctly.",
+            reference: "Gold Standard required in this project: retrieval claims use an expected source, answer, and verified evidence.",
+        },
+        relevance: {
+            primary: "RAGAS Response Relevancy.",
+            secondary: "Add correctness and faithfulness evidence so a direct but false answer is not rewarded.",
+            caution: "Relevance only shows that the response addresses the question; it does not prove truth or grounding.",
+            reference: "Gold Standard optional for the primary check: Response Relevancy compares the question and saved answer.",
+        },
+        refusal: {
+            primary: "Refusal correctness against the reviewed answerability label.",
+            secondary: "Add the LLM judge refusal rubric and human review for ambiguous or high-risk questions.",
+            caution: "A correct refusal decision does not measure the quality of an answerable response.",
+            reference: "Gold Standard required: the evaluator needs a reviewed decision about whether the corpus can answer the question.",
+        },
+        regression: {
+            primary: "Apply all eight local methods to every saved answer.",
+            secondary: "Run advanced methods only on changed, below-threshold, difficult, or sampled cases, then calibrate with human review.",
+            caution: "Project thresholds are review flags, not factual verdicts; inspect every flagged response and its evidence.",
+            reference: "Gold Standard recommended: repeatable regression needs a stable reviewed test set and frozen run configuration.",
+        },
+    };
+
+    function renderEvaluatorGoalRecommendation() {
+        const recommendation = evaluatorGoalRecommendations[String($evaluatorGoalSelect.val() || "overall")] ||
+            evaluatorGoalRecommendations.overall;
+        $evaluatorGoalPrimary.text(recommendation.primary);
+        $evaluatorGoalSecondary.text(recommendation.secondary);
+        $evaluatorGoalCaution.text(recommendation.caution);
+        $evaluatorGoalReference.text(recommendation.reference);
+    }
+
+    $evaluatorGoalSelect.on("change", renderEvaluatorGoalRecommendation);
+    renderEvaluatorGoalRecommendation();
+
+    function compactNumber(value, digits) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number.toFixed(digits === undefined ? 3 : digits) : "N/A";
+    }
+
+    function evaluatorMethodKey(evaluator) {
+    const key = String(evaluator.evaluator_key || "");
+
+    if (["citation_coverage", "citation_support"].includes(key)) {
+        return "citation";
+    }
+
+    if (Number(evaluator.is_local) === 1) {
+        return "local";
+    }
+    if (evaluator.evaluator_key === "llm_judge") {
+        return "judge";
+    }
+    if (key.startsWith("ragas_")) {
+        return "ragas";
+    }
+    return "model";
+}
+
+    function evaluatorMethodLabel(evaluator) {
+        return {
+            local: "Local metric",
+            judge: "LLM judge",
+            ragas: "RAGAS",
+            model: "Model-backed metric",
+            citation: "AI citation analysis",
+        }[evaluatorMethodKey(evaluator)];
+    }
+
+    function requiresGoldStandard(evaluator) {
+        const noGoldStandardRequired = [
+            "ragas_faithfulness",
+            "ragas_response_relevancy",
+            "citation_validity",
+            "citation_presence",
+            "citation_support",
+            "citation_coverage"
+        ];
+
+        return !noGoldStandardRequired.includes(
+            String(evaluator.evaluator_key || "")
+        );
+    }
+    function hasGoldStandardReference(response) {
+    return response.is_answerable !== null &&
+        response.is_answerable !== undefined;
+}
+
+function applicableEvaluators(methodKey, response, results) {
+    const hasReference = hasGoldStandardReference(response);
+    const historicalKeys = new Set(
+        (results || []).map(function (result) {
+            return String(result.evaluator_key || "");
+        })
+    );
+
+    return evaluatorCatalog.filter(function (evaluator) {
+        if (evaluatorMethodKey(evaluator) !== methodKey) {
+            return false;
+        }
+
+        return hasReference ||
+            !requiresGoldStandard(evaluator) ||
+            historicalKeys.has(String(evaluator.evaluator_key || ""));
+    });
+}
+    function methodStatusCounts(results) {
+        return {
+            completed: results.filter(function (result) { return result.status === "completed"; }).length,
+            failed: results.filter(function (result) { return result.status === "failed"; }).length,
+            skipped: results.filter(function (result) { return result.status === "skipped"; }).length,
+        };
+    }
+
+    function methodStatusDetails(counts, total, recorded) {
+        const details = [];
+        if (counts.failed) {
+            details.push(counts.failed + " failed");
+        }
+        if (counts.skipped) {
+            details.push(counts.skipped + " skipped");
+        }
+        const notRun = Math.max(0, total - recorded);
+        if (notRun) {
+            details.push(notRun + " not run");
+        }
+        return details.length ? details.join(" · ") : "No failures, skips, or missing methods";
+    }
+
+    function renderEvaluationMethodSummary(data) {
+        const results = data.results || [];
+        const reviews = data.human_reviews || [];
+        const response = data.response || {};
+        const definitions = [
+            { key: "local", label: "Local metrics" },
+            { key: "judge", label: "LLM judge" },
+            { key: "ragas", label: "RAGAS" },
+            { key: "citation", label: "AI Citation Analysis"},
+        ];
+        const $section = $("<section>").addClass("response-method-section");
+        $section.append($("<div>").addClass("subsection-heading").append(
+            $("<span>").text("How this answer was evaluated"),
+            $("<strong>").text("Completed, failed, and missing checks are kept separate")
+        ));
+        const $summary = $("<div>").addClass("response-method-summary");
+        definitions.forEach(function (definition) {
+            const methodResults = results.filter(function (result) {
+                return evaluatorMethodKey(result) === definition.key;
+            });
+
+            const eligibleMethods = applicableEvaluators(
+                definition.key,
+                response,
+                results
+            );
+
+            if (!eligibleMethods.length && !methodResults.length) {
+                return;
+            }
+
+            const total = eligibleMethods.length;
+
+            const counts = methodStatusCounts(methodResults);
+            let headline = counts.completed + " of " + total + " completed";
+            if (definition.key === "judge" && total === 1) {
+                headline = counts.completed ? "Completed" : counts.failed ? "Failed" : counts.skipped ? "Skipped" : "Not run";
+            }
+            $summary.append($("<article>").addClass("method-summary method-summary-" + definition.key).append(
+                $("<span>").text(definition.label),
+                $("<strong>").text(headline),
+                $("<small>").text(methodStatusDetails(counts, total, methodResults.length))
+            ));
+        });
+        $summary.append($("<article>").addClass("method-summary method-summary-human").append(
+            $("<span>").text("Human review"),
+            $("<strong>").text(reviews.length ? "Reviewed" : "Not reviewed"),
+            $("<small>").text(reviews.length
+                ? reviews.length + " current rubric decision" + (reviews.length === 1 ? "" : "s") + "; supporting evidence, not an automatic metric"
+                : "Supporting evidence, not an automatic metric")
+        ));
+        $section.append($summary);
+        $evaluationResultDetail.append($section);
+    }
+
+    function appendContract($container, configuration) {
+        const contract = configuration || {};
+        const direction = contract.direction === "higher_is_better" ? "score ≥"
+            : contract.direction === "lower_is_better" ? "score ≤" : readable(contract.direction, "score");
+        const $details = $("<details>").addClass("score-contract");
+        $details.append($("<summary>").text("What this score means"));
+        const fields = [
+            ["Question", contract.question],
+            ["Compared with", contract.comparison_target],
+            ["Calculation", contract.calculation],
+            ["Scale", contract.scale],
+            ["Review rule", contract.threshold === null || contract.threshold === undefined
+                ? "No threshold; inspect the value directly."
+                : direction + " " + contract.threshold + " (" + readable(contract.threshold_status, "status unknown") + ")"],
+            ["Limitation", contract.limitation],
+        ];
+        const $list = $("<dl>");
+        fields.forEach(function (field) {
+            if (field[1] !== null && field[1] !== undefined && field[1] !== "") {
+                $list.append($("<div>").append($("<dt>").text(field[0]), $("<dd>").text(field[1])));
+            }
+        });
+        $details.append($list);
+        $container.append($details);
+    }
+
+    function renderFindings(data) {
+        const findings = data.findings || {};
+        const layers = findings.layers || {};
+        $findingBaselineCount.text(layers.baseline || 0);
+        $findingAdvancedCount.text(layers.advanced || 0);
+        $findingHumanCount.text(findings.human_review_count || 0);
+
+        $findingRules.empty();
+        (findings.interpretation_rules || []).forEach(function (rule) {
+            $findingRules.append($("<li>").text(rule));
+        });
+
+        $findingMatchedComparisons.empty();
+        (findings.matched_comparisons || []).forEach(function (comparison) {
+            const delta = Number(comparison.mean_delta);
+            const comparisonRun = (data.runs || []).find(function (run) {
+                return Number(run.run_id) === Number(comparison.comparison_run_id);
+            });
+            const baselineRun = (data.runs || []).find(function (run) {
+                return Number(run.run_id) === Number(comparison.baseline_run_id);
+            });
+            const $card = $("<article>").addClass("matched-comparison-card");
+            $card.append($("<span>").text(
+                (comparisonRun?.run_name || "Comparison test") + " compared with " +
+                (baselineRun?.run_name || "saved baseline")
+            ));
+            $card.append($("<strong>").text(comparison.display_name));
+            $card.append($("<b>").text(
+                (delta >= 0 ? "+" : "") + compactNumber(delta) + " mean delta"
+            ));
+            $card.append($("<p>").text(
+                comparison.paired_question_count + " matched question" +
+                (Number(comparison.paired_question_count) === 1 ? "" : "s") +
+                " · baseline " + compactNumber(comparison.baseline_mean) +
+                " · comparison " + compactNumber(comparison.comparison_mean)
+            ));
+            $findingMatchedComparisons.append($card);
+        });
+        if (!$findingMatchedComparisons.children().length) {
+            $findingMatchedComparisons.append($("<div>").addClass("matched-comparison-empty").append(
+                $("<strong>").text("No valid paired comparison exists yet."),
+                $("<p>").text("No completed baseline pair currently shares scored question/evaluator rows. Scores remain run-scoped descriptive evidence, so no improvement claim is calculated.")
+            ));
+        }
+
+        $findingRunComparison.empty();
+        (data.runs || []).forEach(function (run) {
+            const $card = $("<article>").addClass("finding-run-card");
+            const configuration = run.run_configuration_json || {};
+            const coverage = Number(run.dataset_question_count)
+                ? Math.round((Number(run.response_count) / Number(run.dataset_question_count)) * 100)
+                : 0;
+            $card.append($("<div>").addClass("finding-run-title").append(
+                $("<span>").text("Saved test"),
+                $("<strong>").text(run.run_name),
+                $("<em>").addClass("run-status run-status-" + run.status).text(titleCaseLabel(run.status))
+            ));
+            $card.append($("<p>").text(
+                retrievalDisplayName(run.retrieval_method) + " · " + run.top_k + " retrieved sources · " +
+                (run.response_count || 0) + "/" + (run.dataset_question_count || evaluationDatasetQuestionCount) +
+                " answers (" + coverage + "% test-set coverage)"
+            ));
+            const $facts = $("<dl>").addClass("finding-run-facts");
+            [
+                ["Test purpose", run.experiment_key || "not labeled"],
+                ["Source collection", titleCaseLabel(run.corpus_variant_key, "Full corpus")],
+                ["Completed checks", (run.completed_result_count || 0) + " completed"],
+                ["Recorded method statuses", (run.result_count || 0) + " total"],
+                ["Evaluator attempts", (run.evaluator_attempt_count || 0) + " retained"],
+                ["Skipped / failed", (run.evaluator_skipped_count || 0) + " / " + (run.evaluator_error_count || 0)],
+                ["Evaluator runtime", compactNumber((Number(run.evaluator_runtime_ms) || 0) / 1000, 2) + " s"],
+                ["Generation cost", Number(run.generation_unpriced_count)
+                    ? "Unknown for " + run.generation_unpriced_count + " response(s)"
+                    : "$" + compactNumber(run.answer_estimated_cost || 0, 6)],
+                ["Provider evaluator cost", Number(run.evaluator_unpriced_count)
+                    ? "Unknown for " + run.evaluator_unpriced_count + " attempt(s)"
+                    : run.evaluator_priced_count
+                        ? "$" + compactNumber(run.evaluator_estimated_cost, 6)
+                        : "No provider attempts"],
+            ].forEach(function (fact) {
+                $facts.append($("<div>").append($("<dt>").text(fact[0]), $("<dd>").text(fact[1])));
+            });
+            $card.append($facts);
+            if (configuration.change_from_baseline) {
+                $card.append($("<p>").addClass("finding-change-note").text("Changed variable: " + configuration.change_from_baseline));
+            }
+            const scopedMetrics = (findings.run_metric_summaries || []).filter(function (metric) {
+                return Number(metric.run_id) === Number(run.run_id);
+            });
+            if (scopedMetrics.length) {
+                const $scoped = $("<details>").addClass("run-scoped-metrics");
+                $scoped.append($("<summary>").text("Run-scoped metric means (" + scopedMetrics.length + ")"));
+                const $list = $("<dl>");
+                scopedMetrics.forEach(function (metric) {
+                    $list.append($("<div>").append(
+                        $("<dt>").text(metric.display_name + " · n=" + metric.question_count),
+                        $("<dd>").text(compactNumber(metric.mean_score))
+                    ));
+                });
+                $scoped.append($list);
+                $card.append($scoped);
+            }
+            $findingRunComparison.append($card);
+        });
+        if (!$findingRunComparison.children().length) {
+            $findingRunComparison.append($("<p>").addClass("text-muted").text("No batch test runs have been saved."));
+        }
+
+        $findingMetricCatalog.empty();
+        (findings.metric_summaries || []).forEach(function (metric) {
+            const config = metric.configuration_json || {};
+            const $card = $("<article>").addClass("finding-metric metric-" + (metric.layer || "baseline"));
+            $card.append($("<div>").addClass("finding-metric-heading").append(
+                $("<span>").text(evaluatorMethodLabel(metric)),
+                $("<strong>").text(metric.display_name)
+            ));
+            $card.append($("<p>").text(config.question || "No score question documented."));
+            $card.append($("<small>").addClass("metric-dependency").text(
+                requiresGoldStandard(metric)
+                    ? "Gold-standard data required · post-answer evaluation"
+                    : "No gold answer required · post-answer evaluation"
+            ));
+            const completed = Number(metric.completed_count) || 0;
+            $card.append($("<small>").text(completed
+                ? completed + " completed across stored responses · inspect run-scoped or matched evidence above"
+                : "Not run yet · no observed scores are being inferred"
+            ));
+            const costText = Number(metric.is_local)
+                ? "local method; no provider cost"
+                : Number(metric.unpriced_attempt_count)
+                    ? "cost unknown for " + metric.unpriced_attempt_count + " provider attempt(s)"
+                : Number(metric.priced_attempt_count)
+                    ? "recorded cost $" + compactNumber(metric.estimated_cost, 6)
+                    : "no provider cost";
+            $card.append($("<small>").addClass("metric-operations").text(
+                (metric.attempt_count || 0) + " attempts · mean runtime " +
+                compactNumber(metric.mean_runtime_ms || 0, 1) + " ms · " + costText
+            ));
+            appendContract($card, config);
+            $findingMetricCatalog.append($card);
+        });
+    }
+
+    let evaluationDatasetRequestId = 0;
+    function loadEvaluationDataset(completionMessage = null, completionRunId = null) {
+        const requestId = ++evaluationDatasetRequestId;
+        const completionTarget = function () {
+            const $run = $evaluationRunList
+                .find('.evaluation-run[data-run-id="' + completionRunId + '"]')
+                .first();
+            return $run.length ? $run : $evaluationRunList;
+        };
+        const selectedDatasetId = $evaluationDatasetSelect.val();
+
+        const requestUrl = selectedDatasetId
+            ? "api/evaluations.php?dataset_id=" +
+              encodeURIComponent(selectedDatasetId)
+            : "api/evaluations.php";
+
+        return $.getJSON(requestUrl)
+            .done(function (response) {
+                if (requestId !== evaluationDatasetRequestId) {
+                    return;
+                }
+
+                const data = response.data;
+                evaluationQuestions = data.questions || [];
+                evaluatorCatalog = data.evaluators || [];
+                refreshDashboardEvaluatorCatalog();
+                const dataset = data.dataset;
+                const availableDatasets = data.availableDatasets || [];
+                $evaluationDatasetSelect.empty();
+
+                availableDatasets.forEach(function (availableDataset) {
+                    const label =
+                        availableDataset.dataset_name +
+                        " v" + availableDataset.version +
+                        " (" + availableDataset.status + ")";
+
+                    $evaluationDatasetSelect.append(
+                        $("<option>")
+                            .val(String(availableDataset.dataset_id))
+                            .text(label)
+                    );
+                });
+
+                if (dataset) {
+                    $evaluationDatasetSelect.val(String(dataset.dataset_id));
+                }
+                if (!dataset) {
+                    evaluationDatasetQuestionCount = 0;
+                    evaluationRuns = [];
+                    populateNewTestBaselines();
+                    $evaluationDatasetSummary.text("No evaluation dataset has been seeded.");
+                    renderGoldStandardDashboard(null);
+                    renderResearchReadiness(null, [], {});
+                    renderEvaluationQuestions();
+                    return;
+                }
+                evaluationDatasetQuestionCount = Number(dataset.question_count) || 0;
+                $newTestDatasetId.val(dataset.dataset_id);
+                populateNewTestQuestionChoices();
+                evaluationRuns = data.runs || [];
+                populateNewTestBaselines();
+                $evaluationQuestionCount.text(dataset.question_count);
+                $experimentDatasetCount.text(dataset.question_count);
+                const readyRunCount = evaluationRuns.filter(function (run) {
+                    return run.status === "completed";
+                }).length;
+                const attentionRunCount = Math.max(0, evaluationRuns.length - readyRunCount);
+                $experimentRunCount.text(readyRunCount);
+                $experimentRunCountNote.text(
+                    attentionRunCount
+                        ? attentionRunCount + " archived interrupted attempt" + (attentionRunCount === 1 ? "" : "s")
+                        : "completed batches"
+                );
+                $evaluationDatasetSummary.text(
+                    dataset.dataset_name + " " + dataset.version + ": " + dataset.reviewed_count + " of " + dataset.question_count +
+                    " reviewed; " + dataset.unanswerable_count + " unanswerable cases across " + dataset.category_count + " categories."
+                );
+                renderGoldStandardDashboard(dataset);
+                $evaluatorCount.text(dashboardEvaluatorCatalog.length);
+                $overviewEvaluatorCount.text(dashboardEvaluatorCatalog.length);
+                $experimentHumanReviewCount.text(data.findings?.human_review_count || 0);
+                renderResearchReadiness(dataset, evaluationRuns, data.findings || {});
+                $evaluatorSummary.text(
+                    "Choose a saved test or standalone Chat answer to inspect its evaluation results. " +
+                    "The catalog contains " + dashboardEvaluatorCatalog.length + " evaluation methods, " +
+                    "including optional advanced and citation metrics. " +
+                    "Scoring can reuse saved results, and local checks do not require an external API call."
+                );
+                const categories = [...new Set(evaluationQuestions.map(function (question) { return question.category; }))].sort();
+                $evaluationCategoryFilter.find("option:not(:first)").remove();
+                categories.forEach(function (value) {
+                    $evaluationCategoryFilter.append($("<option>").val(value).text(titleCaseLabel(value)));
+                });
+                renderEvaluationQuestions();
+                renderEvaluationRuns(
+                    evaluationRuns,
+                    data.responses || [],
+                    data.findings || {},
+                    data.standaloneResponses || []
+                );
+                renderFindings(data);
+                if (completionMessage) {
+                    $(".evaluation-completion-notice").remove();
+                    $("<p>")
+                        .addClass("run-evaluation-status evaluation-completion-notice")
+                        .attr({ role: "status", "aria-live": "polite" })
+                        .text(completionMessage)
+                        .insertBefore(completionTarget());
+                }
+            })
+            .fail(function () {
+                  if (requestId !== evaluationDatasetRequestId) {
+                      return;
+                  }
+                if (completionMessage) {
+                    $(".evaluation-completion-notice").remove();
+                    $("<p>")
+                        .addClass("run-evaluation-status evaluation-completion-notice")
+                        .attr({ role: "alert" })
+                        .text("Scoring finished, but saved results could not be refreshed. Reload the dataset to verify the updated scores.")
+                        .insertBefore(completionTarget());
+                }
+                $evaluationDatasetSummary.text("Evaluation data is temporarily unavailable. Try again or contact the application administrator.");
+                renderGoldStandardDashboard(null);
+                evaluationQuestions = [];
+                renderEvaluationQuestions();
+                $researchReadinessList.empty().append(
+                    $("<li>").addClass("readiness-next").text("Study status is unavailable until the application data can be loaded.")
+                );
+            });
+    }
+
+    function renderResearchReadiness(dataset, runs, findings) {
+        const completedRuns = (runs || []).filter(function (run) { return run.status === "completed"; });
+        const controlledBaselines = completedRuns.filter(function (run) {
+            return run.experiment_key && !run.baseline_run_id;
+        });
+        const matchedCount = (findings.matched_comparisons || []).length;
+        const humanReviewCount = Number(findings.human_review_count) || 0;
+        const reviewedCount = Number(dataset?.reviewed_count) || 0;
+        const questionCount = Number(dataset?.question_count) || 0;
+        const items = [
+            {
+                ready: questionCount > 0 && reviewedCount === questionCount,
+                readyText: "Gold Standard ready · " + reviewedCount + " of " + questionCount + " questions reviewed",
+                nextText: "Review the Gold Standard · " + reviewedCount + " of " + questionCount + " questions are ready",
+                href: "#evaluation",
+            },
+            {
+                ready: controlledBaselines.length > 0,
+                readyText: "Controlled baseline saved · " + controlledBaselines.length + " available",
+                nextText: "Create a controlled baseline from New test run",
+                href: "#results",
+            },
+            {
+                ready: matchedCount > 0,
+                readyText: "Matched comparison evidence ready · " + matchedCount + " metric pair" + (matchedCount === 1 ? "" : "s"),
+                nextText: "Run a one-setting comparison against the saved baseline",
+                href: "#results",
+            },
+            {
+                ready: humanReviewCount > 0,
+                readyText: "Human review evidence saved · " + humanReviewCount + " current review" + (humanReviewCount === 1 ? "" : "s"),
+                nextText: "Open representative saved answers and add human reviews",
+                href: "#results",
+            },
+            {
+                ready: completedRuns.length > 0,
+                readyText: "Report exports available on every completed test",
+                nextText: "Complete a test to unlock JSON and CSV report evidence",
+                href: "#results",
+            },
+        ];
+        $researchReadinessList.empty();
+        items.forEach(function (item) {
+            const $link = $("<a>").attr("href", item.href).text(item.ready ? item.readyText : item.nextText);
+            $researchReadinessList.append(
+                $("<li>").addClass(item.ready ? "readiness-ready" : "readiness-next").append(
+                    $("<span>").attr("aria-hidden", "true").text(item.ready ? "✓" : "→"),
+                    $link
+                )
+            );
+        });
+    }
+
+    function savedTestDate(value) {
+        if (!value) {
+            return "Date unavailable";
+        }
+        const parsed = new Date(String(value).replace(" ", "T"));
+        return Number.isNaN(parsed.getTime())
+            ? String(value)
+            : new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(parsed);
+    }
+
+    function runScoringState(run, runResponses) {
+        const responseCount = runResponses.length;
+        const completed = runResponses.reduce(function (total, response) {
+            return total + (Number(response.completed_result_count) || 0);
+        }, 0);
+        const skipped = runResponses.reduce(function (total, response) {
+            return total + (Number(response.skipped_result_count) || 0);
+        }, 0);
+        const failed = runResponses.reduce(function (total, response) {
+            return total + (Number(response.failed_result_count) || 0);
+        }, 0);
+        const localCompleted = runResponses.reduce(function (total, response) {
+            return total + (Number(response.local_completed_count) || 0);
+        }, 0);
+        const localSkipped = runResponses.reduce(function (total, response) {
+            return total + (Number(response.local_skipped_count) || 0);
+        }, 0);
+        const localFailed = runResponses.reduce(function (total, response) {
+            return total + (Number(response.local_failed_count) || 0);
+        }, 0);
+        if (run.status !== "completed") {
+            return {
+                label: "Archived attempt",
+                className: "run-status-attention",
+            };
+        }
+        const fullEvaluatorCount = 15;
+        const allResponsesFullyScored = responseCount > 0 &&
+            runResponses.every(function (response) {
+                const resolved =
+                    (Number(response.completed_result_count) || 0) +
+                    (Number(response.skipped_result_count) || 0);
+                const errors = Number(response.failed_result_count) || 0;
+                return !errors && resolved >= fullEvaluatorCount;
+            });
+        if (allResponsesFullyScored) {
+            return { label: "Full evaluator set available", className: "run-status-completed" };
+        }
+        const configuration = run.run_configuration_json || {};
+        const configuredLocalCount = Array.isArray(configuration.evaluators)
+            ? configuration.evaluators.length
+            : 0;
+        const recordedLocalCount = runResponses.reduce(function (maximum, response) {
+            const count =
+                (Number(response.local_completed_count) || 0) +
+                (Number(response.local_skipped_count) || 0) +
+                (Number(response.local_failed_count) || 0);
+            return Math.max(maximum, count);
+        }, 0);
+        const expectedLocalSlots = responseCount *
+            Math.max(configuredLocalCount, recordedLocalCount);
+        if (responseCount && expectedLocalSlots > 0 && !localFailed &&
+                localCompleted + localSkipped >= expectedLocalSlots) {
+            return { label: "Local evaluation complete", className: "run-status-local" };
+        }
+        return { label: "Local evaluation incomplete", className: "run-status-attention" };
+    }
+
+    function renderRunCard(run, responses, findings) {
+        const runResponses = responses.filter(function (response) {
+            return String(response.run_id) === String(run.run_id);
+        });
+        const responseCount = runResponses.length;
+        const localCompletedCount = runResponses.reduce(function (total, response) {
+            return total + (Number(response.local_completed_count) || 0);
+        }, 0);
+        const localSkippedCount = runResponses.reduce(function (total, response) {
+            return total + (Number(response.local_skipped_count) || 0);
+        }, 0);
+        const completedCount = runResponses.reduce(function (total, response) {
+            return total + (Number(response.completed_result_count) || 0);
+        }, 0);
+        const configuration = run.run_configuration_json || {};
+        const configuredLocalCount = Array.isArray(configuration.evaluators)
+            ? configuration.evaluators.length
+            : 0;
+        const recordedLocalCount = runResponses.reduce(function (maximum, response) {
+            const count =
+                (Number(response.local_completed_count) || 0) +
+                (Number(response.local_skipped_count) || 0) +
+                (Number(response.local_failed_count) || 0);
+            return Math.max(maximum, count);
+        }, 0);
+        const localExpectedSlots = responseCount *
+            Math.max(configuredLocalCount, recordedLocalCount);
+        const state = runScoringState(run, runResponses);
+        const $run = $("<article>").addClass("evaluation-run").attr("data-run-id", run.run_id);
+        const $runHeading = $("<div>").addClass("evaluation-run-heading");
+        $runHeading.append($("<strong>").text("Saved " + savedTestDate(run.completed_at || run.started_at)));
+        $runHeading.append($("<span>").addClass("run-status " + state.className).text(state.label));
+        $run.append($runHeading);
+        $run.append($("<h3>").text(run.run_name));
+        const localResolvedCount = localCompletedCount + localSkippedCount;
+        let coverageText = localResolvedCount + " of " + localExpectedSlots + " local checks resolved";
+        if (state.className === "run-status-completed") {
+            coverageText = "full evaluator coverage recorded";
+        } else if (state.className === "run-status-local") {
+            coverageText += (localSkippedCount ? " · " + localSkippedCount + " not applicable" : "") +
+                " · advanced checks optional";
+        }
+        $run.append($("<span>").addClass("evaluation-run-meta").text(
+            responseCount + " saved answer" + (responseCount === 1 ? "" : "s") + " · " + coverageText
+        ));
+        $run.append($("<p>").addClass("evaluation-run-scope").text(
+            "Saved scope: " + responseCount + " answer" + (responseCount === 1 ? "" : "s") +
+            (evaluationDatasetQuestionCount ? " from the " + evaluationDatasetQuestionCount + "-question Gold Standard." : ".")
+        ));
+        if (run.baseline_run_id) {
+            const baseline = evaluationRuns.find(function (candidate) {
+                return Number(candidate.run_id) === Number(run.baseline_run_id);
+            });
+            $run.append($("<p>").addClass("evaluation-run-experiment").text(
+                "Controlled comparison" + (run.experiment_key ? " · " + run.experiment_key : "") +
+                " · baseline: " + (baseline ? baseline.run_name : "selected saved baseline") +
+                (configuration.change_from_baseline ? " · changed: " + configuration.change_from_baseline : "")
+            ));
+        } else if (run.experiment_key) {
+            $run.append($("<p>").addClass("evaluation-run-experiment").text(
+                "Controlled baseline · " + run.experiment_key + " · ready for a one-setting comparison"
+            ));
+        }
+
+        const skipped = Number(run.evaluator_skipped_count) || 0;
+        const failed = Number(run.evaluator_error_count) || 0;
+        if (skipped || failed) {
+            $run.append($("<p>").addClass("evaluation-run-note").text(
+                completedCount + " completed · " + skipped + " skipped · " + failed +
+                " failed. Missing, skipped, and failed methods are not treated as zero scores."
+            ));
+        }
+        if (run.status !== "completed") {
+            $run.append($("<p>").addClass("evaluation-run-warning").text(
+                responseCount
+                    ? "This archived test stopped early, but its saved answer is still available. Use Score saved answers to add the missing checks."
+                    : "This archived test stopped before it saved an answer. It is preserved only as technical history."
+            ));
+        }
+
+        const $settings = $("<details>").addClass("run-settings");
+        $settings.append($("<summary>").text("Settings and technical record"));
+        $settings.append($("<p>").text(
+            retrievalDisplayName(run.retrieval_method) + " · " +
+            modelDisplayName(run.chat_model) + " · retrieved sources " + readable(run.top_k, "unknown") +
+            " · temperature " + readable(run.temperature, "unknown") +
+            " · top-p " + readable(run.top_p, "unknown") + " · sources: " +
+            controlledSettingDisplay("corpus", Array.isArray(configuration.categories) ? configuration.categories : []) +
+            " · internal run ID " + run.run_id
+        ));
+        $run.append($settings);
+
+        const exportBase = "api/exports.php?run_id=" + encodeURIComponent(run.run_id) + "&format=";
+        const $exportActions = $("<div>").addClass("run-export-actions").append(
+            $("<span>").text("Download this test for the report:"),
+            $("<a>")
+                .addClass("btn btn-sm btn-outline-secondary")
+                .attr({ href: exportBase + "json", download: "" })
+                .text("Export JSON"),
+            $("<a>")
+                .addClass("btn btn-sm btn-outline-secondary")
+                .attr({ href: exportBase + "csv", download: "" })
+                .text("Export CSV")
+        );
+        $run.append($exportActions);
+
+        const $evaluateActions = $("<div>").addClass("run-evaluation-actions");
+        const $evaluateToggle = $("<button>")
+            .attr("type", "button")
+            .addClass("btn btn-sm btn-primary evaluate-run-toggle")
+            .prop("disabled", !responseCount)
+            .text("Score saved answers");
+        const $evaluatePanel = $("<div>")
+            .addClass("run-evaluation-panel")
+            .prop("hidden", true)
+            .data({ runId: run.run_id, responseCount: responseCount });
+        $evaluatePanel.append($("<p>").addClass("run-evaluation-explainer").text(
+            "This applies scoring methods to the saved text above. It will not ask the LLM to generate another answer."
+        ));
+        const $scopeLabel = $("<label>").addClass("run-evaluation-field").append(
+            $("<span>").text("What should be scored?")
+        );
+        const $scope = $("<select>")
+            .addClass("form-select form-select-sm run-evaluation-scope")
+            .attr("aria-label", "Scoring scope")
+            .append(
+                $("<option>").val("local8").text("Local 10 · every saved answer · no API calls"),
+                $("<option>").val("all13").text("All 15 · one selected answer · may use API quota")
+            );
+        $scopeLabel.append($scope);
+        const $targetSelect = $("<select>")
+            .addClass("form-select form-select-sm run-evaluation-target-select")
+            .attr("aria-label", "Saved answer to score");
+        runResponses.forEach(function (response, index) {
+            const questionNumber = Number(response.run_question_number) || index + 1;
+            $targetSelect.append(
+                $("<option>").val(response.response_id).text(
+                    "Question " + questionNumber + ": " + response.question_text
+                )
+            );
+        });
+        const $targetLabel = $("<label>")
+            .addClass("run-evaluation-field run-evaluation-target")
+            .prop("hidden", true)
+            .append($("<span>").text("Which saved answer?"), $targetSelect);
+        const $advancedOptions = $("<details>").addClass("run-evaluation-advanced");
+        $advancedOptions.append($("<summary>").text("Advanced option"));
+        $advancedOptions.append($("<label>").addClass("run-evaluation-force").append(
+            $("<input>").attr("type", "checkbox").addClass("form-check-input run-evaluation-force-input"),
+            $("<span>").text("Replace scores that already completed")
+        ));
+        const $preview = $("<button>")
+            .attr("type", "button")
+            .addClass("btn btn-sm btn-outline-primary preflight-run-evaluation")
+            .text("Check what will run");
+        const $execute = $("<button>")
+            .attr("type", "button")
+            .addClass("btn btn-sm btn-primary execute-run-evaluation")
+            .prop("hidden", true)
+            .text("Apply scores");
+        const $status = $("<p>").addClass("run-evaluation-status").attr({ role: "status", "aria-live": "polite" }).text(
+            "Start with the local ten. Completed scores will be reused unless the advanced replacement option is selected."
+        );
+        $evaluatePanel.append(
+            $scopeLabel,
+            $targetLabel,
+            $advancedOptions,
+            $("<div>").addClass("run-evaluation-buttons").append($preview, $execute),
+            $status
+        );
+        $evaluateActions.append($evaluateToggle, $evaluatePanel);
+        $run.append($evaluateActions);
+
+        const $questionHeading = $("<div>").addClass("run-question-heading").append(
+            $("<strong>").text("Answered questions"),
+            $("<small>").text("Open inspects evidence · Evaluate prepares all 15 methods for that answer")
+        );
+        $run.append($questionHeading);
+        const $buttons = $("<div>").addClass("evaluation-response-buttons");
+        runResponses.forEach(function (response, index) {
+            const questionNumber = Number(response.run_question_number) || index + 1;
+            const completed = Number(response.completed_result_count) || 0;
+            const failedResults = Number(response.failed_result_count) || 0;
+            const skippedResults = Number(response.skipped_result_count) || 0;
+            const savedRunEvaluatorCount = dashboardEvaluatorCatalog.filter(function (evaluator) {
+                return evaluator.evaluator_key !== "citation_coverage" &&
+                    evaluator.evaluator_key !== "citation_support";
+            }).length;
+            const notRun = Math.max(0, savedRunEvaluatorCount - (Number(response.result_count) || 0));
+            const statusParts = [completed + " completed"];
+            if (failedResults) {
+                statusParts.push(failedResults + " failed");
+            }
+            if (skippedResults) {
+                statusParts.push(skippedResults + " skipped");
+            }
+            if (notRun) {
+                statusParts.push(notRun + " not run");
+            }
+            evaluationResponseContexts.set(Number(response.response_id), {
+                label: "Question " + questionNumber + " of " + responseCount,
+                runName: run.run_name,
+                runId: Number(run.run_id),
+            });
+            const $responseRow = $("<div>").addClass("evaluation-response-row");
+            $responseRow.append(
+                $("<button>")
+                    .attr("type", "button")
+                    .addClass("btn btn-sm btn-outline-primary evaluation-response-button")
+                    .data({ responseId: response.response_id, runId: run.run_id })
+                    .append(
+                        $("<span>").addClass("evaluation-question-number").text("Question " + questionNumber + " of " + responseCount),
+                        $("<strong>").text(response.question_text),
+                        $("<small>").text(statusParts.join(" · "))
+                    )
+            );
+            $responseRow.append(
+                $("<button>")
+                    .attr({
+                        type: "button",
+                        title: "Check and apply all 13 evaluation methods to this saved answer",
+                    })
+                    .addClass("btn btn-sm btn-primary evaluate-response-button")
+                    .data({ responseId: response.response_id, runId: run.run_id })
+                    .text("Evaluate")
+            );
+            $buttons.append($responseRow);
+        });
+        if (!runResponses.length) {
+            $buttons.append($("<p>").addClass("text-muted mb-0").text("No saved answers are available for this test."));
+        }
+        $run.append($buttons);
+
+        const scopedMetrics = (findings.run_metric_summaries || []).filter(function (metric) {
+            return Number(metric.run_id) === Number(run.run_id);
+        });
+        const globalMetrics = findings.metric_summaries || [];
+        const $metricComparison = $("<details>").addClass("run-metric-comparison");
+        $metricComparison.append($("<summary>").text("Metric averages for this test and all tests"));
+        const $metricTable = $("<div>").addClass("run-metric-table");
+        $metricTable.append($("<div>").addClass("run-metric-row run-metric-header").append(
+            $("<strong>").text("Method"),
+            $("<strong>").text("This test"),
+            $("<strong>").text("All tests")
+        ));
+        dashboardEvaluatorCatalog.forEach(function (evaluator) {
+            const current = scopedMetrics.find(function (metric) {
+                return metric.evaluator_key === evaluator.evaluator_key;
+            });
+            const overall = globalMetrics.find(function (metric) {
+                return metric.evaluator_key === evaluator.evaluator_key;
+            });
+            $metricTable.append($("<div>").addClass("run-metric-row").append(
+                $("<span>").append(
+                    $("<b>").text(evaluator.display_name),
+                    $("<small>").text(
+                        evaluatorMethodLabel(evaluator) + " · " +
+                        (requiresGoldStandard(evaluator) ? "needs gold standard" : "no gold answer required")
+                    )
+                ),
+                $("<span>").text(current
+                    ? compactNumber(current.mean_score) + " · n=" + current.question_count
+                    : "Not completed"),
+                $("<span>").text(overall && overall.mean_score !== null
+                    ? compactNumber(overall.mean_score) + " · n=" + overall.completed_count
+                    : "Not completed")
+            ));
+        });
+        $metricComparison.append($metricTable);
+        $run.append($metricComparison);
+        return $run;
+    }
+
+    function renderStandaloneResponses(responses) {
+        const $section = $("<details>")
+            .addClass("standalone-response-section")
+            .prop("open", true);
+
+        $section.append(
+            $("<summary>").text(
+                "Chat and standalone answers (" + responses.length + ")"
+            )
+        );
+
+        if (!responses.length) {
+            $section.append(
+                $("<p>").addClass("text-muted")
+                    .text("No standalone Chat answers have been saved yet.")
+            );
+            $standaloneResponseList.append($section);
+            return;
+        }
+
+        const $search = $("<input>")
+            .attr({
+                type: "search",
+                placeholder: "Search question or response ID",
+                "aria-label": "Search standalone answers"
+            })
+            .addClass("form-control mb-2");
+
+        const $count = $("<small>").addClass("text-muted");
+        const $list = $("<div>").addClass("evaluation-response-buttons");
+
+        const $showMore = $("<button>")
+            .attr("type", "button")
+            .addClass("btn btn-sm btn-outline-secondary mt-2")
+            .text("Show more answers");
+
+        const $showFewer = $("<button>")
+            .attr("type", "button")
+            .addClass("btn btn-sm btn-outline-secondary mt-2")
+            .text("Show fewer answers");
+
+        let visibleLimit = 10;
+
+        // Register all responses, including those initially hidden.
+        responses.forEach(function (response) {
+            const responseId = Number(response.response_id);
+
+            evaluationResponseContexts.set(responseId, {
+                response_id: responseId,
+                run_id: null,
+                question_id: response.question_id || null,
+                question_text: response.question_text
+            });
+        });
+
+        function updateList() {
+            const query = $search.val().trim().toLowerCase();
+
+            const filtered = responses.filter(function (response) {
+                return String(response.response_id).includes(query) ||
+                    String(response.question_text || "")
+                        .toLowerCase()
+                        .includes(query);
+            });
+
+            $list.empty();
+
+            filtered.slice(0, visibleLimit).forEach(function (response) {
+                const responseId = Number(response.response_id);
+                const completedCount =
+                    Number(response.completed_result_count) || 0;
+
+                const $button = $("<button>")
+                    .attr("type", "button")
+                    .attr("aria-pressed",
+                        currentEvaluationResponseId === responseId
+                            ? "true" : "false")
+                    .addClass(
+                        "btn btn-sm btn-outline-primary evaluation-response-button"
+                    )
+                    .toggleClass(
+                        "active",
+                        currentEvaluationResponseId === responseId
+                    )
+                    .data("responseId", responseId);
+
+                $button.append(
+                    $("<strong>").text("Response #" + responseId),
+                    $("<span>").text(
+                        response.question_text || "Untitled question"
+                    ),
+                    $("<small>").text(
+                        completedCount + " completed evaluations"
+                    )
+                );
+
+                const $previewButton = $("<button>")
+                    .attr({
+                        type: "button",
+                        "aria-label": "Preview citation scoring for response " + responseId
+                    })
+                    .addClass("btn btn-sm btn-outline-secondary preview-standalone-scoring")
+                    .data("responseId", responseId)
+                    .text("Preview citation scoring");
+
+                const $executeButton = $("<button>")
+                    .attr({
+                        type: "button",
+                        "aria-label": "Run citation scoring for response " + responseId,
+                        title: "Preview citation scoring before execution"
+                    })
+                    .addClass("btn btn-sm btn-primary execute-standalone-scoring")
+                    .data("responseId", responseId)
+                    .prop("disabled", true)
+                    .text("Run citation scoring");
+
+                const $responseRow = $("<div>")
+                    .addClass("standalone-response-row");
+
+                const $responseDetails = $("<div>")
+                    .addClass("standalone-response-details")
+                    .append($button);
+
+                const $responseActions = $("<div>")
+                    .addClass("standalone-response-actions")
+                    .append($previewButton, " ", $executeButton);
+
+                $responseRow.append($responseDetails, $responseActions);
+                $list.append($responseRow);
+            });
+
+            $count.text(
+                "Showing " +
+                Math.min(visibleLimit, filtered.length) +
+                " of " + filtered.length + " matching answers"
+            );
+
+            $showMore.toggle(filtered.length > visibleLimit);
+            $showFewer.toggle(visibleLimit > 10);
+        }
+
+        $search.on("input", function () {
+            visibleLimit = 10;
+            updateList();
+        });
+
+        $showMore.on("click", function () {
+            visibleLimit += 10;
+            updateList();
+        });
+
+        $showFewer.on("click", function () {
+            visibleLimit = 10;
+            updateList();
+        });
+
+        $section.append($search, $count, $list, $showMore, " ", $showFewer);
+        $standaloneResponseList.append($section);
+
+        updateList();
+    }
+
+    function selectEvaluationRun(runId) {
+        const id = Number(runId);
+        const $selected = $evaluationRunList
+            .find(".evaluation-run")
+            .filter(function () {
+                return Number($(this).attr("data-run-id")) === id;
+            });
+
+        if (!$selected.length) return false;
+
+        selectedEvaluationRunId = id;
+
+        $evaluationRunList.find(".evaluation-run").each(function () {
+            const active =
+                Number($(this).attr("data-run-id")) === id;
+            $(this).prop("hidden", !active);
+        });
+
+        $evaluationRunHistory
+            .find(".evaluation-run-history-button")
+            .each(function () {
+                const active =
+                    Number($(this).data("runId")) === id;
+
+                $(this)
+                    .toggleClass("is-active", active)
+                    .attr("aria-pressed", String(active));
+            });
+
+        return true;
+    }
+
+    $evaluationRunHistory.on(
+        "click",
+        ".evaluation-run-history-button",
+        function () {
+            const runId = Number($(this).data("runId"));
+
+            if (!selectEvaluationRun(runId)) {
+                return;
+            }
+
+            const $selectedRun = $evaluationRunList
+                .find(".evaluation-run")
+                .filter(function () {
+                    return Number($(this).attr("data-run-id")) === runId;
+                });
+
+            const $firstResponse = $selectedRun
+                .find(".evaluation-response-button")
+                .first();
+
+            if ($firstResponse.length) {
+                $selectedRun
+                    .find(".run-evaluation-target-select")
+                    .val($firstResponse.data("responseId"));
+
+                loadEvaluationResponse($firstResponse, false);
+            } else {
+                $evaluationRunList
+                    .find(".evaluation-response-button")
+                    .removeClass("active")
+                    .attr("aria-pressed", "false");
+
+                $evaluationRunResultDetail.data(
+                    "evaluationRequestToken",
+                    (Number($evaluationRunResultDetail.data(
+                        "evaluationRequestToken"
+                    )) || 0) + 1
+                );
+
+                $evaluationRunResultDetail
+                    .empty()
+                    .append(
+                        $("<div>")
+                            .addClass("detail-placeholder")
+                            .text(
+                                "This run has no saved answers to inspect."
+                            )
+                    );
+            }
+        }
+    );
+
+    function renderEvaluationRuns(runs, responses, findings, standaloneResponses = []) {
+        $standaloneResponseList.empty();
+        $evaluationRunList.empty();
+        $evaluationRunHistory.empty();
+
+        evaluationResponseContexts = new Map();
+        renderStandaloneResponses(standaloneResponses);
+
+        if (!runs.length) {
+            selectedEvaluationRunId = null;
+
+            $evaluationRunHistory.append(
+                $("<p>").addClass("text-muted")
+                    .text("No saved tests are available yet.")
+            );
+
+            $evaluationRunList.append(
+                $("<p>").addClass("text-muted")
+                    .text("Select or create a test run to view its details.")
+            );
+
+            return;
+        }
+
+        const readyRuns = runs.filter(function (run) {
+            return run.status === "completed";
+        });
+
+        const attentionRuns = runs.filter(function (run) {
+            return run.status !== "completed";
+        });
+
+        const orderedRuns = readyRuns.concat(attentionRuns);
+
+        orderedRuns.forEach(function (run) {
+            if (attentionRuns.length &&
+                run === attentionRuns[0]) {
+                $evaluationRunHistory.append(
+                    $("<p>")
+                        .addClass("evaluation-run-history-group-label")
+                        .text(
+                            "Archived interrupted attempts (" +
+                            attentionRuns.length + ")"
+                        )
+                );
+            }
+            const runResponses = responses.filter(function (response) {
+                return Number(response.run_id) === Number(run.run_id);
+            });
+
+            const state = runScoringState(run, runResponses);
+
+            const $historyButton = $("<button>")
+                .attr({
+                    type: "button",
+                    "aria-pressed": "false",
+                    title: "View saved run " + run.run_id
+                })
+                .addClass("evaluation-run-history-button")
+                .data("runId", run.run_id)
+                .append(
+                    $("<strong>").text(
+                        run.run_name || ("Run #" + run.run_id)
+                    ),
+                    $("<small>").text(
+                        savedTestDate(run.completed_at || run.started_at) +
+                        " ? " + runResponses.length + " saved answers"
+                    ),
+                    $("<span>")
+                        .addClass("run-status " + state.className)
+                        .text(state.label)
+                );
+
+            if (run.status !== "completed") {
+                $historyButton.append(
+                    $("<small>").text("Archived interrupted attempt")
+                );
+            }
+
+            $evaluationRunHistory.append($historyButton);
+            $evaluationRunList.append(
+                renderRunCard(run, responses, findings)
+            );
+        });
+
+        const preferredRun = readyRuns.slice().sort(function (left, right) {
+            return (Number(right.human_review_count) || 0) -
+                (Number(left.human_review_count) || 0) ||
+                (Number(right.completed_result_count) || 0) -
+                (Number(left.completed_result_count) || 0) ||
+                Number(right.run_id) - Number(left.run_id);
+        })[0];
+
+        const selectedRunStillExists = orderedRuns.some(function (run) {
+            return Number(run.run_id) === selectedEvaluationRunId;
+        });
+
+        if (!selectedRunStillExists) {
+            selectedEvaluationRunId = Number(
+                (preferredRun || orderedRuns[0]).run_id
+            );
+        }
+
+        selectEvaluationRun(selectedEvaluationRunId);
+
+        const $selectedRun = $evaluationRunList
+            .find(".evaluation-run")
+            .filter(function () {
+                return Number($(this).attr("data-run-id")) ===
+                    selectedEvaluationRunId;
+            });
+
+        let $responseToOpen = $selectedRun
+            .find(".evaluation-response-button")
+            .first();
+
+        if (!$responseToOpen.length) {
+            $responseToOpen = $standaloneResponseList
+                .find(".evaluation-response-button")
+                .first();
+        }
+
+        if (currentEvaluationResponseId) {
+            const $current = $evaluationLists
+                .find(".evaluation-response-button")
+                .filter(function () {
+                    return Number($(this).data("responseId")) ===
+                        currentEvaluationResponseId;
+                })
+                .first();
+
+            if ($current.length) {
+                const $parentRun = $current.closest(".evaluation-run");
+
+                if (!$parentRun.length ||
+                    Number($parentRun.attr("data-run-id")) ===
+                        selectedEvaluationRunId) {
+                    $responseToOpen = $current;
+                }
+            }
+        }
+
+        if ($responseToOpen.length) {
+            loadEvaluationResponse($responseToOpen, false);
+        }
+    }
+
+    const controlledVariableLabels = {
+        retrieval_method: "Retrieval method",
+        top_k: "Number of retrieved sources",
+        model: "Answer model",
+        temperature: "Temperature",
+        top_p: "Top-p",
+        corpus: "Source category composition",
+    };
+
+    function selectedNewTestCategories() {
+        return $newTestCategoryChoices.find("input:checked").map(function () {
+            return String($(this).val());
+        }).get().sort();
+    }
+
+    function setSelectedNewTestCategories(categories) {
+        requestedNewTestCategories = [...new Set((categories || []).map(String))].sort();
+        $newTestCategoryChoices.find("input").each(function () {
+            $(this).prop("checked", requestedNewTestCategories.includes(String($(this).val())));
+        });
+    }
+
+    function selectedBaselineRun() {
+        const runId = Number($newTestBaselineRun.val());
+        return evaluationRuns.find(function (run) {
+            return Number(run.run_id) === runId;
+        }) || null;
+    }
+
+    function newTestSettingsFromRun(run) {
+        const configuration = run?.run_configuration_json || {};
+        return {
+            retrieval_method: String(run?.retrieval_method || configuration.retrieval_method || ""),
+            top_k: Number(run?.top_k ?? configuration.top_k),
+            model: String(run?.chat_model || configuration.answer_model || ""),
+            temperature: Number(run?.temperature ?? configuration.temperature),
+            top_p: Number(run?.top_p ?? configuration.top_p),
+            corpus: Array.isArray(configuration.categories)
+                ? configuration.categories.map(String).sort()
+                : [],
+        };
+    }
+
+    function questionIdsFromRun(run) {
+        const configuration = run?.run_configuration_json || {};
+        return Array.isArray(configuration.question_ids)
+            ? configuration.question_ids.map(Number).filter(Number.isInteger)
+            : [];
+    }
+
+    function currentNewTestSettings() {
+        return {
+            retrieval_method: String($newTestRetrieval.val() || ""),
+            top_k: Number($newTestTopK.val()),
+            model: String($newTestModel.val() || ""),
+            temperature: Number($newTestTemperature.val()),
+            top_p: Number($newTestTopP.val()),
+            corpus: $newTestCorpusScope.val() === "category_subset"
+                ? selectedNewTestCategories()
+                : [],
+        };
+    }
+
+    function controlledSettingEqual(left, right, key) {
+        if (key === "corpus") {
+            return JSON.stringify(left || []) === JSON.stringify(right || []);
+        }
+        if (["top_k", "temperature", "top_p"].includes(key)) {
+            return Number(left) === Number(right);
+        }
+        return String(left) === String(right);
+    }
+
+    function controlledSettingDisplay(key, value) {
+        if (key === "corpus") {
+            return value.length ? value.map(titleCaseLabel).join(", ") : "all active documents";
+        }
+        if (key === "retrieval_method") {
+            return retrievalDisplayName(value);
+        }
+        if (key === "model") {
+            return modelDisplayName(value);
+        }
+        return String(value);
+    }
+
+    function comparisonChangeDescription() {
+        const baseline = selectedBaselineRun();
+        const key = String($newTestControlledVariable.val() || "");
+        if (!baseline || !controlledVariableLabels[key]) {
+            return "";
+        }
+        const before = newTestSettingsFromRun(baseline)[key];
+        const after = currentNewTestSettings()[key];
+        return controlledVariableLabels[key] + ": " + controlledSettingDisplay(key, before) +
+            " -> " + controlledSettingDisplay(key, after);
+    }
+
+    function corpusVariantKey(categories) {
+        if (!categories.length) {
+            return "full_current";
+        }
+        return ("categories_" + categories.join("_")).slice(0, 120);
+    }
+
+    function newTestRunPayload(action) {
+        const mode = String($newTestExperimentMode.val() || "standalone");
+        const categories = $newTestCorpusScope.val() === "category_subset"
+            ? selectedNewTestCategories()
+            : [];
+        const questionIds = selectedNewTestQuestionIds();
+        $newTestLimit.val(String(questionIds.length));
+        return {
+            action: action,
+            dataset_id: Number($newTestDatasetId.val()),
+            name: String($newTestName.val() || "").trim(),
+            limit: questionIds.length,
+            question_ids: questionIds,
+            model: String($newTestModel.val() || ""),
+            retrieval_method: String($newTestRetrieval.val() || ""),
+            top_k: Number($newTestTopK.val()),
+            temperature: Number($newTestTemperature.val()),
+            top_p: Number($newTestTopP.val()),
+            experiment_mode: mode,
+            experiment_key: mode === "standalone" ? "" : String($newTestExperimentKey.val() || "").trim(),
+            baseline_run_id: mode === "comparison" ? Number($newTestBaselineRun.val()) : null,
+            controlled_variable: mode === "comparison" ? String($newTestControlledVariable.val() || "") : "",
+            change_from_baseline: mode === "comparison" ? comparisonChangeDescription() : "",
+            corpus_variant_key: corpusVariantKey(categories),
+            categories: categories,
+        };
+    }
+
+    function newTestValidationError(payload) {
+        if (!payload.name || !payload.dataset_id) {
+            return "Give the test a name and wait for the Gold Standard to finish loading.";
+        }
+        const maxQuestions = Number($newTestLimit.data("max")) || 5;
+        if (!Array.isArray(payload.question_ids) || payload.question_ids.length < 1 || payload.question_ids.length > maxQuestions) {
+            return "Choose between 1 and " + maxQuestions + " exact reviewed questions.";
+        }
+        if (payload.experiment_mode !== "standalone" && !payload.experiment_key) {
+            return "Give this controlled experiment a short label so its runs stay grouped.";
+        }
+        if ($newTestCorpusScope.val() === "category_subset" && !payload.categories.length) {
+            return "Choose at least one active source category for the selected collection.";
+        }
+        if (payload.experiment_mode !== "comparison") {
+            return "";
+        }
+        const baseline = selectedBaselineRun();
+        if (!baseline) {
+            return "Choose a completed saved test to use as the baseline.";
+        }
+        if (!controlledVariableLabels[payload.controlled_variable]) {
+            return "Choose the one setting this comparison will change.";
+        }
+        const baselineQuestionIds = questionIdsFromRun(baseline);
+        if (JSON.stringify(payload.question_ids) !== JSON.stringify(baselineQuestionIds)) {
+            return "A controlled comparison must reuse the baseline's exact ordered reviewed-question set.";
+        }
+        const baselineSettings = newTestSettingsFromRun(baseline);
+        const currentSettings = currentNewTestSettings();
+        const differences = Object.keys(controlledVariableLabels).filter(function (key) {
+            return !controlledSettingEqual(baselineSettings[key], currentSettings[key], key);
+        });
+        if (differences.length === 0) {
+            return "Change " + controlledVariableLabels[payload.controlled_variable].toLowerCase() +
+                " from the baseline before previewing.";
+        }
+        if (differences.length !== 1 || differences[0] !== payload.controlled_variable) {
+            return "This comparison must change only " +
+                controlledVariableLabels[payload.controlled_variable].toLowerCase() + ". Re-select the baseline to restore the other settings.";
+        }
+        return "";
+    }
+
+    function populateNewTestBaselines() {
+        const selectedRunId = String($newTestBaselineRun.val() || "");
+        const completedRuns = evaluationRuns.filter(function (run) {
+            const questionIds = questionIdsFromRun(run);
+            return run.status === "completed" && Number(run.response_count) > 0 &&
+                questionIds.length === Number(run.response_count);
+        });
+        $newTestBaselineRun.empty().append(
+            $("<option>").val("").text(completedRuns.length ? "Choose a completed test" : "No completed tests available")
+        );
+        completedRuns.forEach(function (run) {
+            $newTestBaselineRun.append(
+                $("<option>").val(run.run_id).text(
+                    run.run_name + " · " + run.response_count + " answer" +
+                    (Number(run.response_count) === 1 ? "" : "s") + " · " + savedTestDate(run.completed_at)
+                )
+            );
+        });
+        $newTestBaselineRun.prop("disabled", !completedRuns.length);
+        if (completedRuns.some(function (run) { return String(run.run_id) === selectedRunId; })) {
+            $newTestBaselineRun.val(selectedRunId);
+        }
+    }
+
+    function applySelectedBaseline() {
+        const baseline = selectedBaselineRun();
+        if (!baseline) {
+            $newTestBaselineSummary.prop("hidden", true).empty();
+            return;
+        }
+        const settings = newTestSettingsFromRun(baseline);
+        setSelectedNewTestQuestionIds(questionIdsFromRun(baseline));
+        $newTestRetrieval.val(settings.retrieval_method);
+        $newTestTopK.val(settings.top_k);
+        $newTestModel.val(settings.model);
+        $newTestTemperature.val(settings.temperature);
+        $newTestTopP.val(settings.top_p);
+        $newTestCorpusScope.val(settings.corpus.length ? "category_subset" : "full_current");
+        setSelectedNewTestCategories(settings.corpus);
+        $newTestExperimentKey.val(baseline.experiment_key || baseline.run_name);
+        $newTestName.val("Comparison with " + baseline.run_name);
+        renderSelectedBaselineSummary();
+    }
+
+    function renderSelectedBaselineSummary() {
+        const baseline = selectedBaselineRun();
+        if (!baseline) {
+            $newTestBaselineSummary.prop("hidden", true).empty();
+            return;
+        }
+        const settings = newTestSettingsFromRun(baseline);
+        const questionIds = questionIdsFromRun(baseline);
+        $newTestBaselineSummary.empty().append(
+            $("<strong>").text("Baseline: " + baseline.run_name),
+            $("<span>").text(
+                questionIds.length + " exact saved question" + (questionIds.length === 1 ? "" : "s") +
+                " · " + readable(settings.retrieval_method) + " · top-k " + settings.top_k +
+                " · " + settings.model + " · " + controlledSettingDisplay("corpus", settings.corpus)
+            )
+        ).prop("hidden", false);
+    }
+
+    function syncNewTestExperimentControls(copyBaseline) {
+        const mode = String($newTestExperimentMode.val() || "standalone");
+        const isComparison = mode === "comparison";
+        $newTestBaselineField.prop("hidden", !isComparison);
+        $newTestExperimentField.prop("hidden", mode === "standalone");
+        $newTestChangeField.prop("hidden", !isComparison);
+        if (copyBaseline && isComparison) {
+            applySelectedBaseline();
+        }
+        if (mode === "standalone") {
+            $newTestComparisonGuide.text(
+                "A standalone test is useful for a quick check. For report-ready evidence, first save a baseline and then create a comparison that changes one setting."
+            );
+        } else if (mode === "baseline") {
+            $newTestComparisonGuide.text(
+                "This test will become the reference point. Give the experiment a label; the comparison step will reuse its questions and unchanged settings."
+            );
+        } else {
+            $newTestComparisonGuide.text(
+                "Choose a baseline and one setting. The form copies and locks the other settings so the comparison stays interpretable."
+            );
+        }
+
+        const $controlledInputs = $newTestRetrieval
+            .add($newTestTopK)
+            .add($newTestModel)
+            .add($newTestTemperature)
+            .add($newTestTopP)
+            .add($newTestCorpusScope)
+            .add($newTestQuestionIds);
+        $controlledInputs.prop("disabled", false);
+        $newTestCategoryChoices.find("input").prop("disabled", false);
+        if (isComparison) {
+            $controlledInputs.prop("disabled", true);
+            const changed = String($newTestControlledVariable.val() || "");
+            const controlByVariable = {
+                retrieval_method: $newTestRetrieval,
+                top_k: $newTestTopK,
+                model: $newTestModel,
+                temperature: $newTestTemperature,
+                top_p: $newTestTopP,
+                corpus: $newTestCorpusScope,
+            };
+            if (controlByVariable[changed]) {
+                controlByVariable[changed].prop("disabled", false);
+            }
+            if (changed === "corpus") {
+                $newTestCategoryChoices.find("input").prop("disabled", false);
+            } else {
+                $newTestCategoryChoices.find("input").prop("disabled", true);
+            }
+            $newTestQuestionIds.prop("disabled", true);
+        }
+        const showCategories = $newTestCorpusScope.val() === "category_subset";
+        $newTestCategoryField.prop("hidden", !showCategories);
+        if (!isComparison) {
+            $newTestBaselineSummary.prop("hidden", true);
+        } else {
+            renderSelectedBaselineSummary();
+        }
+    }
+
+    function resetNewTestRunPreview(message) {
+        $createNewTestRun.prop("hidden", true).removeData("preflight");
+        $newTestRunStatus.text(message || "Settings changed. Preview the test again before generating answers.");
+    }
+
+    $newTestRunToggle.on("click", function () {
+        activateEvaluationTab("runs");
+        const willOpen = $newTestRunForm.prop("hidden");
+        $newTestRunForm.prop("hidden", !willOpen);
+        if (willOpen) {
+            populateNewTestBaselines();
+            syncNewTestExperimentControls(false);
+            if (!$newTestName.val().trim()) {
+                $newTestName.val(
+                    "Test " + new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(new Date()) +
+                    " · " + retrievalDisplayName($newTestRetrieval.val()) + " · " + $newTestTopK.val() + " sources"
+                );
+            }
+            $newTestName.trigger("focus");
+        }
+    });
+
+    $closeNewTestRun.on("click", function () {
+        $newTestRunForm.prop("hidden", true);
+        $newTestRunToggle.trigger("focus");
+    });
+
+    $newTestExperimentMode.on("change", function () {
+        if ($newTestExperimentMode.val() === "comparison" && !$newTestBaselineRun.val()) {
+            $newTestControlledVariable.val("");
+        }
+        syncNewTestExperimentControls(false);
+    });
+
+    $newTestBaselineRun.on("change", function () {
+        $newTestControlledVariable.val("");
+        applySelectedBaseline();
+        syncNewTestExperimentControls(false);
+    });
+
+    $newTestControlledVariable.on("change", function () {
+        applySelectedBaseline();
+        syncNewTestExperimentControls(false);
+    });
+
+    $newTestCorpusScope.on("change", function () {
+        syncNewTestExperimentControls(false);
+    });
+
+    $newTestRunForm.on("change input", "input, select", function () {
+        if ($(this).hasClass("new-test-category-input")) {
+            requestedNewTestCategories = [];
+        }
+        resetNewTestRunPreview();
+    });
+
+    $newTestRunForm.on("submit", function (event) {
+        event.preventDefault();
+        $previewNewTestRun.trigger("click");
+    });
+
+    $previewNewTestRun.on("click", function () {
+        const payload = newTestRunPayload("preflight");
+        const payloadFingerprint = JSON.stringify(payload);
+        const validationError = newTestValidationError(payload);
+        if (validationError) {
+            $newTestRunStatus.text(validationError);
+            return;
+        }
+        $previewNewTestRun.prop("disabled", true).text("Checking…");
+        resetNewTestRunPreview("Checking model calls and estimated cost…");
+        $.ajax({
+            url: "api/test_runs.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify(payload),
+        })
+            .done(function (response) {
+                if (JSON.stringify(newTestRunPayload("preflight")) !== payloadFingerprint) {
+                    resetNewTestRunPreview("Settings changed while the preview was running. Preview the updated test again.");
+                    return;
+                }
+                const plan = response.data?.preflight;
+                if (!plan) {
+                    $newTestRunStatus.text("The server returned an incomplete test preview.");
+                    return;
+                }
+                const estimated = plan.estimated_cost === null
+                    ? "cost unavailable"
+                    : "$" + compactNumber(plan.estimated_cost, 6) + " estimated";
+                const configuration = response.data?.configuration || {};
+                const comparisonNote = payload.experiment_mode === "comparison"
+                    ? " · one-variable comparison with " + selectedBaselineRun().run_name
+                    : payload.experiment_mode === "baseline"
+                        ? " · controlled baseline"
+                        : "";
+                $newTestRunStatus.text(
+                    plan.response_count + " model call" + (Number(plan.response_count) === 1 ? "" : "s") +
+                    " · " + plan.response_count + " new saved answer" + (Number(plan.response_count) === 1 ? "" : "s") +
+                    " · " + (configuration.document_count || 0) + " source document" +
+                    (Number(configuration.document_count) === 1 ? "" : "s") +
+                    " · local 8 scored automatically · " + estimated + comparisonNote
+                );
+                $createNewTestRun.prop("hidden", false).data("preflight", plan);
+            })
+            .fail(function (xhr) {
+                $newTestRunStatus.text(xhr.responseJSON?.error || "The test preview could not be completed.");
+            })
+            .always(function () {
+                $previewNewTestRun.prop("disabled", false).text("Preview test");
+            });
+    });
+
+    $createNewTestRun.on("click", function () {
+        const plan = $createNewTestRun.data("preflight") || {};
+        if (Number(plan.paid_call_count) > 0 && !window.confirm(
+            "Generate " + plan.response_count + " new answer" + (Number(plan.response_count) === 1 ? "" : "s") +
+            " using " + plan.paid_call_count + " configured model call" +
+            (Number(plan.paid_call_count) === 1 ? "" : "s") + "?"
+        )) {
+            return;
+        }
+        const payload = newTestRunPayload("create");
+        const validationError = newTestValidationError(payload);
+        if (validationError) {
+            resetNewTestRunPreview(validationError);
+            return;
+        }
+        $createNewTestRun.prop("disabled", true).text("Generating…");
+        $previewNewTestRun.prop("disabled", true);
+        $newTestRunStatus.text("Generating and saving the test answers, then applying the local ten scores…");
+        $.ajax({
+            url: "api/test_runs.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            timeout: 310000,
+            data: JSON.stringify(payload),
+        })
+            .done(function (response) {
+                const answerCount = response.data?.responses?.length || 0;
+                $newTestRunStatus.text(
+                    "Test saved with " + answerCount + " answer" + (answerCount === 1 ? "" : "s") +
+                    " and the local ten scores. It is now available below."
+                );
+                $createNewTestRun.prop("hidden", true).removeData("preflight");
+                loadEvaluationDataset();
+            })
+            .fail(function (xhr) {
+                $newTestRunStatus.text(xhr.responseJSON?.error || "The test run could not be completed.");
+                $createNewTestRun.prop("hidden", false);
+            })
+            .always(function () {
+                $createNewTestRun.prop("disabled", false).text("Generate test");
+                $previewNewTestRun.prop("disabled", false);
+            });
+    });
+
+    function runEvaluationPayload($panel, action) {
+        const includeAdvanced = $panel.find(".run-evaluation-scope").val() === "all13";
+        const payload = {
+            action: action,
+            run_id: Number($panel.data("runId")),
+            include_advanced: includeAdvanced,
+            limit: includeAdvanced ? 1 : Math.max(1, Number($panel.data("responseCount")) || 1),
+            force: $panel.find(".run-evaluation-force-input").is(":checked"),
+        };
+        if (includeAdvanced) {
+            payload.response_id = Number($panel.find(".run-evaluation-target-select").val());
+        }
+        return payload;
+    }
+
+    $evaluationLists.on("click", ".evaluate-run-toggle", function () {
+        const $panel = $(this).siblings(".run-evaluation-panel");
+        const willOpen = $panel.prop("hidden");
+        $panel.prop("hidden", !willOpen);
+        $(this).text(willOpen ? "Close scoring" : "Score saved answers");
+    });
+
+    $evaluationLists.on("click", ".evaluate-response-button", function () {
+        const $button = $(this);
+        const $run = $button.closest(".evaluation-run");
+        const $panel = $run.find(".run-evaluation-panel");
+        $panel.prop("hidden", false);
+        $run.find(".evaluate-run-toggle").text("Close scoring");
+        $panel.find(".run-evaluation-scope").val("all13");
+        $panel.find(".run-evaluation-target-select").val(String($button.data("responseId")));
+        $panel.find(".run-evaluation-scope").trigger("change");
+        $panel.find(".preflight-run-evaluation").trigger("click");
+        $panel[0].scrollIntoView({ behavior: preferredScrollBehavior(), block: "nearest" });
+    });
+
+    $evaluationLists.on("change", ".run-evaluation-scope, .run-evaluation-target-select, .run-evaluation-force-input", function () {
+        const $panel = $(this).closest(".run-evaluation-panel");
+        const includeAdvanced = $panel.find(".run-evaluation-scope").val() === "all13";
+        $panel.find(".run-evaluation-target").prop("hidden", !includeAdvanced);
+        $panel.find(".execute-run-evaluation").prop("hidden", true).removeData("preflight");
+        $panel.find(".run-evaluation-status").text(
+            includeAdvanced
+                ? "All 15 methods will target the exact saved answer selected above. Check the plan before applying scores."
+                : "The local ten will be applied to every saved answer without an external evaluator call. Check the plan first."
+        );
+    });
+
+    $evaluationLists.on("click", ".preflight-run-evaluation", function () {
+        const $button = $(this);
+        const $panel = $button.closest(".run-evaluation-panel");
+        const $status = $panel.find(".run-evaluation-status");
+        $button.prop("disabled", true).text("Checking…");
+        $panel.find(".execute-run-evaluation").prop("hidden", true);
+        $.ajax({
+            url: "api/run_evaluation.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify(runEvaluationPayload($panel, "preflight")),
+        })
+            .done(function (response) {
+                const plan = response.data?.preflight;
+                if (!plan) {
+                    $status.text("The server returned an incomplete preflight.");
+                    return;
+                }
+                const estimated = plan.estimated_cost === null
+                    ? "cost unknown"
+                    : "$" + compactNumber(plan.estimated_cost, 6) + " estimated";
+                $status.text(
+                    plan.responses + " saved answer" + (Number(plan.responses) === 1 ? "" : "s") +
+                    " selected · " + plan.requested_metric_count + " methods each · " +
+                    plan.application_count + " missing scores to add · " + plan.reused_count +
+                    " completed scores reused · " + plan.paid_application_count +
+                    " external calls · " + estimated
+                );
+                $panel.find(".execute-run-evaluation").prop("hidden", false).data("preflight", plan);
+            })
+            .fail(function (xhr) {
+                $status.text(xhr.responseJSON?.error || "The evaluation preflight failed.");
+            })
+            .always(function () {
+                $button.prop("disabled", false).text("Check what will run");
+            });
+    });
+
+    $evaluationLists.on("click", ".execute-run-evaluation", function () {
+        const $button = $(this);
+        const $panel = $button.closest(".run-evaluation-panel");
+        const plan = $button.data("preflight") || {};
+        if (Number(plan.paid_application_count) > 0 && !window.confirm(
+            "This will make " + plan.paid_application_count +
+            " external evaluator calls using the configured API quota. Continue?"
+        )) {
+            return;
+        }
+        const $status = $panel.find(".run-evaluation-status");
+        $button.prop("disabled", true).text("Applying…");
+        $panel.find(".preflight-run-evaluation").prop("disabled", true);
+        $status.text("Applying the selected scoring methods. Keep this page open…");
+        $.ajax({
+            url: "api/run_evaluation.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            timeout: 310000,
+            data: JSON.stringify(runEvaluationPayload($panel, "evaluate")),
+        })
+            .done(function (response) {
+                const outcomes = response.data?.outcomes || {};
+                const items = [
+                    ...(outcomes.local || []),
+                    ...(outcomes.advanced || [])
+                ];
+
+                const reused = items.filter(function (item) {
+                    return item.action === "reuse";
+                }).length;
+
+                const executed = items.filter(function (item) {
+                    return item.result && item.action !== "reuse";
+                });
+
+                const completed = executed.filter(function (item) {
+                    return item.result.status === "completed";
+                }).length;
+
+                const failed = executed.filter(function (item) {
+                    return item.result.status === "failed";
+                }).length;
+
+                const skipped = executed.filter(function (item) {
+                    return item.result.status === "skipped";
+                }).length;
+
+                const unknown = items.length - reused - completed - failed - skipped;
+                const hasWarnings = failed > 0 || skipped > 0 || unknown > 0;
+
+                const message = (
+                    hasWarnings
+                        ? "Evaluation finished with warnings: "
+                        : "Evaluation completed: "
+                ) +
+                    completed + " new score(s) completed · " +
+                    reused + " existing score(s) reused · " +
+                    failed + " failed · " +
+                    skipped + " skipped" +
+                    (unknown ? " · " + unknown + " unknown" : "");
+
+                $status.text("Scoring finished. Refreshing saved results…");
+
+                loadEvaluationDataset(message, Number($panel.data("runId")));
+            })
+            .fail(function (xhr) {
+                $status.text(xhr.responseJSON?.error || "The selected scoring request failed.");
+                $button.prop("disabled", false).text("Apply scores");
+                $panel.find(".preflight-run-evaluation").prop("disabled", false);
+            });
+    });
+
+    function renderScoreCard(result, attempts) {
+        const status = result.status || "completed";
+        const passed = result.passed === null ? null : Number(result.passed) === 1;
+        const cardState = status === "failed" ? "score-failed"
+            : status === "skipped" ? "score-skipped"
+                : passed === null ? "score-neutral" : passed ? "score-pass" : "score-review";
+        const methodKey = evaluatorMethodKey(result);
+        const $score = $("<article>").addClass("evaluation-score " + cardState);
+        $score.append($("<span>").addClass("metric-origin metric-origin-" + methodKey).text(evaluatorMethodLabel(result)));
+        const $scoreHeader = $("<div>").addClass("score-heading");
+        $scoreHeader.append($("<strong>").text(result.display_name));
+        $score.append($scoreHeader);
+        const allRunsCompleted = Number(result.all_runs_completed_count) || 0;
+        const hasAllRunsMean = result.all_runs_mean !== null && result.all_runs_mean !== undefined;
+        $score.append($("<div>").addClass("score-comparison").append(
+            $("<span>").append(
+                $("<small>").text("This answer"),
+                $("<b>").text(status === "completed" ? compactNumber(result.normalized_score) : readable(status))
+            ),
+            $("<span>").append(
+                $("<small>").text("Completed tests"),
+                $("<b>").text(hasAllRunsMean ? compactNumber(result.all_runs_mean) : "—"),
+                $("<em>").text(allRunsCompleted ? "average · n=" + allRunsCompleted : "no completed scores")
+            )
+        ));
+        $score.append($("<span>").text(
+            readable(result.dimension) + " · " + readable(result.family) + " · " + (result.runtime_ms || 0) + " ms"
+        ));
+        $score.append($("<p>").text(result.error_message || result.explanation || "No explanation was recorded."));
+
+        const attemptCount = Number(result.attempt_count) || 0;
+        if (attemptCount > 1) {
+            $score.append($("<p>").addClass("attempt-summary").text(
+                attemptCount + " attempts · mean " + compactNumber(result.attempt_mean) +
+                " · range " + compactNumber(result.attempt_min) + "–" + compactNumber(result.attempt_max) +
+                " · σ " + compactNumber(result.attempt_stddev)
+            ));
+        } else {
+            $score.append($("<p>").addClass("attempt-summary").text(attemptCount + " recorded attempt" + (attemptCount === 1 ? "" : "s")));
+        }
+        appendContract($score, result.configuration_json || {});
+        const latestAttempt = attempts.length ? attempts[attempts.length - 1] : null;
+        const auditConfiguration = Object.assign(
+            {},
+            result.configuration_json || {},
+            latestAttempt?.configuration_json || {}
+        );
+        const $audit = $("<details>").addClass("score-audit");
+        $audit.append($("<summary>").text("Run and version details"));
+        const $auditList = $("<dl>");
+        [
+            ["Evaluator version", auditConfiguration.evaluator_version || result.version],
+            ["Implementation", auditConfiguration.implementation],
+            ["Framework", auditConfiguration.framework],
+            ["Provider / model", [auditConfiguration.provider, auditConfiguration.model].filter(Boolean).join(" / ")],
+            ["Embedding model", auditConfiguration.embedding_model],
+            ["Rubric version", auditConfiguration.rubric_version],
+            ["Prompt hash", auditConfiguration.prompt_hash],
+            ["Attempt policy", auditConfiguration.canonical_policy],
+            ["Tokens", latestAttempt?.total_tokens],
+            ["Recorded cost", latestAttempt?.estimated_cost === null || latestAttempt?.estimated_cost === undefined
+                ? null : "$" + compactNumber(latestAttempt.estimated_cost, 8)],
+        ].forEach(function (field) {
+            if (field[1] !== null && field[1] !== undefined && field[1] !== "") {
+                $auditList.append($("<div>").append($("<dt>").text(field[0]), $("<dd>").text(field[1])));
+            }
+        });
+        $audit.append($auditList);
+        if (latestAttempt?.details_json && Object.keys(latestAttempt.details_json).length) {
+            $audit.append($("<strong>").text("Structured result details"));
+            $audit.append($("<pre>").text(JSON.stringify(latestAttempt.details_json, null, 2)));
+        }
+        if (latestAttempt?.raw_provider_output) {
+            $audit.append($("<strong>").text("Raw provider output"));
+            $audit.append($("<pre>").text(latestAttempt.raw_provider_output));
+        }
+        $score.append($audit);
+        return $score;
+    }
+
+    function appendHumanReviewSection(data) {
+        const reviews = data.human_reviews || [];
+        const $section = $("<details>").addClass("human-review-section");
+        const $heading = $("<summary>").addClass("human-review-heading").append(
+            $("<span>").text("Human review · supporting evidence"),
+            $("<strong>").text(reviews.length ? reviews.length + " current review" + (reviews.length === 1 ? "" : "s") : "No review recorded yet")
+        );
+        $section.append($heading);
+        reviews.forEach(function (review) {
+            const $review = $("<article>").addClass("human-review-card");
+            $review.append($("<div>").append(
+                $("<strong>").text(review.reviewer_alias),
+                $("<span>").text(readable(review.overall_decision))
+            ));
+            const ratings = ["correctness", "completeness", "faithfulness", "relevance", "refusal_correctness"]
+                .filter(function (key) { return review[key] !== null; })
+                .map(function (key) { return readable(key) + " " + review[key] + "/5"; });
+            $review.append($("<small>").text(ratings.length ? ratings.join(" · ") : "No numeric ratings supplied"));
+            if (review.failure_category) {
+                $review.append($("<p>").text("Failure category: " + readable(review.failure_category)));
+            }
+            if (review.notes) {
+                $review.append($("<p>").text(review.notes));
+            }
+            $section.append($review);
+        });
+
+        const $form = $("<form>").addClass("human-review-form").attr("id", "humanReviewForm");
+        $form.append($("<p>").text("Rate only dimensions you can support from the reference and retrieved evidence. Blank ratings are allowed."));
+        const $identityRow = $("<div>").addClass("review-form-grid");
+        $identityRow.append($("<label>").text("Reviewer name").append(
+            $("<input>").addClass("form-control").attr({ name: "reviewer_alias", maxlength: 120, required: true, placeholder: "Your name or initials" })
+        ));
+        $identityRow.append($("<label>").text("Overall decision").append(
+            $("<select>").addClass("form-select").attr({ name: "overall_decision", required: true }).append(
+                $("<option>").val("").text("Choose a decision"),
+                $("<option>").val("acceptable").text("Acceptable"),
+                $("<option>").val("needs_revision").text("Needs revision"),
+                $("<option>").val("incorrect").text("Incorrect"),
+                $("<option>").val("not_applicable").text("Not applicable")
+            )
+        ));
+        $form.append($identityRow);
+        const $ratings = $("<div>").addClass("review-rating-grid");
+        ["correctness", "completeness", "faithfulness", "relevance", "refusal_correctness"].forEach(function (key) {
+            const $select = $("<select>").addClass("form-select").attr("name", key)
+                .append($("<option>").val("").text("Not rated"));
+            for (let rating = 1; rating <= 5; rating += 1) {
+                $select.append($("<option>").val(rating).text(rating + (rating === 1 ? " — poor" : rating === 5 ? " — strong" : "")));
+            }
+            $ratings.append($("<label>").text(readable(key)).append($select));
+        });
+        $form.append($ratings);
+        $form.append($("<label>").text("Failure category").append(
+            $("<select>").addClass("form-select").attr("name", "failure_category").append(
+                ["none", "retrieval_miss", "source_ranked_low", "insufficient_context", "unsupported_generation", "incomplete_answer", "incorrect_answer", "incorrect_refusal", "over_refusal", "misleading_metric", "evaluator_failure", "ambiguous_question"]
+                    .map(function (value) { return $("<option>").val(value).text(readable(value)); })
+            )
+        ));
+        $form.append($("<label>").text("Evidence-backed notes").append(
+            $("<textarea>").addClass("form-control").attr({ name: "notes", rows: 3, maxlength: 5000, placeholder: "Explain the specific fact, evidence, or failure that supports this decision." })
+        ));
+        $form.append($("<div>").addClass("review-submit-row").append(
+            $("<button>").addClass("btn btn-primary").attr("type", "submit").text("Save human review"),
+            $("<span>").addClass("human-review-message").attr({ role: "status", "aria-live": "polite" })
+        ));
+        $section.append($form);
+        $evaluationResultDetail.append($section);
+    }
+
+    function renderEvaluationDetail(data) {
+        const response = data.response;
+        currentEvaluationResponseId = Number(response.response_id);
+        const responseContext = evaluationResponseContexts.get(currentEvaluationResponseId) || {};
+        $evaluationResultDetail.empty().prop("hidden", false);
+        const $header = $("<div>").addClass("response-detail-header");
+        const $headerCopy = $("<div>");
+        $headerCopy.append($("<span>").text(responseContext.label || "Saved answer"));
+        $headerCopy.append($("<h3>").text(response.question_text));
+        $header.append($headerCopy);
+        $header.append($("<small>").text(responseContext.runName || response.run_name || "Saved test"));
+        $evaluationResultDetail.append($header);
+
+        const $comparison = $("<div>").addClass("answer-comparison");
+        $comparison.append($("<article>").append(
+            $("<span>").text("Generated answer"), $("<p>").text(response.answer_text)
+        ));
+        $comparison.append($("<article>").addClass("reference-answer").append(
+            $("<span>").text("Reviewed reference"), $("<p>").text(response.expected_answer || "No reference answer applies.")
+        ));
+        $evaluationResultDetail.append($comparison);
+
+        const $meta = $("<div>").addClass("response-meta");
+        if (response.is_answerable === null ||
+            response.is_answerable === undefined) {
+            $meta.append(
+                $("<span>").text("No Gold Standard reference")
+            );
+        } else {
+            $meta.append(
+                $("<span>").text(
+                    (Number(response.is_answerable) ? "Answerable" : "Unanswerable") +
+                    " test case"
+                )
+            );
+        }
+        $meta.append($("<span>").text(readable(response.retrieval_method) + " retrieval"));
+        $meta.append($("<span>").text((response.latency_ms || 0) + " ms answer latency"));
+        if (response.chat_model) {
+            $meta.append($("<span>").text(response.chat_model));
+        }
+        if (response.top_k !== null && response.top_k !== undefined) {
+            $meta.append($("<span>").text("Top-k: " + response.top_k));
+        }
+        $evaluationResultDetail.append($meta);
+
+        const $provenance = $("<details>").addClass("response-provenance");
+        $provenance.append($("<summary>").text("Run settings and technical provenance"));
+        const $technicalMeta = $("<div>").addClass("response-meta");
+        $technicalMeta.append($("<span>").text("Internal response ID: " + response.response_id));
+        $technicalMeta.append($("<span>").text("Internal run ID: " + response.run_id));
+        $technicalMeta.append($("<span>").text(
+            response.total_tokens === null
+                ? "Generation usage not recorded"
+                : response.total_tokens + " generation tokens"
+        ));
+        $technicalMeta.append($("<span>").text(
+            response.answer_estimated_cost === null
+                ? "Generation cost unavailable"
+                : "Generation cost $" + compactNumber(response.answer_estimated_cost, 8)
+        ));
+        $technicalMeta.append($("<span>").text("Snapshot: " + readable(response.snapshot_provenance)));
+        if (response.code_version) {
+            $technicalMeta.append($("<span>").text("Code: " + response.code_version));
+        }
+        if (response.temperature !== null && response.temperature !== undefined) {
+            $technicalMeta.append($("<span>").text("Temperature: " + response.temperature));
+        }
+        if (response.top_p !== null && response.top_p !== undefined) {
+            $technicalMeta.append($("<span>").text("Top-p: " + response.top_p));
+        }
+        if (response.expected_source) {
+            $technicalMeta.append($("<span>").text("Expected source: " + response.expected_source));
+        }
+        $provenance.append($technicalMeta);
+        $evaluationResultDetail.append($provenance);
+
+        const results = data.results || [];
+        const resultAttempts = data.attempts || [];
+        renderEvaluationMethodSummary(data);
+        [
+            {
+                key: "local",
+                label: "Local metrics",
+                emptyTitle: "No local metric results were saved.",
+                emptyText: "Local metrics include deterministic checks such as Citation ID Validity and Citation Presence. These checks can evaluate saved citations without a Gold Standard reference. Other local metrics compare the answer against a reviewed reference and require Gold Standard data.",
+            },
+            {
+                key: "judge",
+                label: "LLM judge",
+                emptyTitle: "The LLM judge has not evaluated this answer.",
+                emptyText: "This is missing evidence, not a zero score. A guarded provider-backed evaluation can add the rubric result later.",
+            },
+            {
+                key: "ragas",
+                label: "RAGAS metrics",
+                emptyTitle: "RAGAS has not evaluated this answer.",
+                emptyText: "This is missing evidence, not a zero score. A guarded RAGAS run can add faithfulness, relevancy, context precision, and context recall.",
+            },
+            {
+                key: "citation",
+                label: "AI Citation Analysis",
+                emptyTitle: "AI Citation Analysis has not evaluated this answer.",
+                emptyText: "Citation Coverage checks whether factual claims have valid saved citations. Citation Support checks whether the cited evidence supports those claims. Both are optional, provider-backed evaluations."
+            },
+        ].forEach(function (method) {
+            const methodResults = results.filter(function (result) {
+                return evaluatorMethodKey(result) === method.key;
+            });
+
+            const catalogMethods = applicableEvaluators(
+                method.key,
+                response,
+                results
+            );
+
+            // Hide categories with no applicable evaluators or historical results.
+            if (!catalogMethods.length && !methodResults.length) {
+                return;
+            }
+
+            const counts = methodStatusCounts(methodResults);
+            const $section = $("<details>").addClass("score-layer-section");
+            $section.append($("<summary>").addClass("score-layer-heading").append(
+                $("<span>").text(method.label),
+                $("<strong>").text(counts.completed + " of " + catalogMethods.length + " completed · " + counts.failed + " failed · " + counts.skipped + " skipped")
+            ));
+            if (methodResults.length) {
+                const $scores = $("<div>").addClass("evaluation-score-list");
+                methodResults.forEach(function (result) {
+                    const attempts = resultAttempts.filter(function (attempt) {
+                        return attempt.evaluator_key === result.evaluator_key;
+                    });
+                    $scores.append(renderScoreCard(result, attempts));
+                });
+                $section.append($scores);
+            } else {
+                $section.append($("<div>").addClass("layer-empty-state").append(
+                    $("<strong>").text(method.emptyTitle),
+                    $("<p>").text(method.emptyText)
+                ));
+            }
+            $evaluationResultDetail.append($section);
+        });
+
+        const disagreements = data.disagreements || [];
+        if (disagreements.length) {
+            const $disagreement = $("<section>").addClass("disagreement-panel").append($("<strong>").text("Signals worth investigating"));
+            disagreements.forEach(function (item) {
+                $disagreement.append($("<article>").append($("<span>").text(item.title), $("<p>").text(item.explanation)));
+            });
+            $evaluationResultDetail.append($disagreement);
+        }
+
+        appendHumanReviewSection(data);
+
+        const $contexts = $("<details>").addClass("retrieved-evidence");
+        $contexts.append($("<summary>").text("Retrieved evidence (" + (data.contexts || []).length + ")"));
+        (data.contexts || []).forEach(function (context) {
+            const $context = $("<article>").toggleClass("expected-evidence", Boolean(context.is_expected_source));
+            $context.append($("<strong>").text(
+                "Rank " + context.rank_position + ": " + (context.source_path || "unknown source") +
+                (context.is_expected_source ? " · expected source" : "")
+            ));
+            $context.append($("<p>").text(context.context_excerpt));
+            const scoreParts = [];
+            if (context.semantic_distance !== null) {
+                scoreParts.push("semantic distance " + compactNumber(context.semantic_distance, 6));
+            }
+            if (context.lexical_score !== null) {
+                scoreParts.push("lexical " + compactNumber(context.lexical_score, 3));
+            }
+            if (context.retrieval_score !== null) {
+                scoreParts.push("final score " + compactNumber(context.retrieval_score, 6));
+            }
+            const retrievalVersion = context.retrieval_metadata_json?.version;
+            if (retrievalVersion) {
+                scoreParts.push("algorithm " + retrievalVersion);
+            }
+            $context.append($("<small>").text(scoreParts.length ? scoreParts.join(" · ") : "Retrieval score provenance unavailable"));
+            $contexts.append($context);
+        });
+        $evaluationResultDetail.append($contexts);
+    }
+
+    function loadEvaluationResponse($button, shouldScroll) {
+        // Capture the destination before the asynchronous request starts.
+        const $targetDetail = $button.closest("#evaluationRunList").length
+            ? $evaluationRunResultDetail
+            : $chatEvaluationResultDetail;
+
+        const requestToken =
+            (Number($targetDetail.data("evaluationRequestToken")) || 0) + 1;
+
+        $targetDetail.data("evaluationRequestToken", requestToken);
+
+        $evaluationResultDetail = $targetDetail;
+
+        $evaluationLists
+            .find(".evaluation-response-button")
+            .removeClass("active")
+            .attr("aria-pressed", "false");
+
+        $button
+            .addClass("active")
+            .attr("aria-pressed", "true")
+            .prop("disabled", true);
+
+        currentEvaluationResponseId =
+            Number($button.data("responseId"));
+
+        $.getJSON(
+            "api/evaluations.php",
+            { response_id: $button.data("responseId") }
+        )
+            .done(function (response) {
+                if (
+                    Number($targetDetail.data("evaluationRequestToken")) !==
+                    requestToken
+                ) {
+                    return;
+                }
+
+                // renderEvaluationDetail uses this inspector reference.
+                // Set it immediately before synchronous rendering.
+                $evaluationResultDetail = $targetDetail;
+
+                renderEvaluationDetail(response.data);
+
+                if (shouldScroll && $targetDetail.length) {
+                    $targetDetail[0].scrollIntoView({
+                        behavior: preferredScrollBehavior(),
+                        block: "start"
+                    });
+                }
+            })
+            .fail(function () {
+                if (
+                    Number($targetDetail.data("evaluationRequestToken")) !==
+                    requestToken
+                ) {
+                    return;
+                }
+
+                $targetDetail.empty().append(
+                    $("<div>")
+                        .addClass("alert alert-danger mb-0")
+                        .text("The saved response could not be loaded.")
+                );
+            })
+            .always(function () {
+                $button.prop("disabled", false);
+            });
+    }
+
+    // Phase 6.3: Filters affect the view, never the dataset.
+    $goldQuestionSearch.on("input", renderEvaluationQuestions);
+
+    $evaluationCategoryFilter
+        .add($evaluationStatusFilter)
+        .add($goldDifficultyFilter)
+        .add($goldAnswerabilityFilter)
+        .add($goldQuestionSort)
+        .on("change", renderEvaluationQuestions);
+
+    $clearGoldQuestionFilters.on("click", function () {
+        $goldQuestionSearch.val("");
+        $evaluationCategoryFilter.val("");
+        $evaluationStatusFilter.val("");
+        $goldDifficultyFilter.val("");
+        $goldAnswerabilityFilter.val("");
+        $goldQuestionSort.val("order");
+        renderEvaluationQuestions();
+        $goldQuestionSearch.trigger("focus");
+    });
+    // Phase 6.4: Expand/collapse only the currently displayed cards.
+    $("#expandAllGoldQuestions").on("click", function () {
+        $evaluationQuestionList
+            .find("details.gold-question-details")
+            .each(function () {
+                expandedGoldQuestionIds.add(
+                    goldQuestionKey(
+                        $(this).attr("data-question-id")
+                    )
+                );
+                this.open = true;
+            });
+    });
+
+    $("#collapseAllGoldQuestions").on("click", function () {
+        $evaluationQuestionList
+            .find("details.gold-question-details")
+            .each(function () {
+                expandedGoldQuestionIds.delete(
+                    goldQuestionKey(
+                        $(this).attr("data-question-id")
+                    )
+                );
+                this.open = false;
+            });
+    });
+
+    $evaluationQuestionList.on(
+        "toggle",
+        "details.gold-question-details",
+        function () {
+            const key = goldQuestionKey(
+                $(this).attr("data-question-id")
+            );
+
+            if (this.open) {
+                expandedGoldQuestionIds.add(key);
+            } else {
+                expandedGoldQuestionIds.delete(key);
+            }
+        }
+    );
+
+    // Phase 6.5: Read-only Gold Standard evidence inspector.
+    const goldEvidenceDialog =
+        document.getElementById("goldEvidenceDialog");
+    let goldEvidenceTrigger = null;
+
+    $evaluationQuestionList.on(
+        "click",
+        ".gold-view-evidence-button",
+        function () {
+            if (!goldEvidenceDialog) {
+                return;
+            }
+
+            const questionId = String(
+                $(this).data("questionId")
+            );
+
+            const question = evaluationQuestions.find(
+                function (item) {
+                    return String(item.question_id) === questionId;
+                }
+            );
+
+            if (!question) {
+                return;
+            }
+
+            goldEvidenceTrigger = this;
+
+            const displayValue = function (value) {
+                return value === null ||
+                    value === undefined ||
+                    String(value).trim() === ""
+                    ? "Not provided"
+                    : String(value);
+            };
+
+            // Use text(), never html(), for stored reference content.
+            $("#goldEvidenceQuestion").text(
+                displayValue(question.question_text)
+            );
+            $("#goldEvidenceAnswer").text(
+                displayValue(question.expected_answer)
+            );
+            $("#goldEvidenceSource").text(
+                displayValue(question.expected_source)
+            );
+            $("#goldEvidenceText").text(
+                displayValue(question.expected_evidence)
+            );
+
+            if (!goldEvidenceDialog.open) {
+                goldEvidenceDialog.showModal();
+            }
+
+            $("#closeGoldEvidenceButton").trigger("focus");
+        }
+    );
+
+    $("#closeGoldEvidenceButton").on("click", function () {
+        if (goldEvidenceDialog && goldEvidenceDialog.open) {
+            goldEvidenceDialog.close();
+        }
+    });
+
+    if (goldEvidenceDialog) {
+        $(goldEvidenceDialog).on("close", function () {
+            if (
+                goldEvidenceTrigger &&
+                goldEvidenceTrigger.isConnected
+            ) {
+                goldEvidenceTrigger.focus();
+            }
+            goldEvidenceTrigger = null;
+        });
+    }
+
+    // Phase 6.6: Review changes are confirmed by the API, then
+    // verified against a refreshed dataset.
+    let goldReviewSavePending = false;
+
+    const $goldReviewSaveNotice = $("#goldReviewSaveNotice");
+
+    function showGoldReviewSaveNotice(message, isError) {
+        $goldReviewSaveNotice
+            .prop("hidden", false)
+            .toggleClass("is-error", Boolean(isError))
+            .attr("role", isError ? "alert" : "status")
+            .text(message);
+    }
+
+    function focusGoldReviewedQuestion(questionId) {
+        const key = goldQuestionKey(questionId);
+
+        const $card = $evaluationQuestionList
+            .find("details.gold-question-details")
+            .filter(function () {
+                return $(this).attr("data-question-id") === key;
+            })
+            .first();
+
+        if ($card.length) {
+            $card.prop("open", true);
+            $card.children("summary").trigger("focus");
+        }
+    }
+
+    $evaluationQuestionList.on(
+        "click",
+        ".evaluation-review-button",
+        function () {
+            if (goldReviewSavePending) {
+                return;
+            }
+
+            const $button = $(this);
+            const questionId = Number($button.data("questionId"));
+            const nextStatus = String(
+                $button.data("reviewStatus") || ""
+            );
+
+            const allowed = [
+                "reviewed",
+                "needs_revision",
+                "draft",
+            ];
+
+            const currentQuestion = evaluationQuestions.find(
+                function (question) {
+                    return Number(question.question_id) === questionId;
+                }
+            );
+
+            if (
+                !Number.isInteger(questionId) ||
+                questionId <= 0 ||
+                !allowed.includes(nextStatus) ||
+                !currentQuestion ||
+                currentQuestion.review_status === nextStatus
+            ) {
+                return;
+            }
+
+            const originalStatus = currentQuestion.review_status;
+
+            goldReviewSavePending = true;
+            expandedGoldQuestionIds.add(
+                goldQuestionKey(questionId)
+            );
+
+            // Lock status actions and the dataset selector while
+            // the save and subsequent refresh are in progress.
+            $evaluationQuestionList
+                .find(".evaluation-review-button")
+                .prop("disabled", true);
+
+            $evaluationDatasetSelect.prop("disabled", true);
+
+            showGoldReviewSaveNotice(
+                "Saving question " +
+                currentQuestion.display_order +
+                " as " + titleCaseLabel(nextStatus) + "..."
+            );
+
+            function finishSave() {
+                goldReviewSavePending = false;
+                $evaluationDatasetSelect.prop("disabled", false);
+            }
+
+            function restoreAfterFailure(message) {
+                finishSave();
+                renderEvaluationQuestions();
+                focusGoldReviewedQuestion(questionId);
+                showGoldReviewSaveNotice(message, true);
+            }
+
+            $.ajax({
+                url: "api/evaluations.php",
+                method: "PATCH",
+                contentType: "application/json; charset=utf-8",
+                dataType: "json",
+                data: JSON.stringify({
+                    question_id: questionId,
+                    review_status: nextStatus,
+                }),
+            })
+            .done(function (result) {
+                const saved = Boolean(
+                    result &&
+                    result.ok === true &&
+                    result.data &&
+                    Number(result.data.question_id) === questionId &&
+                    result.data.review_status === nextStatus
+                );
+
+                if (!saved) {
+                    restoreAfterFailure(
+                        "The review update was not confirmed. " +
+                        "Reload the dataset before trying again."
+                    );
+                    return;
+                }
+
+                showGoldReviewSaveNotice(
+                    "Review status saved. Refreshing the dataset..."
+                );
+
+                const refreshRequest = loadEvaluationDataset();
+
+                refreshRequest.done(function (response) {
+                    finishSave();
+
+                    const refreshedQuestions =
+                        response &&
+                        response.data &&
+                        Array.isArray(response.data.questions)
+                            ? response.data.questions
+                            : [];
+
+                    const refreshedQuestion = refreshedQuestions.find(
+                        function (question) {
+                            return Number(question.question_id) ===
+                                questionId;
+                        }
+                    );
+
+                    // Re-render after clearing the pending state
+                    // so the review buttons are usable again.
+                    renderEvaluationQuestions();
+
+                    if (
+                        refreshedQuestion &&
+                        refreshedQuestion.review_status === nextStatus
+                    ) {
+                        focusGoldReviewedQuestion(questionId);
+
+                        const visible = $evaluationQuestionList
+                            .find("details.gold-question-details")
+                            .filter(function () {
+                                return $(this).attr(
+                                    "data-question-id"
+                                ) === goldQuestionKey(questionId);
+                            }).length > 0;
+
+                        showGoldReviewSaveNotice(
+                            "Question " +
+                            currentQuestion.display_order +
+                            " saved: " +
+                            titleCaseLabel(originalStatus) +
+                            " to " +
+                            titleCaseLabel(nextStatus) +
+                            "." +
+                            (visible
+                                ? ""
+                                : " The current filters hide " +
+                                  "the updated question.")
+                        );
+                    } else {
+                        showGoldReviewSaveNotice(
+                            "The server confirmed the save, but " +
+                            "the refreshed dataset did not verify " +
+                            "the new status. Reload the page " +
+                            "before making another change.",
+                            true
+                        );
+                    }
+                });
+
+                refreshRequest.fail(function () {
+                    finishSave();
+
+                    showGoldReviewSaveNotice(
+                        "The review status was saved, but the " +
+                        "dataset could not be refreshed. " +
+                        "Reload the page to verify the new status.",
+                        true
+                    );
+                });
+            })
+            .fail(function (xhr) {
+                const serverMessage =
+                    xhr &&
+                    xhr.responseJSON &&
+                    typeof xhr.responseJSON.error === "string"
+                        ? xhr.responseJSON.error
+                        : "The review status could not be saved.";
+
+                restoreAfterFailure(
+                    "Save failed: " + serverMessage
+                );
+            });
+        }
+    );
+
+    $evaluationLists.on("click", ".evaluation-response-button", function () {
+        const $button = $(this);
+        $button.closest(".evaluation-run").find(".run-evaluation-target-select").val($button.data("responseId"));
+        loadEvaluationResponse($button, true);
+    });
+
+    // Preview citation scoring for a standalone Chat response.
+    // Preflight only: does not execute evaluators or call Gemini.
+    $evaluationLists.on("click", ".preview-standalone-scoring", function () {
+        const $button = $(this);
+        const responseId = Number($button.data("responseId"));
+        const $actions = $button.closest(".standalone-response-actions");
+        const $executeButton = $actions.find(".execute-standalone-scoring");
+
+        // Invalidate any previous preview before requesting a new one.
+        $executeButton
+            .prop("disabled", true)
+            .removeData("preflightPlan")
+            .text("Run citation scoring")
+            .attr("title", "Preview citation scoring before execution");
+        let $details = $actions.find(".standalone-scoring-details");
+        let $status;
+
+        if (!$details.length) {
+            $details = $("<details>")
+                .addClass("standalone-scoring-details mt-2");
+
+            const $summary = $("<summary>")
+                .text("Citation scoring preview details");
+
+            $status = $("<div>")
+                .addClass("standalone-scoring-preview small mt-2")
+                .attr({
+                    role: "status",
+                    "aria-live": "polite"
+                });
+
+            $details.append($summary, $status);
+            $actions.append($details);
+        } else {
+            $status = $details.find(".standalone-scoring-preview");
+        }
+
+        // Expand automatically whenever a new preview is requested.
+        $details.prop("open", true);
+
+        $button.prop("disabled", true).text("Checking…");
+        $status.empty().text("Checking citation scoring plan…");
+
+        $.ajax({
+            url: "api/evaluate_standalone.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify({
+                action: "preflight",
+                response_id: responseId
+            })
+        })
+        .done(function (result) {
+            if (!result.ok) {
+                $status.text(result.error || "Unable to preview citation scoring.");
+                return;
+            }
+
+            const plan = result.data && result.data.preflight
+                ? result.data.preflight
+                : {};
+
+            const reused = Number(plan.reused_count) || 0;
+            const paidCalls = Number(plan.paid_application_count) || 0;
+            const estimatedCost = Number(plan.estimated_cost) || 0;
+            const unknownCostCalls = Number(plan.unknown_cost_application_count) || 0;
+
+            const costIsKnown =
+                plan.estimated_cost !== null &&
+                plan.estimated_cost !== undefined &&
+                Number.isFinite(Number(plan.estimated_cost));
+
+            const canExecute =
+                Array.isArray(plan.applications) &&
+                plan.applications.length === 2 &&
+                paidCalls > 0 &&
+                paidCalls <= 2 &&
+                unknownCostCalls === 0 &&
+                costIsKnown &&
+                estimatedCost <= 0.25;
+
+            if (canExecute) {
+                $executeButton
+                    .data("preflightPlan", plan)
+                    .prop("disabled", false)
+                    .attr("title", "Review and confirm citation scoring execution");
+                }
+            if (!canExecute && Array.isArray(plan.applications)) {
+                const actions = plan.applications.map(function (application) {
+                    return String(application.action || "").toLowerCase();
+                });
+
+                if (actions.length === 2 && actions.every(action => action === "reuse")) {
+                    $executeButton
+                        .text("Already scored")
+                        .attr("title", "Both citation evaluations already have reusable results");
+                } else if (actions.length === 2 && actions.every(action => action === "skip")) {
+                    $executeButton
+                        .text("No scoring needed")
+                        .attr("title", "Both citation evaluators were skipped");
+                }
+            }
+            const applications = Array.isArray(plan.applications)
+                ? plan.applications
+                : [];
+
+            const evaluatorNames = {
+                citation_support: "Citation Support",
+                citation_coverage: "Citation Coverage"
+            };
+
+            const $breakdown = $("<div>")
+                .addClass("standalone-scoring-breakdown mt-2");
+
+            $breakdown.append(
+                $("<strong>").text("Individual evaluator plan")
+            );
+
+            if (!applications.length) {
+                $breakdown.append(
+                    $("<div>")
+                        .addClass("text-muted")
+                        .text("No evaluator actions were returned.")
+                );
+            }
+
+            applications.forEach(function (application) {
+                const evaluatorName =
+                    evaluatorNames[application.evaluator] ||
+                    application.evaluator ||
+                    "Unknown evaluator";
+
+                const action = String(application.action || "unknown");
+                const reason = String(application.reason || "");
+
+                const actionLabels = {
+                    reuse: "Reuse existing result",
+                    run: "Run evaluator",
+                    skip: "Skip evaluator"
+                };
+
+                const actionLabel = actionLabels[action] || action;
+
+                const $item = $("<div>")
+                    .addClass("standalone-scoring-evaluator mt-2");
+
+                $item.append(
+                    $("<div>").append(
+                        $("<strong>").text(evaluatorName),
+                        $("<span>").text(" — " + actionLabel)
+                    ),
+                    $("<div>")
+                        .addClass("text-muted")
+                        .text(reason)
+                );
+
+                $breakdown.append($item);
+            });
+
+            $status.empty().append(
+                $("<strong>").text("Citation scoring preview"),
+                $("<div>").text("Existing evaluations reused: " + reused),
+                $("<div>").text("External evaluator calls planned: " + paidCalls),
+                $("<div>").text("Estimated cost: $" + estimatedCost.toFixed(4)),
+                $breakdown,
+                $("<div>")
+                    .addClass("text-muted mt-2")
+                    .text("Preview only. No evaluations were executed.")
+            );
+
+        })
+        .fail(function (xhr) {
+            const message = xhr.responseJSON?.error ||
+                xhr.responseJSON?.message ||
+                "Unable to retrieve citation scoring preview.";
+
+            $status.text(message);
+        })
+        .always(function () {
+            $button.prop("disabled", false).text("Preview citation scoring");
+        });
+    });
+
+// Run citation scoring only after a successful preflight and explicit confirmation.
+$evaluationLists.on("click", ".execute-standalone-scoring", function () {
+    const $button = $(this);
+    const responseId = Number($button.data("responseId"));
+    const plan = $button.data("preflightPlan");
+
+    if (!plan || $button.prop("disabled")) {
+        return;
+    }
+
+    const paidCalls = Number(plan.paid_application_count) || 0;
+    const estimatedCost = Number(plan.estimated_cost);
+
+    const validPlan =
+        Array.isArray(plan.applications) &&
+        plan.applications.length === 2 &&
+        paidCalls > 0 &&
+        paidCalls <= 2 &&
+        Number(plan.unknown_cost_application_count) === 0 &&
+        plan.estimated_cost !== null &&
+        plan.estimated_cost !== undefined &&
+        Number.isFinite(estimatedCost) &&
+        estimatedCost <= 0.25;
+
+    if (!validPlan) {
+        $button.prop("disabled", true).removeData("preflightPlan");
+        return;
+    }
+
+    const confirmed = window.confirm(
+        "Run citation scoring for Response #" + responseId + "?\n\n" +
+        "External evaluator calls planned: " + paidCalls + "\n" +
+        "Estimated cost: $" + estimatedCost.toFixed(4) + "\n\n" +
+        "This may make paid Gemini API calls.\n" +
+        "The estimate is not a guaranteed spending cap.\n\n" +
+        "Select OK to confirm or Cancel to stop."
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    const $actions = $button.closest(".standalone-response-actions");
+
+    let $resultDetails = $actions.find(".standalone-scoring-result-details");
+    let $status;
+
+    if (!$resultDetails.length) {
+        $resultDetails = $("<details>")
+            .addClass("standalone-scoring-result-details mt-2");
+
+        const $summary = $("<summary>")
+            .text("Citation scoring execution results");
+
+        $status = $("<div>")
+            .addClass("standalone-scoring-result small mt-2")
+            .attr({
+                role: "status",
+                "aria-live": "polite"
+            });
+
+        $resultDetails.append($summary, $status);
+        $actions.append($resultDetails);
+    } else {
+        $status = $resultDetails.find(".standalone-scoring-result");
+    }
+
+    // Show the execution status automatically.
+    $resultDetails.prop("open", true);
+    $status.text("Submitting citation scoring request...");
+
+    // Require a fresh preflight before any subsequent execution attempt.
+    $button
+        .prop("disabled", true)
+        .removeData("preflightPlan")
+        .text("Submitting…");
+
+    $.ajax({
+        url: "api/evaluate_standalone.php",
+        method: "POST",
+        contentType: "application/json; charset=utf-8",
+        dataType: "json",
+        data: JSON.stringify({
+            action: "execute",
+            response_id: responseId,
+            confirm_execution: true
+        })
+    })
+    .done(function (result) {
+        if (result.ok) {
+            $status.text(
+                "Citation scoring request completed. Refresh evaluation results to review the scores."
+            );
+        } else {
+            $status.text(result.error || "Citation scoring was not completed.");
+        }
+    })
+    .fail(function (xhr) {
+        const message =
+            xhr.responseJSON?.error ||
+            "Citation scoring request failed.";
+
+        $status.text(message);
+    })
+    .always(function () {
+        $button.text("Run citation scoring");
+    });
+});
+
+    $evaluationResultDetails.on("submit", "#humanReviewForm", function (event) {
+        event.preventDefault();
+        const $form = $(this);
+        const $button = $form.find('button[type="submit"]');
+        const $message = $form.find(".human-review-message");
+        const payload = { action: "human_review", response_id: currentEvaluationResponseId };
+        $form.serializeArray().forEach(function (field) {
+            payload[field.name] = field.value;
+        });
+        $button.prop("disabled", true);
+        $message.removeClass("text-danger review-success").text("Saving evidence-backed review…");
+        $.ajax({
+            url: "api/evaluations.php",
+            method: "POST",
+            contentType: "application/json; charset=utf-8",
+            dataType: "json",
+            data: JSON.stringify(payload),
+        }).done(function () {
+            $message.addClass("review-success").text("Review saved. Updating the evidence view…");
+            loadEvaluationDataset();
+        }).fail(function (xhr) {
+            $message.addClass("text-danger").text(xhr.responseJSON?.error || "The review could not be saved.");
+            $button.prop("disabled", false);
+        });
+    });
+
+    $evaluationDatasetSelect.on("change", function () {
+        loadEvaluationDataset();
+    });
+    loadApplicationHealth();
+
+    // Documents and evaluation datasets are loaded by applySession()
+    // after the authentication request has completed.
+    activateWorkspaceView(window.location.hash.slice(1) || "overview", false);
+});

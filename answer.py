@@ -24,7 +24,6 @@ from conversation import (
     UnknownConversationError,
     append_exchange,
     bounded_history,
-    contextual_retrieval_query,
     create_conversation,
     load_recent_messages,
     require_conversation,
@@ -36,14 +35,17 @@ from database import (
 )
 from llm import (
     GenerationExecution,
+    QueryRewrite,
     build_grounded_prompt,
     estimate_generation_cost,
     estimated_generation_application_cost,
     generate_grounded_answer,
     provider_for_model,
+    rewrite_follow_up_query,
 )
 from provenance import code_provenance
 from query import (
+    DocumentScope,
     SearchResult,
     search_with_optional_reranking,
 )
@@ -51,6 +53,16 @@ from query import (
 from settings import Settings, load_settings
 
 AnswerGenerator = Callable[[str, Settings], str | GenerationExecution]
+QueryRewriter = Callable[[str, Sequence[ConversationMessage], Settings], QueryRewrite]
+
+
+def search_question_unchanged(
+    question: str, history: Sequence[ConversationMessage], _settings: Settings
+) -> QueryRewrite:
+    """Rewriter for callers with a custom generator: search exactly what was asked."""
+    return QueryRewrite(
+        query=question.strip(), status="no_history" if not history else "not_configured"
+    )
 
 @dataclass(frozen=True)
 class AnswerResult:
@@ -77,6 +89,9 @@ class AnswerResult:
     conversation_id: int | None = None
     retrieval_query: str | None = None
     history_messages_used: int = 0
+    query_rewrite_status: str = "no_history"
+    saved: bool = False
+    """True only when the answer (and, for Chat, its conversation turn) was committed."""
 
 
 def load_conversation_history(
@@ -114,7 +129,15 @@ def answer_question(
     history: Sequence[ConversationMessage] | None = None,
     history_messages: int = DEFAULT_HISTORY_MESSAGES,
     user_id: int | None = None,
+    query_rewriter: QueryRewriter | None = None,
+    shared_documents_only: bool = False,
 ) -> AnswerResult:
+    """Answer one question from the documents the caller may use.
+
+    ``user_id`` limits retrieval to the shared library plus that account's
+    uploads (and conversations to that account); ``shared_documents_only``
+    limits it to the shared library. Neither is a trusted command-line call.
+    """
     if not question.strip():
         raise ValueError("Question cannot be empty")
     if top_k <= 0:
@@ -160,13 +183,30 @@ def answer_question(
         )
     else:
         history = bounded_history(history, max_messages=history_messages)
-    retrieval_query = contextual_retrieval_query(question, history)
+    # Improvement 4: the selected chat model reads the recent history and says
+    # what the latest question means as a standalone search query. It only
+    # chooses what to search for; facts and citations still come from the
+    # retrieved documents. A custom generator (tests, scripts) gets no paid
+    # rewrite call unless it also supplies a rewriter.
+    if query_rewriter is None:
+        query_rewriter = (
+            rewrite_follow_up_query
+            if generator is generate_grounded_answer
+            else search_question_unchanged
+        )
+    rewrite = (
+        query_rewriter(question, history, settings)
+        if history
+        else QueryRewrite(query=question.strip(), status="no_history")
+    )
+    retrieval_query = rewrite.query.strip() or question.strip()
     contexts = search_with_optional_reranking(
         question=retrieval_query,
         retrieval_method=retrieval_method,
         top_k=top_k,
         categories=categories,
         content_reranking=content_reranking,
+        scope=DocumentScope(user_id=user_id, shared_only=shared_documents_only),
     )
     if not contexts:
         raise RuntimeError(f"{retrieval_method} returned no matching source chunks.")
@@ -200,11 +240,21 @@ def answer_question(
         settings,
         thinking_tokens=thinking_tokens,
     )
+    rewrite_cost = estimate_generation_cost(
+        rewrite.input_tokens,
+        rewrite.output_tokens,
+        settings,
+        thinking_tokens=rewrite.thinking_tokens,
+    )
+    if estimated_cost is not None and rewrite_cost is not None:
+        # The follow-up rewrite is a second, small call to the same model.
+        estimated_cost = round(estimated_cost + rewrite_cost, 8)
     generation_cost_status = "recorded" if estimated_cost is not None else "unavailable"
     latency_ms = round((time.perf_counter() - started_at) * 1000)
 
     response_id = None
     persistence_error = None
+    saved = False
     if save:
         try:
             captured_code = run_code_provenance or code_provenance()
@@ -221,8 +271,13 @@ def answer_question(
                     top_p=settings.llm_top_p,
                     retrieval_method=retrieval_method,
                 )
-                response_id = save_grounded_response(
+                # The answer, a new conversation and both conversation
+                # messages are one transaction: either all are saved or none
+                # are, so a failure never leaves a half-saved chat.
+                connection.start_transaction()
+                pending_response_id = save_grounded_response(
                     connection,
+                    own_transaction=False,
                     setting_id=setting_id,
                     question=question.strip(),
                     answer=answer,
@@ -257,6 +312,13 @@ def answer_question(
                                 "conversation": {
                                     "history_messages_used": len(history),
                                     "retrieval_query": retrieval_query,
+                                    "query_rewrite": {
+                                        "status": rewrite.status,
+                                        "input_tokens": rewrite.input_tokens,
+                                        "output_tokens": rewrite.output_tokens,
+                                        "estimated_cost": rewrite_cost,
+                                        "error": rewrite.error,
+                                    },
                                 }
                             }
                             if conversation_id is not None or start_conversation
@@ -264,21 +326,32 @@ def answer_question(
                         ),
                     },
                 )
-                if start_conversation:
-                    conversation_id = create_conversation(
-                        connection, question.strip(), user_id=user_id
-                    )
-                if conversation_id is not None:
-                    append_exchange(
-                        connection,
-                        conversation_id,
-                        question=question.strip(),
-                        answer=answer,
-                        response_id=response_id,
-                        user_id=user_id,
-                    )
+                try:
+                    target_conversation_id = conversation_id
+                    if start_conversation:
+                        target_conversation_id = create_conversation(
+                            connection, question.strip(), user_id=user_id, commit=False
+                        )
+                    if target_conversation_id is not None:
+                        append_exchange(
+                            connection,
+                            target_conversation_id,
+                            question=question.strip(),
+                            answer=answer,
+                            response_id=pending_response_id,
+                            user_id=user_id,
+                            own_transaction=False,
+                        )
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+                # Only report ids that now exist in MySQL.
+                response_id = pending_response_id
+                conversation_id = target_conversation_id
+                saved = True
         except Exception as error:
-            persistence_error = str(error)
+            persistence_error = str(error) or error.__class__.__name__
 
     return AnswerResult(
         question=question.strip(),
@@ -304,6 +377,8 @@ def answer_question(
         conversation_id=conversation_id,
         retrieval_query=retrieval_query,
         history_messages_used=len(history),
+        query_rewrite_status=rewrite.status,
+        saved=saved,
     )
 
 def dry_run(
@@ -313,16 +388,22 @@ def dry_run(
     categories: list[str] | None = None,
     content_reranking: bool = True,
     history: Sequence[ConversationMessage] | None = None,
+    scope: DocumentScope = DocumentScope(),
 ) -> tuple[str, list[SearchResult], str]:
-    """Build the prompt without calling the model; returns (prompt, sources, search query)."""
+    """Build the prompt without calling the model; returns (prompt, sources, search query).
+
+    A preview never calls a model, so a follow-up is searched exactly as typed;
+    the model interprets it from the conversation when the answer is generated.
+    """
     history = list(history or [])
-    retrieval_query = contextual_retrieval_query(question, history)
+    retrieval_query = question.strip()
     contexts = search_with_optional_reranking(
         question=retrieval_query,
         retrieval_method=retrieval_method,
         top_k=top_k,
         categories=categories,
         content_reranking=content_reranking,
+        scope=scope,
     )
     return build_grounded_prompt(question, contexts, history=history), contexts, retrieval_query
 
@@ -361,6 +442,11 @@ def main() -> None:
         "--user-id",
         type=int,
         help="Signed-in user the conversation belongs to; other users' conversations are rejected.",
+    )
+    parser.add_argument(
+        "--shared-documents-only",
+        action="store_true",
+        help="Search only the shared library (used for signed-out previews).",
     )
     parser.add_argument(
         "--history-messages",
@@ -424,6 +510,9 @@ def main() -> None:
                 categories,
                 content_reranking=not args.no_content_reranking,
                 history=history,
+                scope=DocumentScope(
+                    user_id=args.user_id, shared_only=args.shared_documents_only
+                ),
             )
             if args.json:
                 print(
@@ -454,6 +543,9 @@ def main() -> None:
             llm_chat_model=args.model,
         )
         estimated_call_cost = estimated_generation_application_cost(selected_settings)
+        if estimated_call_cost is not None and args.conversation_id is not None:
+            # A follow-up adds one small query-rewrite call to the same model.
+            estimated_call_cost = round(estimated_call_cost * 2, 8)
         if selected_settings.llm_provider != "ollama" and not args.allow_paid:
             parser.error("Answer generation requires --allow-paid.")
         if estimated_call_cost is None and not args.allow_unknown_cost:
@@ -484,6 +576,7 @@ def main() -> None:
             start_conversation=args.new_conversation,
             history_messages=args.history_messages,
             user_id=args.user_id,
+            shared_documents_only=args.shared_documents_only,
         )
     except UnknownConversationError as error:
         print(f"Answer generation failed: {error}", file=sys.stderr)
@@ -511,14 +604,14 @@ def main() -> None:
         print("Generation cost: unavailable (provider pricing or usage was not recorded)")
     if result.response_id is not None:
         print(f"Saved MySQL response_id={result.response_id}")
+    if result.persistence_error:
+        print(f"Warning: answer was not saved: {result.persistence_error}", file=sys.stderr)
     if result.conversation_id is not None:
         print(
             f"Conversation {result.conversation_id}: used "
             f"{result.history_messages_used} earlier message(s); "
             f"search query: {result.retrieval_query}"
         )
-    elif result.persistence_error:
-        print(f"Warning: answer was not saved: {result.persistence_error}", file=sys.stderr)
 
     print("Sources:")
     for source in result.sources:

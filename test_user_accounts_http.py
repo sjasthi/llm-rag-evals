@@ -297,6 +297,15 @@ class UserAccountHttpTests(unittest.TestCase):
         self.assertEqual(4, third["data"]["history_messages_used"])
         self.assertEqual(3, later.chats()[1]["data"]["conversations"][0]["question_count"])
 
+        # Improvement 4: "it" in a question about another school is not treated
+        # as a follow-up to the Metro State admissions topic.
+        other_school = "What does it cost to attend the University of Minnesota?"
+        status, fourth = later.ask(other_school, conversation_id)
+        self.assertEqual(200, status, fourth)
+        self.assertEqual(other_school, fourth["data"]["retrieval_query"])
+        self.assertEqual("unchanged", fourth["data"]["query_rewrite_status"])
+        self.assertEqual("rewritten", second["data"]["query_rewrite_status"])
+
     def test_users_only_see_and_continue_their_own_chats(self) -> None:
         chris = self.signed_in("chris2", "Chris")
         neha = self.signed_in("neha", "Neha")
@@ -325,6 +334,194 @@ class UserAccountHttpTests(unittest.TestCase):
         stranger.start()
         self.assertEqual(401, stranger.messages(chris_id)[0])
         self.assertEqual(401, stranger.ask("What GPA do they need?", chris_id)[0])
+
+    def test_an_answer_that_could_not_be_saved_is_shown_but_not_marked_saved(self) -> None:
+        """Improvement 2: generated and saved are reported separately."""
+        dana = self.signed_in("dana")
+        status, body = dana.ask("What are the admission requirements? [simulate-save-failure]")
+        self.assertEqual(200, status, body)
+        data = body["data"]
+        self.assertIn("Fake answer to:", data["answer"], "the generated answer is still returned")
+        self.assertFalse(data["saved"])
+        self.assertIn("could not be saved", data["save_warning"])
+        self.assertIsNone(data["response_id"])
+        self.assertIsNone(data["conversation_id"])
+        self.assertNotIn("persistence_error", data, "database errors stay in the server log")
+        self.assertEqual([], dana.chats()[1]["data"]["conversations"], "nothing appears in Recent chats")
+
+        # A failure inside an existing chat leaves that chat's history unchanged.
+        status, first = dana.ask("When does registration begin?")
+        self.assertTrue(first["data"]["saved"])
+        self.assertIsNone(first["data"]["save_warning"])
+        chat_id = first["data"]["conversation_id"]
+        status, body = dana.ask("Is it online? [simulate-save-failure]", chat_id)
+        self.assertEqual(200, status, body)
+        self.assertFalse(body["data"]["saved"])
+        self.assertEqual(chat_id, body["data"]["conversation_id"])
+        _, thread = dana.messages(chat_id)
+        self.assertEqual(2, len(thread["data"]["messages"]))
+
+    def test_long_chat_reopens_at_its_newest_messages_and_pages_back(self) -> None:
+        """Improvement 3: a 250-message chat shows messages 51-250, then 1-50."""
+        from conversation import append_exchange, create_conversation  # noqa: PLC0415
+
+        erin = self.signed_in("erin")
+        with database_connection(load_settings()) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT user_id FROM users WHERE username=%s", (self.name("erin"),))
+                user_id = int(cursor.fetchone()[0])
+            chat_id = create_conversation(connection, "Long chat", user_id=user_id)
+            for turn in range(1, 126):
+                append_exchange(
+                    connection, chat_id, question=f"question {turn}", answer=f"answer {turn}",
+                    response_id=None, user_id=user_id,
+                )
+
+        status, body = erin.messages(chat_id)
+        self.assertEqual(200, status, body)
+        data = body["data"]
+        sequences = [m["sequence_number"] for m in data["messages"]]
+        self.assertEqual(list(range(51, 251)), sequences, "newest 200, oldest first")
+        self.assertEqual("question 26", data["messages"][0]["content"])
+        self.assertEqual("answer 125", data["messages"][-1]["content"], "newest message is last")
+        self.assertEqual(250, data["total_messages"])
+        self.assertTrue(data["has_earlier"])
+        self.assertEqual(51, data["earliest_sequence"])
+
+        status, body = erin.call(f"api/conversations.php?conversation_id={chat_id}&before_sequence=51")
+        self.assertEqual(200, status, body)
+        earlier = body["data"]
+        self.assertEqual(list(range(1, 51)), [m["sequence_number"] for m in earlier["messages"]])
+        self.assertFalse(earlier["has_earlier"])
+        self.assertEqual(422, erin.call(f"api/conversations.php?conversation_id={chat_id}&before_sequence=x")[0])
+
+        # Paging is still limited to the owner.
+        other = self.signed_in("erin_other")
+        self.assertEqual(
+            404, other.call(f"api/conversations.php?conversation_id={chat_id}&before_sequence=51")[0]
+        )
+        with database_connection(load_settings()) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM conversation_messages WHERE conversation_id=%s", (chat_id,)
+                )
+                self.assertEqual(250, int(cursor.fetchone()[0]), "every message stays stored")
+
+    # --- Documents and Gold Standard (Improvement 5) ---------------------------
+
+    def user_id(self, base: str) -> int:
+        with database_connection(load_settings()) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT user_id FROM users WHERE username=%s", (self.name(base),))
+                return int(cursor.fetchone()[0])
+
+    def make_admin(self, base: str) -> None:
+        with database_connection(load_settings()) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("UPDATE users SET is_admin=TRUE WHERE username=%s", (self.name(base),))
+            connection.commit()
+
+    def indexed_document(self, label: str, owner: int | None) -> int:
+        path = f"test/{label}-{self.marker}-{uuid4().hex[:6]}.txt"
+        with database_connection(load_settings()) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO documents (title, category, source_path, user_id, status) "
+                    "VALUES (%s, 'testing', %s, %s, 'ingested')",
+                    (f"{label} {self.marker}", path, owner),
+                )
+                document_id = int(cursor.lastrowid)
+            connection.commit()
+        self.addCleanup(self.delete_document_row, document_id)
+        return document_id
+
+    @staticmethod
+    def delete_document_row(document_id: int) -> None:
+        with database_connection(load_settings()) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("DELETE FROM documents WHERE document_id=%s", (document_id,))
+            connection.commit()
+
+    @staticmethod
+    def document_exists(document_id: int) -> bool:
+        with database_connection(load_settings()) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1 FROM documents WHERE document_id=%s", (document_id,))
+                return cursor.fetchone() is not None
+
+    def listed(self, browser: Browser) -> dict[int, dict]:
+        status, body = browser.call("api/documents.php")
+        self.assertEqual(200, status, body)
+        return {int(d["document_id"]): d for d in body["data"]}
+
+    def test_documents_are_private_to_their_uploader_and_the_library_is_shared(self) -> None:
+        fran = self.signed_in("docfran")
+        gus = self.signed_in("docgus")
+        shared = self.indexed_document("shared", None)
+        frans = self.indexed_document("fran", self.user_id("docfran"))
+        frans_second = self.indexed_document("fran2", self.user_id("docfran"))
+        guss = self.indexed_document("gus", self.user_id("docgus"))
+
+        fran_view = self.listed(fran)
+        self.assertIn(shared, fran_view)
+        self.assertIn(frans, fran_view)
+        self.assertNotIn(guss, fran_view, "another user's upload is not listed")
+        self.assertEqual((True, False), (fran_view[shared]["shared"], fran_view[shared]["can_manage"]))
+        self.assertEqual((False, True), (fran_view[frans]["shared"], fran_view[frans]["can_manage"]))
+        self.assertNotIn(frans, self.listed(gus))
+
+        def delete(browser, document_id):
+            return browser.call("api/documents.php", {"document_id": document_id}, method="DELETE")
+
+        self.assertEqual(404, delete(fran, guss)[0], "another user's upload looks missing")
+        self.assertEqual(403, delete(fran, shared)[0], "only an administrator manages the library")
+        status, body = fran.call(
+            "api/documents.php", {"action": "restore_bundled", "confirmation": "RESTORE"}
+        )
+        self.assertEqual(403, status, body)
+        self.assertTrue(self.document_exists(guss) and self.document_exists(shared))
+
+        status, body = delete(fran, frans)
+        self.assertEqual(200, status, body)
+        self.assertFalse(self.document_exists(frans))
+
+        # "Delete all" clears only Fran's own uploads.
+        status, body = fran.call(
+            "api/documents.php", {"action": "delete_all", "confirmation": "DELETE ALL"}, method="DELETE"
+        )
+        self.assertEqual(200, status, body)
+        self.assertFalse(self.document_exists(frans_second))
+        self.assertTrue(self.document_exists(guss), "other users' uploads are untouched")
+        self.assertTrue(self.document_exists(shared), "the shared library is untouched")
+
+    def test_administrators_manage_the_shared_library_and_gold_standard(self) -> None:
+        hana = self.signed_in("dochana")
+        ivan = self.signed_in("docivan")
+        self.make_admin("dochana")
+        hana.login(self.name("dochana"))  # a fresh sign-in carries the role to the page
+        status, session = hana.start()
+        self.assertTrue(session["user"]["is_admin"])
+        self.assertFalse(ivan.start()[1]["user"]["is_admin"])
+
+        shared = self.indexed_document("shared-admin", None)
+        ivans = self.indexed_document("ivan", self.user_id("docivan"))
+        hana_view = self.listed(hana)
+        self.assertTrue(hana_view[shared]["can_manage"])
+        self.assertNotIn(ivans, hana_view, "administrators do not see private uploads either")
+        self.assertEqual(
+            404, hana.call("api/documents.php", {"document_id": ivans}, method="DELETE")[0]
+        )
+
+        # Gold Standard review status: shared data, administrator only.
+        change = {"question_id": 2**31, "review_status": "reviewed"}
+        status, body = ivan.call("api/evaluations.php", change, method="PATCH")
+        self.assertEqual(403, status, body)
+        status, body = hana.call("api/evaluations.php", change, method="PATCH")
+        self.assertEqual(404, status, body)  # allowed through; that question does not exist
+
+        status, body = hana.call("api/documents.php", {"document_id": shared}, method="DELETE")
+        self.assertEqual(200, status, body)
+        self.assertFalse(self.document_exists(shared))
 
     def test_removing_a_chat_hides_it_from_recent_chats(self) -> None:
         andrew = self.signed_in("andrew2")

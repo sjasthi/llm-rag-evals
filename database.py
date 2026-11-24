@@ -168,6 +168,13 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                 "evaluation_runs": (
                     ("user_id", "BIGINT UNSIGNED NULL AFTER baseline_run_id"),
                 ),
+                # Uploaded documents belong to their uploader; NULL = shared library.
+                "documents": (
+                    ("user_id", "BIGINT UNSIGNED NULL AFTER source_path"),
+                ),
+                "users": (
+                    ("is_admin", "BOOLEAN NOT NULL DEFAULT FALSE AFTER password_hash"),
+                ),
                 "model_settings": (
                     (
                         "chunking_strategy",
@@ -221,6 +228,7 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
             ownership_indexes = (
                 ("rag_responses", "idx_rag_responses_user", "(user_id, run_id, response_id)"),
                 ("evaluation_runs", "idx_evaluation_runs_user", "(user_id, run_id)"),
+                ("documents", "idx_documents_user", "(user_id, status)"),
             )
             for table_name, index_name, columns in ownership_indexes:
                 cursor.execute(
@@ -251,6 +259,15 @@ def initialize_schema(settings: Settings, schema_path: Path = SCHEMA_PATH) -> No
                     "fk_evaluation_runs_user",
                     "ALTER TABLE evaluation_runs ADD CONSTRAINT fk_evaluation_runs_user "
                     "FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE SET NULL",
+                ),
+                # A private upload must never become shared, so deleting the
+                # account deletes its document rows (retrieval also checks
+                # MySQL before using any Chroma chunk).
+                (
+                    "documents",
+                    "fk_documents_user",
+                    "ALTER TABLE documents ADD CONSTRAINT fk_documents_user "
+                    "FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE",
                 ),
             )
             for table_name, constraint_name, statement in v2_constraints:
@@ -541,6 +558,7 @@ def upsert_document_and_chunks(
     chunks: Sequence[tuple[int, str, str] | ChunkRecord],
     elements: Sequence[ElementRecord] = (),
     element_id_output: dict[int, int] | None = None,
+    user_id: int | None = None,
 ) -> tuple[int, list[int]]:
     """Replace one document's chunk rows in a single MySQL transaction."""
     try:
@@ -549,12 +567,13 @@ def upsert_document_and_chunks(
             cursor.execute(
                 """
                 INSERT INTO documents (
-                    title, category, source_path, source_type, original_filename, status, source_hash,
-                    chunk_size, chunk_overlap, ingestion_error
+                    title, category, source_path, user_id, source_type, original_filename, status,
+                    source_hash, chunk_size, chunk_overlap, ingestion_error
                 )
-                VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s, %s, NULL)
+                VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s, NULL)
                 ON DUPLICATE KEY UPDATE
                     document_id = LAST_INSERT_ID(document_id),
+                    user_id = VALUES(user_id),
                     title = VALUES(title),
                     category = VALUES(category),
                     source_type = VALUES(source_type),
@@ -566,7 +585,7 @@ def upsert_document_and_chunks(
                     ingestion_error = NULL
                 """,
                 (
-                    title, category, source_path, source_type, original_filename,
+                    title, category, source_path, user_id, source_type, original_filename,
                     source_hash, chunk_size, chunk_overlap,
                 ),
             )
@@ -706,16 +725,18 @@ def record_document_failure(
     original_filename: str,
     source_hash: str,
     error: str,
+    user_id: int | None = None,
 ) -> None:
     """Record a parser failure without discarding chunks from an earlier good version."""
     with connection.cursor() as cursor:
         cursor.execute(
             """
             INSERT INTO documents (
-                title, category, source_path, source_type, original_filename,
+                title, category, source_path, user_id, source_type, original_filename,
                 status, source_hash, ingestion_error
-            ) VALUES (%s, %s, %s, %s, %s, 'failed', %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, 'failed', %s, %s)
             ON DUPLICATE KEY UPDATE
+                user_id = VALUES(user_id),
                 title = VALUES(title),
                 category = VALUES(category),
                 source_type = VALUES(source_type),
@@ -728,6 +749,7 @@ def record_document_failure(
                 title,
                 category,
                 source_path,
+                user_id,
                 source_type,
                 original_filename,
                 source_hash,
@@ -887,10 +909,17 @@ def save_grounded_response(
     estimated_cost: float | None = None,
     generation_cost_status: str = "unavailable",
     generation_metadata: dict[str, Any] | None = None,
+    own_transaction: bool = True,
 ) -> int:
-    """Store one CLI answer and the exact retrieved contexts used to produce it."""
+    """Store one CLI answer and the exact retrieved contexts used to produce it.
+
+    With ``own_transaction=False`` the caller has already started a
+    transaction and commits or rolls back everything together (Chat saves the
+    answer and its conversation messages as one unit).
+    """
     try:
-        connection.start_transaction()
+        if own_transaction:
+            connection.start_transaction()
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -963,8 +992,10 @@ def save_grounded_response(
                         context.text,
                     ),
                 )
-        connection.commit()
+        if own_transaction:
+            connection.commit()
         return response_id
     except Exception:
-        connection.rollback()
+        if own_transaction:
+            connection.rollback()
         raise

@@ -1,0 +1,975 @@
+"""Ingest Metro State documents into MySQL and persistent ChromaDB."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+from document_loader import DocumentLoadError, LoadedDocument, SUPPORTED_TYPES, load_document
+from settings import PROJECT_ROOT, load_settings
+
+from chunking import chunk_element
+from pdf_processor import process_pdf, DocumentElement
+from image_processor import process_image
+from markdown_processor import process_markdown
+from docx_processor import process_docx
+from pptx_processor import process_pptx
+
+
+DEFAULT_SOURCE_DIR = PROJECT_ROOT / "data" / "metrostate_documents"
+
+MULTIMODAL_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg"})
+STRUCTURED_DOCUMENT_EXTENSIONS = (
+    MULTIMODAL_IMAGE_EXTENSIONS | {".pdf", ".md", ".docx", ".pptx"}
+)
+
+@dataclass(frozen=True)
+class Chunk:
+    source_path: str
+    category: str
+    chunk_index: int
+    text: str
+    source_hash: str
+    chroma_id: str
+    source_type: str = "txt"
+    original_filename: str = ""
+
+    # V2 multimodal provenance.
+    page_number: int | None = None
+    element_index: int | None = None
+    element_chunk_index: int | None = None
+    content_type: str = "text"
+    extraction_method: str | None = None
+    extraction_model: str | None = None
+
+@dataclass(frozen=True)
+class PreparedDocument:
+    """Complete extracted elements and their retrieval chunks."""
+
+    chunks: list[Chunk]
+    elements: list[DocumentElement]
+
+@dataclass(frozen=True)
+class IngestionSummary:
+    documents: int
+    chunks: int
+    mysql_documents: int | None
+    mysql_chunks: int | None
+    chroma_chunks: int | None
+    chunk_size: int
+    chunk_overlap: int
+
+
+def read_documents(source_dir: Path) -> list[Path]:
+    if not source_dir.is_dir():
+        raise FileNotFoundError(f"Source directory does not exist: {source_dir}")
+    return sorted(
+        path
+        for path in source_dir.rglob("*")
+        if path.is_file()
+        and path.suffix.lower() in (
+                {".txt", ".pdf", ".docx", ".md", ".pptx"} | MULTIMODAL_IMAGE_EXTENSIONS
+        )
+    )
+
+
+def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be greater than zero")
+    if overlap < 0 or overlap >= chunk_size:
+        raise ValueError("overlap must be zero or less than chunk_size")
+
+    normalized = " ".join(text.split())
+    if not normalized:
+        return []
+
+    chunks: list[str] = []
+    start = 0
+    while start < len(normalized):
+        end = min(start + chunk_size, len(normalized))
+        chunks.append(normalized[start:end])
+        if end == len(normalized):
+            break
+        start = end - overlap
+    return chunks
+
+
+def stable_chroma_id(source_path: str, chunk_index: int) -> str:
+    path_hash = hashlib.sha256(source_path.encode("utf-8")).hexdigest()[:20]
+    return f"doc-{path_hash}-chunk-{chunk_index:04d}"
+
+
+def prepare_element_chunks(
+    elements: list[DocumentElement],
+    *,
+    source_path: str,
+    category: str,
+    source_hash: str,
+    source_type: str,
+    original_filename: str,
+    chunk_size: int,
+) -> list[Chunk]:
+    """Convert extracted document elements into retrieval chunks.
+
+    Preserve element provenance while assigning document-wide chunk
+    indexes and stable ChromaDB identifiers.
+    """
+    chunks: list[Chunk] = []
+
+    for element in elements:
+        for element_chunk in chunk_element(
+            element,
+            max_chars=chunk_size,
+        ):
+            chunk_index = len(chunks)
+
+            chunks.append(
+                Chunk(
+                    source_path=source_path,
+                    category=category,
+                    chunk_index=chunk_index,
+                    text=element_chunk.content,
+                    source_hash=source_hash,
+                    chroma_id=stable_chroma_id(
+                        source_path,
+                        chunk_index,
+                    ),
+                    source_type=source_type,
+                    original_filename=original_filename,
+                    page_number=element_chunk.page_number,
+                    element_index=element_chunk.element_index,
+                    element_chunk_index=element_chunk.chunk_index,
+                    content_type=element_chunk.content_type,
+                    extraction_method=element_chunk.extraction_method,
+                    extraction_model=element_chunk.extraction_model,
+                )
+            )
+
+    return chunks
+
+
+def prepare_pdf_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Build content-aware retrieval chunks from a PDF."""
+
+    settings = load_settings()
+
+    elements = process_pdf(
+        document_path,
+        settings,
+    )
+
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    chunks = prepare_element_chunks(
+        elements,
+        source_path=source_path,
+        category=category,
+        source_hash=source_hash,
+        source_type="pdf",
+        original_filename=document_path.name,
+        chunk_size=chunk_size,
+    )
+
+    if not chunks:
+        raise ValueError(
+            f"No retrieval chunks could be created from PDF: "
+            f"{document_path.name}"
+        )
+
+    return PreparedDocument(
+        chunks=chunks,
+        elements=elements,
+    )
+
+def prepare_docx_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Build structured retrieval chunks from a Word document."""
+
+    settings = load_settings()
+
+    elements = process_docx(
+        document_path,
+        settings=settings,
+    )
+
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    chunks = prepare_element_chunks(
+        elements,
+        source_path=source_path,
+        category=category,
+        source_hash=source_hash,
+        source_type="docx",
+        original_filename=document_path.name,
+        chunk_size=chunk_size,
+    )
+
+    if not chunks:
+        raise ValueError(
+            f"No retrieval chunks could be created from DOCX: "
+            f"{document_path.name}"
+        )
+
+    return PreparedDocument(
+        chunks=chunks,
+        elements=elements,
+    )
+
+def prepare_pptx_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Extract PPTX elements and prepare searchable chunks."""
+
+    settings = load_settings()
+
+    elements = process_pptx(
+        document_path,
+        settings=settings,
+    )
+
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    chunks = prepare_element_chunks(
+        elements,
+        source_path=source_path,
+        category=category,
+        source_hash=source_hash,
+        source_type="pptx",
+        original_filename=document_path.name,
+        chunk_size=chunk_size,
+    )
+
+    if not chunks:
+        raise ValueError(
+            f"No retrieval chunks could be created from PPTX: "
+            f"{document_path.name}"
+        )
+
+    return PreparedDocument(
+        chunks=chunks,
+        elements=elements,
+    )
+
+def prepare_image_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Build searchable retrieval chunks from a standalone PNG/JPEG image."""
+    settings = load_settings()
+
+    elements = process_image(
+        document_path,
+        settings,
+    )
+
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    chunks = prepare_element_chunks(
+        elements,
+        source_path=source_path,
+        category=category,
+        source_hash=source_hash,
+        source_type=document_path.suffix.lower().lstrip("."),
+        original_filename=document_path.name,
+        chunk_size=chunk_size,
+    )
+
+    if not chunks:
+        raise ValueError(
+            f"No retrieval chunks could be created from image: "
+            f"{document_path.name}"
+        )
+
+    return PreparedDocument(
+        chunks=chunks,
+        elements=elements,
+    )
+
+def prepare_markdown_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Build structured retrieval chunks from a Markdown document."""
+
+    elements = process_markdown(document_path)
+
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    chunks = prepare_element_chunks(
+        elements,
+        source_path=source_path,
+        category=category,
+        source_hash=source_hash,
+        source_type="md",
+        original_filename=document_path.name,
+        chunk_size=chunk_size,
+    )
+
+    if not chunks:
+        raise ValueError(
+            f"No retrieval chunks could be created from Markdown: "
+            f"{document_path.name}"
+        )
+
+    return PreparedDocument(
+        chunks=chunks,
+        elements=elements,
+    )
+
+def prepare_multimodal_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> PreparedDocument:
+    """Dispatch PDFs and standalone images to their extraction pipelines."""
+    extension = document_path.suffix.lower()
+
+    if extension == ".pdf":
+        return prepare_pdf_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
+    if extension == ".docx":
+        return prepare_docx_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
+    if extension == ".pptx":
+        return prepare_pptx_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
+    if extension in MULTIMODAL_IMAGE_EXTENSIONS:
+        return prepare_image_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
+
+    if extension == ".md":
+        return prepare_markdown_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        )
+
+    raise ValueError(f"Unsupported multimodal document type: {extension}")
+
+def build_pdf_chunks(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+) -> list[Chunk]:
+    """Build PDF chunks while preserving the existing caller interface."""
+
+    prepared = prepare_pdf_document(
+        document_path,
+        source_path=source_path,
+        category=category,
+        chunk_size=chunk_size,
+    )
+
+    return prepared.chunks
+
+def build_prepared_documents(
+    source_dir: Path,
+    chunk_size: int,
+    overlap: int,
+) -> dict[str, PreparedDocument]:
+    """Prepare every document once, retaining PDF elements and chunks."""
+
+    prepared_documents: dict[str, PreparedDocument] = {}
+
+    for document_path in read_documents(source_dir):
+        source_path = document_path.relative_to(PROJECT_ROOT).as_posix()
+        category = document_path.parent.name
+
+        if document_path.suffix.lower() == ".pdf" or (
+                document_path.suffix.lower() in STRUCTURED_DOCUMENT_EXTENSIONS
+        ):
+            prepared = prepare_multimodal_document(
+                document_path,
+                source_path=source_path,
+                category=category,
+                chunk_size=chunk_size,
+            )
+        else:
+            prepared = PreparedDocument(
+                chunks=prepare_document_chunks(
+                    document_path,
+                    source_path=source_path,
+                    category=category,
+                    original_filename=document_path.name,
+                    chunk_size=chunk_size,
+                    overlap=overlap,
+                ),
+                elements=[],
+            )
+
+        prepared_documents[source_path] = prepared
+
+    return prepared_documents
+
+def build_chunks(source_dir: Path, chunk_size: int, overlap: int) -> list[Chunk]:
+    """Build retrieval chunks for all supported documents in a directory."""
+
+    chunks: list[Chunk] = []
+
+    for document_path in read_documents(source_dir):
+        relative_path = document_path.relative_to(PROJECT_ROOT).as_posix()
+        category = document_path.parent.name
+
+        if document_path.suffix.lower() == ".pdf" or (
+                document_path.suffix.lower() in STRUCTURED_DOCUMENT_EXTENSIONS
+        ):
+            prepared = prepare_multimodal_document(
+                document_path,
+                source_path=relative_path,
+                category=category,
+                chunk_size=chunk_size,
+            )
+
+            chunks.extend(prepared.chunks)
+            continue
+
+        # Preserve the existing V1 path for TXT documents.
+        loaded = load_document(document_path)
+
+        for index, chunk in enumerate(
+            chunk_text(
+                loaded.text,
+                chunk_size,
+                overlap,
+            )
+        ):
+            chunks.append(
+                Chunk(
+                    source_path=relative_path,
+                    category=category,
+                    chunk_index=index,
+                    text=chunk,
+                    source_hash=loaded.source_hash,
+                    chroma_id=stable_chroma_id(
+                        relative_path,
+                        index,
+                    ),
+                    source_type=loaded.source_type,
+                    original_filename=loaded.original_filename,
+                )
+            )
+
+    return chunks
+
+
+def build_loaded_document_chunks(
+    loaded: LoadedDocument,
+    *,
+    source_path: str,
+    category: str,
+    chunk_size: int,
+    overlap: int,
+) -> list[Chunk]:
+    return [
+        Chunk(
+            source_path=source_path,
+            category=category,
+            chunk_index=index,
+            text=text,
+            source_hash=loaded.source_hash,
+            chroma_id=stable_chroma_id(source_path, index),
+            source_type=loaded.source_type,
+            original_filename=loaded.original_filename,
+        )
+        for index, text in enumerate(chunk_text(loaded.text, chunk_size, overlap))
+    ]
+
+def prepare_document_chunks(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    original_filename: str | None = None,
+    chunk_size: int,
+    overlap: int,
+) -> list[Chunk]:
+    """Prepare retrieval chunks for one document without persisting them."""
+
+    if document_path.suffix.lower() in STRUCTURED_DOCUMENT_EXTENSIONS:
+        return prepare_multimodal_document(
+            document_path,
+            source_path=source_path,
+            category=category,
+            chunk_size=chunk_size,
+        ).chunks
+
+    loaded = load_document(
+        document_path,
+        original_filename=original_filename,
+    )
+
+    return build_loaded_document_chunks(
+        loaded,
+        source_path=source_path,
+        category=category,
+        chunk_size=chunk_size,
+        overlap=overlap,
+    )
+
+def ingest_document(
+    document_path: Path,
+    *,
+    source_path: str,
+    category: str,
+    title: str,
+    original_filename: str | None = None,
+    chunk_size: int,
+    overlap: int,
+    init_schema: bool = False,
+    user_id: int | None = None,
+) -> tuple[int, int]:
+    """Extract and replace one document in MySQL and ChromaDB.
+
+    ``user_id`` is the uploader, and only that account can see or retrieve the
+    document. ``None`` adds it to the shared library that every account uses.
+    """
+
+    settings = load_settings()
+
+    source_type = document_path.suffix.lower().lstrip(".")
+    resolved_original_filename = Path(
+        original_filename or document_path.name
+    ).name
+    source_hash = hashlib.sha256(
+        document_path.read_bytes()
+    ).hexdigest()
+
+    from database import (
+        ChunkRecord,
+        ElementRecord,
+        database_connection,
+        initialize_schema,
+        mark_document_failed,
+        mark_document_ingested,
+        record_document_failure,
+        upsert_document_and_chunks,
+    )
+    from vector_store import get_collection, replace_document_chunks
+
+    if init_schema:
+        initialize_schema(settings)
+
+    try:
+        if source_type == "pdf" or (
+                document_path.suffix.lower() in STRUCTURED_DOCUMENT_EXTENSIONS
+        ):
+            prepared = prepare_multimodal_document(
+                document_path,
+                source_path=source_path,
+                category=category,
+                chunk_size=chunk_size,
+            )
+        else:
+            prepared = PreparedDocument(
+                chunks=prepare_document_chunks(
+                    document_path,
+                    source_path=source_path,
+                    category=category,
+                    original_filename=resolved_original_filename,
+                    chunk_size=chunk_size,
+                    overlap=overlap,
+                ),
+                elements=[],
+            )
+
+        chunks = prepared.chunks
+    except Exception as error:
+        with database_connection(settings) as connection:
+            record_document_failure(
+                connection,
+                title=title,
+                category=category,
+                source_path=source_path,
+                source_type=source_type,
+                original_filename=resolved_original_filename,
+                source_hash=source_hash,
+                error=str(error),
+                user_id=user_id,
+            )
+        raise
+
+    collection = get_collection(settings)
+
+    element_ids: dict[int, int] = {}
+
+    with database_connection(settings) as connection:
+        document_id, chunk_ids = upsert_document_and_chunks(
+            connection,
+            user_id=user_id,
+            title=title,
+            category=category,
+            source_path=source_path,
+            source_type=source_type,
+            original_filename=resolved_original_filename,
+            source_hash=source_hash,
+            chunk_size=chunk_size,
+            chunk_overlap=overlap,
+            chunks=[
+                ChunkRecord(
+                    chunk_index=chunk.chunk_index,
+                    chunk_text=chunk.text,
+                    chroma_id=chunk.chroma_id,
+                    element_index=chunk.element_index,
+                )
+                for chunk in prepared.chunks
+            ],
+            elements=[
+                ElementRecord(
+                    element_index=element.element_index,
+                    page_number=element.page_number,
+                    content_type=element.content_type,
+                    normalized_content=element.content,
+                    extraction_method=element.extraction_method,
+                    extraction_model=element.extraction_model,
+                )
+                for element in prepared.elements
+            ],
+            element_id_output=element_ids,
+        )
+
+        try:
+            replace_document_chunks(
+                collection,
+                ids=[chunk.chroma_id for chunk in chunks],
+                documents=[chunk.text for chunk in chunks],
+                metadatas=[
+                    {
+                        "source_path": chunk.source_path,
+                        "category": chunk.category,
+                        "chunk_index": chunk.chunk_index,
+                        "source_hash": chunk.source_hash,
+                        "source_type": source_type,
+                        "original_filename": resolved_original_filename,
+                        "document_id": document_id,
+                        "chunk_id": chunk_id,
+                        "content_type": chunk.content_type,
+                        **(
+                            {"page_number": chunk.page_number}
+                            if chunk.page_number is not None
+                            else {}
+                        ),
+                        **(
+                            {"element_index": chunk.element_index}
+                            if chunk.element_index is not None
+                            else {}
+                        ),
+                        **(
+                            {"extraction_method": chunk.extraction_method}
+                            if chunk.extraction_method is not None
+                            else {}
+                        ),
+                        **(
+                            {"extraction_model": chunk.extraction_model}
+                            if chunk.extraction_model is not None
+                            else {}
+                        ),
+                        **(
+                            {"element_id": element_ids[chunk.element_index]}
+                            if chunk.element_index is not None
+                            else {}
+                        ),
+
+                    }
+                    for chunk, chunk_id in zip(chunks, chunk_ids)
+                ],
+                source_path=source_path,
+            )
+
+            mark_document_ingested(
+                connection,
+                document_id,
+            )
+
+        except Exception as error:
+            mark_document_failed(
+                connection,
+                document_id,
+                str(error),
+            )
+            raise
+
+    return document_id, len(chunks)
+
+
+def _group_chunks(chunks: list[Chunk]) -> dict[str, list[Chunk]]:
+    grouped: dict[str, list[Chunk]] = {}
+    for chunk in chunks:
+        grouped.setdefault(chunk.source_path, []).append(chunk)
+    return grouped
+
+
+def ingest(
+    source_dir: Path,
+    chunk_size: int,
+    overlap: int,
+    *,
+    init_schema: bool,
+    skip_mysql: bool,
+    skip_chroma: bool,
+) -> IngestionSummary:
+    if skip_mysql and skip_chroma:
+        raise ValueError("Cannot use --skip-mysql and --skip-chroma together")
+
+    settings = load_settings()
+    documents = read_documents(source_dir)
+
+    prepared_documents = build_prepared_documents(
+        source_dir,
+        chunk_size,
+        overlap,
+    )
+
+    chunks = [
+        chunk
+        for prepared in prepared_documents.values()
+        for chunk in prepared.chunks
+    ]
+
+    grouped_chunks = _group_chunks(chunks)
+
+    collection = None
+    if not skip_chroma:
+        from vector_store import get_collection
+
+        collection = get_collection(settings)
+
+    mysql_counts: dict[str, int] | None = None
+    if skip_mysql:
+        assert collection is not None
+        from vector_store import replace_document_chunks
+
+        for source_path, document_chunks in grouped_chunks.items():
+            replace_document_chunks(
+                collection,
+                ids=[chunk.chroma_id for chunk in document_chunks],
+                documents=[chunk.text for chunk in document_chunks],
+                metadatas=[
+                    {
+                        "source_path": chunk.source_path,
+                        "category": chunk.category,
+                        "chunk_index": chunk.chunk_index,
+                        "source_hash": chunk.source_hash,
+                    }
+                    for chunk in document_chunks
+                ],
+                source_path=source_path,
+            )
+    else:
+        from database import (
+            database_connection,
+            database_counts,
+            initialize_schema,
+            mark_document_failed,
+            mark_document_ingested,
+            upsert_document_and_chunks,
+            ChunkRecord,
+            ElementRecord
+        )
+
+        if init_schema:
+            initialize_schema(settings)
+
+        with database_connection(settings) as connection:
+            for document_path in documents:
+                source_path = document_path.relative_to(PROJECT_ROOT).as_posix()
+                document_chunks = grouped_chunks.get(source_path, [])
+                source_hash = hashlib.sha256(document_path.read_bytes()).hexdigest()
+                prepared = prepared_documents[source_path]
+
+                db_elements = [
+                    ElementRecord(
+                        element_index=element.element_index,
+                        page_number=element.page_number,
+                        content_type=element.content_type,
+                        normalized_content=element.content,
+                        extraction_method=element.extraction_method,
+                        extraction_model=element.extraction_model,
+                    )
+                    for element in prepared.elements
+                ]
+
+                db_chunks = [
+                    ChunkRecord(
+                        chunk_index=chunk.chunk_index,
+                        chunk_text=chunk.text,
+                        chroma_id=chunk.chroma_id,
+                        element_index=chunk.element_index,
+                    )
+                    for chunk in document_chunks
+                ]
+
+                element_ids: dict[int, int] = {}
+                document_id, chunk_ids = upsert_document_and_chunks(
+                    connection,
+                    title=document_path.stem.replace("_", " ").title(),
+                    category=document_path.parent.name,
+                    source_path=source_path,
+                    source_type=document_chunks[0].source_type if document_chunks else document_path.suffix[1:],
+                    original_filename=document_path.name,
+                    source_hash=source_hash,
+                    chunk_size=chunk_size,
+                    chunk_overlap=overlap,
+                    chunks=db_chunks,
+                    elements=db_elements,
+                    element_id_output=element_ids,
+                )
+
+                try:
+                    if collection is not None:
+                        from vector_store import replace_document_chunks
+
+                        metadatas: list[dict[str, Any]] = []
+
+                        for chunk, chunk_id in zip(document_chunks, chunk_ids):
+                            metadata: dict[str, Any] = {
+                                "source_path": chunk.source_path,
+                                "category": chunk.category,
+                                "chunk_index": chunk.chunk_index,
+                                "source_hash": chunk.source_hash,
+                                "document_id": document_id,
+                                "chunk_id": chunk_id,
+                                "content_type": chunk.content_type,
+                            }
+
+                            if chunk.page_number is not None:
+                                metadata["page_number"] = chunk.page_number
+
+                            if chunk.element_index is not None:
+                                metadata["element_index"] = chunk.element_index
+                                metadata["element_id"] = element_ids[chunk.element_index]
+
+                            if chunk.extraction_method is not None:
+                                metadata["extraction_method"] = chunk.extraction_method
+
+                            if chunk.extraction_model is not None:
+                                metadata["extraction_model"] = chunk.extraction_model
+
+                            metadatas.append(metadata)
+                        replace_document_chunks(
+                            collection,
+                            ids=[chunk.chroma_id for chunk in document_chunks],
+                            documents=[chunk.text for chunk in document_chunks],
+                            metadatas=metadatas,
+                            source_path=source_path,
+                        )
+                    mark_document_ingested(connection, document_id)
+                except Exception as error:
+                    mark_document_failed(connection, document_id, str(error))
+                    raise
+
+            mysql_counts = database_counts(connection)
+
+    return IngestionSummary(
+        documents=len(documents),
+        chunks=len(chunks),
+        mysql_documents=mysql_counts["documents"] if mysql_counts else None,
+        mysql_chunks=mysql_counts["document_chunks"] if mysql_counts else None,
+        chroma_chunks=collection.count() if collection is not None else None,
+        chunk_size=chunk_size,
+        chunk_overlap=overlap,
+    )
+
+
+def main() -> None:
+    settings = load_settings()
+    parser = argparse.ArgumentParser(
+        description="Ingest Metro State documents into MySQL and ChromaDB."
+    )
+    parser.add_argument("--source-dir", type=Path, default=DEFAULT_SOURCE_DIR)
+    parser.add_argument("--chunk-size", type=int, default=settings.chunk_size)
+    parser.add_argument("--overlap", type=int, default=settings.chunk_overlap)
+    parser.add_argument("--init-schema", action="store_true")
+    parser.add_argument("--skip-mysql", action="store_true")
+    parser.add_argument("--skip-chroma", action="store_true")
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    try:
+        summary = ingest(
+            args.source_dir.resolve(),
+            args.chunk_size,
+            args.overlap,
+            init_schema=args.init_schema,
+            skip_mysql=args.skip_mysql,
+            skip_chroma=args.skip_chroma,
+        )
+    except Exception as error:
+        print(f"Ingestion failed: {error}", file=sys.stderr)
+        raise SystemExit(1) from error
+
+    if args.json:
+        print(json.dumps(asdict(summary), indent=2))
+        return
+
+    print(
+        f"Prepared {summary.chunks} chunks from {summary.documents} documents "
+        f"(chunk size {summary.chunk_size}, overlap {summary.chunk_overlap})."
+    )
+    if summary.mysql_documents is not None:
+        print(
+            f"MySQL now contains {summary.mysql_documents} documents and "
+            f"{summary.mysql_chunks} chunks."
+        )
+    if summary.chroma_chunks is not None:
+        print(f"ChromaDB collection now contains {summary.chroma_chunks} embedded chunks.")
+
+
+if __name__ == "__main__":
+    main()

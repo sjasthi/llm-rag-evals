@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS documents (
     title VARCHAR(255) NOT NULL,
     category VARCHAR(100) NOT NULL,
     source_path VARCHAR(500) NOT NULL,
+    -- NULL = shared library (the bundled Metro State corpus the Gold Standard
+    -- uses); otherwise the account that uploaded the document.
+    user_id BIGINT UNSIGNED NULL,
     source_type VARCHAR(50) NOT NULL DEFAULT 'txt',
     original_filename VARCHAR(255) NULL,
     status ENUM('pending', 'ingested', 'failed', 'archived') NOT NULL DEFAULT 'pending',
@@ -19,7 +22,8 @@ CREATE TABLE IF NOT EXISTS documents (
     imported_at TIMESTAMP NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_documents_source_path (source_path)
+    UNIQUE KEY uq_documents_source_path (source_path),
+    KEY idx_documents_user (user_id, status)
 );
 
 CREATE TABLE IF NOT EXISTS document_elements (
@@ -231,6 +235,8 @@ CREATE TABLE IF NOT EXISTS users (
     username VARCHAR(50) NOT NULL,
     display_name VARCHAR(100) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    -- Administrators manage the shared library and the Gold Standard datasets.
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_login_at TIMESTAMP NULL,
     UNIQUE KEY uq_users_username (username)

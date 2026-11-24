@@ -311,6 +311,7 @@ require __DIR__ . '/includes/header.php';
 
                         <div id="answerResult" hidden>
                             <span class="preview-label" id="answerResultLabel">Grounded answer</span>
+                            <div class="alert alert-warning answer-save-warning" id="answerSaveWarning" role="alert" hidden></div>
                             <p class="answer-copy" id="answerText"></p>
                             <div class="answer-meta" id="answerMeta"></div>
 
@@ -552,10 +553,12 @@ require __DIR__ . '/includes/header.php';
                         </div>
 
                         <p class="delete-all-warning">
-                            Uploaded source files will also be removed.
-                            Bundled source files remain available for
-                            restoration. This action cannot be undone
-                            automatically.
+                            This removes every document you uploaded, and
+                            their stored files. Other accounts' uploads are
+                            not affected. For an administrator it also clears
+                            the shared library, whose bundled source files
+                            remain available for restoration. This action
+                            cannot be undone automatically.
                         </p>
 
                         <div class="delete-all-confirmation">

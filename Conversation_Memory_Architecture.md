@@ -206,3 +206,71 @@ python rag/claim_evaluations.py --username <name>             # assign
 `tests/test_user_accounts_http.py` signs in two accounts and checks that
 neither can list, open, review, score, compare against or export the other's
 records, and that the migration and claim command keep every row.
+
+## Reliable saving of Chat answers
+
+`rag/answer.py` saves the answer (`rag_responses` and its retrieved contexts),
+a new conversation and both conversation messages in **one MySQL
+transaction**. If any step fails, everything is rolled back, so the database
+never holds a half-saved chat. The answer is still returned with
+`saved: false`. `api/ask.php` logs the database error, removes the ids of
+rolled-back rows, and adds `save_warning`. The Chat page then shows:
+
+> Your answer was generated, but the conversation could not be saved. It may
+> be lost if you refresh or leave this page.
+
+An unsaved answer is not added to the saved thread or to Recent chats.
+
+## Long conversations
+
+`api/conversations.php?conversation_id=N` returns the **newest 200**
+messages, oldest first, plus `has_earlier`, `earliest_sequence` and
+`total_messages`. `&before_sequence=S` returns the 200 messages before `S`. The
+Chat page opens a saved chat scrolled to its newest message and shows a
+**Load earlier messages** button. The limit only controls what is returned;
+every message stays stored in MySQL.
+
+## Follow-up questions
+
+Version 2.0 originally guessed follow-ups from words such as "it", "they",
+"that" and "also", and joined them to the previous question. That wrongly
+connected unrelated questions (for example "What does it cost to attend the
+University of Minnesota?" after a Metro State admissions question).
+
+Now, when a conversation has history, `llm.rewrite_follow_up_query` makes one
+small call to the selected chat model (Gemini or Ollama, with
+`QUERY_REWRITE_INSTRUCTION`). The model reads the recent window and returns a
+standalone search query. A question about a new subject comes back unchanged.
+The rewrite only decides what to search for; facts and citations still come
+from the retrieved documents. If the call fails or returns something
+unusable, the question is searched exactly as typed. Its tokens and cost are
+added to the answer's recorded cost and stored in
+`generation_metadata_json.conversation.query_rewrite`. Single-turn evaluation
+runs have no history and make no extra call. A source preview never calls a
+model, so it searches the question as typed.
+
+## Documents and the shared library
+
+| Data | Who sees it | Who changes it |
+| --- | --- | --- |
+| Shared library (`documents.user_id IS NULL`, the bundled Metro State corpus used by the Gold Standard) | Every account | Administrators (restore, delete) |
+| Uploaded documents (`documents.user_id` = uploader) | The uploader only | The uploader |
+| Gold Standard datasets and questions | Every account | Administrators (review status) |
+| Chats, saved answers, test runs, results | The owner only | The owner |
+
+Retrieval (`query.DocumentScope`) uses the shared library plus the signed-in
+user's own uploads, in both MySQL and ChromaDB. ChromaDB is filtered with an
+allow-list of source paths read from MySQL, so a chunk whose document is not
+in MySQL is never returned. Signed-out source previews use the shared
+library only. A test run's corpus manifest follows the same rule.
+
+`Delete all` on the Documents page removes only the caller's uploads (and the
+shared library, for an administrator). Uploads made before this change have no
+owner, so they stay in the shared library until an administrator removes them.
+
+Grant the administrator role from the command line:
+
+```bash
+python rag/manage_admins.py --grant <username>
+python rag/manage_admins.py --list
+```

@@ -1049,6 +1049,36 @@ $(function () {
         $accountError.prop("hidden", true).text("");
     }
 
+    function resetEvaluationSessionState() {
+        // Prevent pending evaluation requests from restoring another user's data.
+        evaluationDatasetRequestId += 1;
+
+        $evaluationResultDetails.each(function () {
+            const $detail = $(this);
+            $detail.data(
+                "evaluationRequestToken",
+                (Number($detail.data("evaluationRequestToken")) || 0) + 1
+            );
+            $detail.empty().append(
+                $("<div>")
+                    .addClass("detail-placeholder")
+                    .text("Select a saved answer to inspect its evaluation results.")
+            );
+        });
+
+        selectedEvaluationRunId = null;
+        currentEvaluationResponseId = null;
+        evaluationResponseContexts = new Map();
+        evaluationRuns = [];
+        evaluationQuestions = [];
+
+        $evaluationResultDetail = $chatEvaluationResultDetail;
+
+        $standaloneResponseList.empty();
+        $evaluationRunList.empty();
+        $evaluationRunHistory.empty();
+    }
+
     function applySession(session) {
         const previousUser = currentUser ? currentUser.username : null;
         currentUser = session.user || null;
@@ -1076,9 +1106,10 @@ $(function () {
             $accountPassword.val("");
         }
         if ((currentUser ? currentUser.username : null) !== previousUser) {
-            // Never carry one person's chat into another person's session.
+            // Never carry one person's chat or evaluation into another session.
             startNewConversation();
             resetAnswer();
+            resetEvaluationSessionState();
         }
         setAccountMode(accountMode);
         setBusy(false);

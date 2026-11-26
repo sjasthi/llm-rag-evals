@@ -149,13 +149,15 @@ sequenceDiagram
         PHP->>PY: proc_open(command + arguments, --json)
         PY->>Stores: Verify conversation ownership and/or retrieve evidence
         Stores-->>PY: History and ranked source chunks
-        alt action = answer
-            PY->>Model: Grounded prompt with sources and history
-            Model-->>PY: Generated answer
-            PY->>Stores: Save answer, provenance and conversation exchange
-        else action = preview
-            Note over PY: Retrieval-only dry run; no generated answer
-        end
+        
+    alt action = answer
+        PY->>Model: Grounded prompt with sources and history
+        Model-->>PY: Generated answer
+        PY->>Stores: Save answer, provenance and conversation exchange
+    else action = preview
+        Note over PY: Retrieval-only preview without answer generation
+    end
+
         PY-->>PHP: JSON on stdout (or error on stderr)
         PHP-->>JS: JSON response
         JS-->>User: Render answer/sources or preview/error

@@ -374,7 +374,7 @@ Never commit `.env`, API credentials, database passwords, runtime uploads, or pr
 
 ### Research and validation
 - [Evaluation Methodology](docs/V2%20docs/RAG_EVAL_2_0_Evaluation_Methodology.md) — evaluation metrics, scoring methods, controlled experiments, and human review.
-- [V1 vs. V2 Ingestion Pipeline](docs/V2%20docs/RAG_EVAL_V1_vs_V2_Ingestion_Pipeline.pdf) — comparison of the original V1 ingestion pipeline with the expanded multimodal V2 implementation.
+- [V1 vs. V2 Ingestion Pipeline](docs/V2%20docs/RAG%20Document%20Ingestion_%20V1%20vs%20V2.png) — comparison of the original V1 text-only ingestion pipeline with the expanded multimodal V2 implementation.
 - [Multimodal testing report](docs/V2%20docs/RAG_EVAL_2_Multimodal_Testing_Report.pdf) — format-specific validation evidence.
 
 ### Development

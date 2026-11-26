@@ -1,4 +1,4 @@
-# RAG EVAL 2.0
+**# RAG EVAL 2.0
 
 **A multimodal, multi-user Retrieval-Augmented Generation (RAG) application and evaluation workbench.**
 
@@ -365,14 +365,21 @@ Never commit `.env`, API credentials, database passwords, runtime uploads, or pr
 
 ## Documentation and research evidence
 
-- [Final study report](docs/V1%20docs/final-study-report.md) — controlled comparisons, results, and limitations.
-- [Final study JSON evidence](data/evaluation/final-study/README.md) — six exported conditions with SHA-256 checksums.
-- [Evaluation strategy](docs/V1%20docs/evaluation-strategy.md) — evaluator contracts and comparison methodology.
-- [V2 database architecture plan](docs/V2%20docs/RAG_Evals_V2_Database_Schema_Plan.md) — background design notes; verify against the live SQL schema.
+### Architecture and design
+- [RAG EVAL 2.0 System Architecture](docs/V2%20docs/RAG_EVAL_2_0_System_Architecture.md) — detailed system design, component interactions, security boundaries, and end-to-end workflows.
+- [RAG EVAL 2.0 Database Schema](docs/V2%20docs/RAG_EVAL_2_0_Database_Schema.md) — detailed documentation of the V2 MySQL database tables, relationships, and schema design.
+- [Multimodal RAG Pipeline Architecture](docs/V2%20docs/Multimodal_RAG_Pipeline_Architecture_final.pdf) — architecture diagram illustrating the multimodal ingestion, indexing, retrieval, and answer-generation workflows.
 - [Conversation memory architecture](docs/V2%20docs/Conversation_Memory_Architecture.md) — conversational design context.
+
+
+### Research and validation
+- [Evaluation Methodology](docs/V2%20docs/RAG_EVAL_2_0_Evaluation_Methodology.md) — evaluation metrics, scoring methods, controlled experiments, and human review.
+- [V1 vs. V2 Ingestion Pipeline](docs/V2%20docs/RAG_EVAL_V1_vs_V2_Ingestion_Pipeline.pdf) — comparison of the original V1 ingestion pipeline with the expanded multimodal V2 implementation.
 - [Multimodal testing report](docs/V2%20docs/RAG_EVAL_2_Multimodal_Testing_Report.pdf) — format-specific validation evidence.
-- [Project screenshots](docs/screenshots/) — UI illustrations; the running application is authoritative if screenshots are older.
-- [License](LICENSE) — repository license.
+
+### Development
+- [Setup and Troubleshooting Guide](docs/V2%20docs/RAG_EVAL_2_0_Developer_Guide.md) — installation instructions, environment configuration, application verification, and troubleshooting.
+- [License](LICENSE) — repository license.**
 
 ---
 

@@ -1,7 +1,7 @@
 # RAG EVAL 2.0 — System Architecture
 
 **Project:** RAG EVAL 2.0 · ICS 499 Capstone  
-**Document type:** Implementation-grounded system architecture reference
+**Document type:** Implementation-grounded system architecture reference  
 **Scope:** Implemented local application, its interfaces and major runtime workflows. This document describes the repository, not a verified production deployment.
 
 > **At a glance:** A browser-based interface sends requests to a PHP backend. PHP handles web-facing validation, sessions, authorization, and coordination, and uses separate Python processes for document ingestion, retrieval, answer generation, and evaluation. MySQL persists structured application and research data; ChromaDB persists searchable embedding vectors. Gemini and/or locally configured Ollama provide optional model capabilities.

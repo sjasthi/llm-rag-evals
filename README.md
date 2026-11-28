@@ -1,4 +1,4 @@
-**# RAG EVAL 2.0
+## **RAG EVAL 2.0**
 
 **A multimodal, multi-user Retrieval-Augmented Generation (RAG) application and evaluation workbench.**
 

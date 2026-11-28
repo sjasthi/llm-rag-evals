@@ -1,6 +1,7 @@
 # RAG EVAL 2.0 — Database Schema Reference
 
-> **Source of truth:** inspected repository `database/schema.sql`, `rag/database.py`, and `database/migrations/001`–`011` from `llm-rag-evals-main(12).zip` (November 24, 2026). This describes the **declared and initialized schema**, not a live database inspection. Existing deployments may differ until initialization/migrations run.
+> **Source of truth:** inspected repository `database/schema.sql`, `rag/database.py`, and `database/migrations/001`–`011`.  
+>  This describes the **declared and initialized schema**, not a live database inspection. Existing deployments may differ until initialization/migrations run.
 
 ## 1. Overview
 
